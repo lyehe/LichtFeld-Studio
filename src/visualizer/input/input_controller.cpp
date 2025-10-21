@@ -734,6 +734,36 @@ namespace gs::visualizer {
         glm::mat3 cam_to_world_R = glm::transpose(world_to_cam_R);
         glm::vec3 cam_to_world_T = -cam_to_world_R * world_to_cam_T;
 
+        // Apply world transform to sync camera with transformed gaussian splat
+        if (rendering_manager_) {
+            auto settings = rendering_manager_->getSettings();
+            if (!settings.world_transform.isIdentity()) {
+                glm::mat4 world_transform = settings.world_transform.toMat4();
+
+                // Build camera matrix
+                glm::mat4 cam_mat = glm::mat4(1.0f);
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 3; ++j) {
+                        cam_mat[j][i] = cam_to_world_R[j][i];
+                    }
+                    cam_mat[3][i] = cam_to_world_T[i];
+                }
+
+                // Apply world transform
+                glm::mat4 transformed_cam = world_transform * cam_mat;
+
+                // Extract transformed rotation and translation
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 3; ++j) {
+                        cam_to_world_R[j][i] = transformed_cam[j][i];
+                    }
+                    cam_to_world_T[i] = transformed_cam[3][i];
+                }
+
+                LOG_DEBUG("Applied world transform to camera view for 'go to image'");
+            }
+        }
+
         viewport_.camera.R = cam_to_world_R;
         viewport_.camera.t = cam_to_world_T;
 
