@@ -740,25 +740,20 @@ namespace gs::visualizer {
             if (!settings.world_transform.isIdentity()) {
                 glm::mat4 world_transform = settings.world_transform.toMat4();
 
-                // Build camera matrix
-                glm::mat4 cam_mat = glm::mat4(1.0f);
-                for (int i = 0; i < 3; ++i) {
-                    for (int j = 0; j < 3; ++j) {
-                        cam_mat[j][i] = cam_to_world_R[j][i];
-                    }
-                    cam_mat[3][i] = cam_to_world_T[i];
-                }
+                // Build camera matrix using GLM constructor
+                glm::mat4 cam_mat(
+                    glm::vec4(cam_to_world_R[0], 0),
+                    glm::vec4(cam_to_world_R[1], 0),
+                    glm::vec4(cam_to_world_R[2], 0),
+                    glm::vec4(cam_to_world_T, 1)
+                );
 
                 // Apply world transform
                 glm::mat4 transformed_cam = world_transform * cam_mat;
 
                 // Extract transformed rotation and translation
-                for (int i = 0; i < 3; ++i) {
-                    for (int j = 0; j < 3; ++j) {
-                        cam_to_world_R[j][i] = transformed_cam[j][i];
-                    }
-                    cam_to_world_T[i] = transformed_cam[3][i];
-                }
+                cam_to_world_R = glm::mat3(transformed_cam);
+                cam_to_world_T = glm::vec3(transformed_cam[3]);
 
                 LOG_DEBUG("Applied world transform to camera view for 'go to image'");
             }
