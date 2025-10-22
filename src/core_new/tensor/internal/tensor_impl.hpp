@@ -3,11 +3,19 @@
 
 #pragma once
 
-#include "core/logger.hpp"
+// NVCC on Windows doesn't support std::format, so we disable logging in tensor library
+// #include "core/logger.hpp"
+#define LOG_ERROR(...)
+#define LOG_INFO(...)
+#define LOG_DEBUG(...)
+#define LOG_WARNING(...)
+#define LOG_WARN(...)
+#define LOG_TRACE(...)
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <concepts>
+#include <cstring>
 #include <cuda_runtime.h>
 #include <functional>
 #include <initializer_list>
