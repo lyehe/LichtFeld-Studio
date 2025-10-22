@@ -93,6 +93,18 @@ if(LFS_TENSOR_CUDA_SOURCES)
 
     # NOTE: Removed -O1 workaround as it conflicts with -Xcompiler=/O2
     # The proper fix is to use consistent optimization flags via -Xcompiler
+
+    # Windows NVCC 12.8 ICE workaround: Reduce DEVICE code optimization for complex templates
+    # These files have complex functors with arrays that trigger ICE at -O3
+    # Append -O2 after -O3 to override device code optimization (last flag wins)
+    if(WIN32)
+        set_source_files_properties(
+            tensor_broadcast_ops.cu
+            tensor_ops.cu
+            PROPERTIES
+            COMPILE_FLAGS "-O2"
+        )
+    endif()
 endif()
 
 # Main tensor library (C++23)
