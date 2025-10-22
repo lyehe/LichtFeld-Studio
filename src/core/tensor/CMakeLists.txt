@@ -94,15 +94,16 @@ if(LFS_TENSOR_CUDA_SOURCES)
     # NOTE: Removed -O1 workaround as it conflicts with -Xcompiler=/O2
     # The proper fix is to use consistent optimization flags via -Xcompiler
 
-    # Windows NVCC 12.8 ICE workaround: Reduce DEVICE code optimization for complex templates
-    # These files have complex functors with arrays that trigger ICE even at -O2
-    # Must use -O1 to avoid "unexpected expression with aggregate type!" error
+    # Windows NVCC 12.8 ICE workaround: DISABLE optimization for complex templates
+    # These files have complex functors with arrays that trigger ICE at ANY optimization level
+    # Must use -O0 (no optimization) to avoid "unexpected expression with aggregate type!" error
+    # This is a severe nvcc 12.8 compiler bug with aggregate types in template-heavy code
     if(WIN32)
         set_source_files_properties(
             tensor_broadcast_ops.cu
             tensor_ops.cu
             PROPERTIES
-            COMPILE_FLAGS "-O1"
+            COMPILE_FLAGS "-O0"
         )
     endif()
 endif()
