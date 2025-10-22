@@ -41,7 +41,8 @@ namespace gs {
         ElementType payload[size];
 
         // Constructors
-        __device__ Packed128() = default;
+        // Note: Explicitly empty instead of = default to avoid nvcc 12.8 ICE
+        __device__ Packed128() {}
 
         __device__ explicit Packed128(int4 bits) {
             static_assert(sizeof(bits) == sizeof(payload), "Size mismatch");
