@@ -75,14 +75,13 @@ if(LFS_TENSOR_CUDA_SOURCES)
     )
 
     target_compile_options(lfs_tensor_kernels PRIVATE
-            $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-O0 -g -G -lineinfo>
-            $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CUDA>>:-O3 -use_fast_math --ptxas-options=-v>
-            # Windows: Ensure MSVC gets /utf-8 when invoked by nvcc
-            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>>:
-                -Xcompiler=/utf-8
-                -Xcompiler=/D_CRT_SECURE_NO_WARNINGS
-                --diag-suppress=27  # Suppress "character value out of range" warnings from fmt
-            >
+            # CUDA device code + MSVC host compiler flags (Windows only)
+            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:-O0 -g -G -lineinfo -Xcompiler=/Od -Xcompiler=/Z7 -Xcompiler=/utf-8 -Xcompiler=/D_CRT_SECURE_NO_WARNINGS --diag-suppress=27>
+            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:-O3 -use_fast_math --ptxas-options=-v -Xcompiler=/O2 -Xcompiler=/DNDEBUG -Xcompiler=/utf-8 -Xcompiler=/D_CRT_SECURE_NO_WARNINGS --diag-suppress=27>
+
+            # CUDA device code for non-Windows
+            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Debug>>:-O0 -g -G -lineinfo>
+            $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Release>>:-O3 -use_fast_math --ptxas-options=-v>
     )
 
     # Windows: Add compile definition to tell fmt that UTF-8 is enabled for CUDA files
@@ -92,15 +91,8 @@ if(LFS_TENSOR_CUDA_SOURCES)
         )
     endif()
 
-    # Windows NVCC ICE workaround: Reduce optimization for files with complex templates
-    if(WIN32)
-        set_source_files_properties(
-            tensor_broadcast_ops.cu
-            tensor_ops.cu
-            PROPERTIES
-            COMPILE_FLAGS "-O1"
-        )
-    endif()
+    # NOTE: Removed -O1 workaround as it conflicts with -Xcompiler=/O2
+    # The proper fix is to use consistent optimization flags via -Xcompiler
 endif()
 
 # Main tensor library (C++23)
