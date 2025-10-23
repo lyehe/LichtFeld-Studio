@@ -32,6 +32,14 @@ set_target_properties(lfs_core_kernels PROPERTIES
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
 
+# CUDA compiler options for lfs_core_kernels
+target_compile_options(lfs_core_kernels PRIVATE
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:-O0 -g -G -lineinfo -Xcompiler=/Od -Xcompiler=/Z7 -Xcompiler=/utf-8 -Xcompiler=/D_CRT_SECURE_NO_WARNINGS --diag-suppress=27>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:-O3 -use_fast_math --ptxas-options=-v -Xcompiler=/O2 -Xcompiler=/DNDEBUG -Xcompiler=/utf-8 -Xcompiler=/D_CRT_SECURE_NO_WARNINGS --diag-suppress=27>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CXX_COMPILER_ID:GNU>>:-O3 -use_fast_math --ptxas-options=-v>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU>>:-O0 -g -G -lineinfo>
+)
+
 # Core module - fundamental data structures and utilities
 # Note: lfs_tensor library is now in src/core_new/tensor
 set(CORE_SOURCES
