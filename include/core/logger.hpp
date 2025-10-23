@@ -194,7 +194,6 @@ namespace gs::core {
             // Custom console sink with performance log color support
             auto console_sink = std::make_shared<performance_color_sink_mt>();
             console_sink->set_level(to_spdlog_level(console_level));
-            console_sink->set_pattern("[%H:%M:%S.%e] [%^%l%$] %s:%# %v");
             sinks.push_back(console_sink);
 
             // Optional file sink
