@@ -40,6 +40,13 @@ target_compile_options(lfs_core_kernels PRIVATE
     $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU>>:-O0 -g -G -lineinfo>
 )
 
+# Windows: Add compile definition to tell fmt that UTF-8 is enabled for CUDA files
+if(MSVC)
+    target_compile_definitions(lfs_core_kernels PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:FMT_UNICODE=0>
+    )
+endif()
+
 # Core module - fundamental data structures and utilities
 # Note: lfs_tensor library is now in src/core_new/tensor
 set(CORE_SOURCES
