@@ -5,6 +5,7 @@
 #include "core_new/application.hpp"
 #include "core_new/argument_parser.hpp"
 #include "core_new/logger.hpp"
+#include "core_new/pinned_memory_allocator.hpp"
 
 #include <iostream>
 #include <print>
@@ -23,6 +24,9 @@ int main(int argc, char* argv[]) {
     LOG_INFO("========================================");
     LOG_INFO("LichtFeld Studio");
     LOG_INFO("========================================");
+
+    // Pre-warm pinned memory cache to avoid cudaHostAlloc overhead during training
+    lfs::core::PinnedMemoryAllocator::instance().prewarm();
 
     auto params = std::move(*params_result);
 
