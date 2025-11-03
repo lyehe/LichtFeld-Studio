@@ -686,7 +686,7 @@ namespace lfs::core {
                 // Use generic conversion (unsigned char -> float)
                 tensor_ops::launch_convert_type<unsigned char, float>(
                     ptr<unsigned char>(), result.ptr<float>(), numel(), 0);
-                CHECK_CUDA(cudaDeviceSynchronize());
+                // No sync - tensor-to-tensor GPU operation
             } else {
                 const unsigned char* src = ptr<unsigned char>();
                 float* dst = result.ptr<float>();
@@ -741,15 +741,7 @@ namespace lfs::core {
             if (device_ == Device::CUDA) {
                 tensor_ops::launch_convert_type<float, int>(
                     ptr<float>(), result.ptr<int>(), numel(), 0);
-                // CRITICAL: Sync to ensure conversion completes before item() reads
-                cudaDeviceSynchronize();
-
-                // Read result value after conversion (for debugging)
-                if (numel() == 1) {
-                    int dst_val;
-                    cudaMemcpy(&dst_val, result.ptr<int>(), sizeof(int), cudaMemcpyDeviceToHost);
-                    printf("[to Float32->Int32] Result value: %d\n", dst_val);
-                }
+                // No sync - tensor-to-tensor GPU operation
             } else {
                 const float* src = ptr<float>();
                 int* dst = result.ptr<int>();
@@ -813,7 +805,7 @@ namespace lfs::core {
                 // Use generic conversion (unsigned char -> int)
                 tensor_ops::launch_convert_type<unsigned char, int>(
                     ptr<unsigned char>(), result.ptr<int>(), numel(), 0);
-                CHECK_CUDA(cudaDeviceSynchronize());
+                // No sync - tensor-to-tensor GPU operation
             } else {
                 const unsigned char* src = ptr<unsigned char>();
                 int* dst = result.ptr<int>();
@@ -834,7 +826,7 @@ namespace lfs::core {
                 // Use generic conversion (unsigned char -> int64_t)
                 tensor_ops::launch_convert_type<unsigned char, int64_t>(
                     ptr<unsigned char>(), result.ptr<int64_t>(), numel(), 0);
-                CHECK_CUDA(cudaDeviceSynchronize());
+                // No sync - tensor-to-tensor GPU operation
             } else {
                 const unsigned char* src = ptr<unsigned char>();
                 int64_t* dst = result.ptr<int64_t>();
@@ -887,7 +879,7 @@ namespace lfs::core {
                 // Use generic conversion (unsigned char -> __half)
                 tensor_ops::launch_convert_type<unsigned char, __half>(
                     ptr<unsigned char>(), result.ptr<__half>(), numel(), 0);
-                CHECK_CUDA(cudaDeviceSynchronize());
+                // No sync - tensor-to-tensor GPU operation
             } else {
                 const unsigned char* src = ptr<unsigned char>();
                 __half* dst = result.ptr<__half>();
