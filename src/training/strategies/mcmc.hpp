@@ -37,6 +37,23 @@ namespace gs::training {
 
         void remove_gaussians(const torch::Tensor& mask) override;
 
+        // Accessor for debugging/comparison
+        torch::optim::Optimizer* get_optimizer() { return _optimizer.get(); }
+
+        // Get learning rate for a specific parameter group (for debugging/comparison)
+        double get_lr(size_t param_group_idx = 0) const {
+            if (param_group_idx >= _optimizer->param_groups().size()) {
+                return 0.0;
+            }
+            auto& options = _optimizer->param_groups()[param_group_idx].options();
+            // Cast to AdamOptions to access lr
+            return static_cast<const torch::optim::AdamOptions&>(options).lr();
+        }
+
+        // Exposed for testing (compare with new implementation)
+        int add_new_gs_test() { return add_new_gs(); }
+        int relocate_gs_test() { return relocate_gs(); }
+
     private:
         // Simple ExponentialLR implementation since C++ API is different
         class ExponentialLR {

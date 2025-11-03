@@ -120,8 +120,7 @@ namespace gs::loader {
                std::filesystem::exists(done_path);
     }
 
-    CacheLoader::CacheLoader(bool use_cpu_memory, bool use_fs_cache) : use_cpu_memory_(use_cpu_memory),
-                                                                       use_fs_cache_(use_fs_cache) {
+    CacheLoader::CacheLoader(bool use_cpu_memory, bool use_fs_cache) : use_cpu_memory_(use_cpu_memory), use_fs_cache_(use_fs_cache) {
         create_new_cache_folder();
         if (min_cpu_free_memory_ratio_ < 0 || min_cpu_free_memory_ratio_ > 1) {
             LOG_WARN("min_cpu_free_memory_ratio_ is outside [0,1] interval = {}", min_cpu_free_memory_ratio_);
@@ -143,7 +142,7 @@ namespace gs::loader {
         // Check if parent path exists and is valid
         if (!std::filesystem::exists(cache_base.parent_path())) {
             LOG_ERROR("Cache base path does not exist: {}. Disabling filesystem cache.",
-                      cache_base.parent_path().string());
+                     cache_base.parent_path().string());
             use_fs_cache_ = false;
             return;
         }
@@ -154,7 +153,7 @@ namespace gs::loader {
             std::filesystem::remove_all(cache_folder, ec);
             if (ec) {
                 LOG_ERROR("Failed to wipe existing cache folder {}: {}. Disabling filesystem cache.",
-                          cache_folder.string(), ec.message());
+                         cache_folder.string(), ec.message());
                 use_fs_cache_ = false;
                 return;
             }
@@ -164,7 +163,7 @@ namespace gs::loader {
         std::filesystem::create_directories(cache_folder, ec);
         if (ec) {
             LOG_ERROR("Failed to create cache directory {}: {}. Disabling filesystem cache.",
-                      cache_folder.string(), ec.message());
+                     cache_folder.string(), ec.message());
             use_fs_cache_ = false;
             return;
         }

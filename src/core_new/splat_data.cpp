@@ -131,15 +131,47 @@ namespace {
         }
 
         if (pc.sh0.is_valid()) {
-            // _sh0 is [N, 1, 3] - transpose to [N, 3, 1] for PLY flatten, then flatten to [N, 3]
-            auto sh0_transposed = pc.sh0.transpose(1, 2).contiguous();
-            tensors.push_back(sh0_transposed.flatten(1).cpu().contiguous());
+            LOG_INFO("write_ply_impl: pc.sh0 shape: ndim={}, shape=[{}{}{}]",
+                     pc.sh0.ndim(),
+                     pc.sh0.shape()[0],
+                     pc.sh0.ndim() >= 2 ? fmt::format(", {}", pc.sh0.shape()[1]) : "",
+                     pc.sh0.ndim() >= 3 ? fmt::format(", {}", pc.sh0.shape()[2]) : "");
+
+            if (pc.sh0.ndim() == 3) {
+                // sh0 is [N, B, 3] - transpose to [N, 3, B], then flatten to [N, 3*B]
+                LOG_INFO("write_ply_impl: sh0 is 3D, transposing and flattening");
+                auto sh0_transposed = pc.sh0.transpose(1, 2).contiguous();
+                tensors.push_back(sh0_transposed.flatten(1).cpu().contiguous());
+            } else if (pc.sh0.ndim() == 2) {
+                // sh0 is already [N, 3*B] - use as-is
+                LOG_INFO("write_ply_impl: sh0 is 2D, using as-is");
+                tensors.push_back(pc.sh0.cpu().contiguous());
+            } else {
+                LOG_ERROR("write_ply_impl: Unexpected sh0 ndim: {}", pc.sh0.ndim());
+                tensors.push_back(pc.sh0.cpu().contiguous());
+            }
         }
 
         if (pc.shN.is_valid()) {
-            // _shN is [N, coeffs, 3] - transpose to [N, 3, coeffs], then flatten to [N, 3*coeffs]
-            auto shN_transposed = pc.shN.transpose(1, 2).contiguous();
-            tensors.push_back(shN_transposed.flatten(1).cpu().contiguous());
+            LOG_INFO("write_ply_impl: pc.shN shape: ndim={}, shape=[{}{}{}]",
+                     pc.shN.ndim(),
+                     pc.shN.shape()[0],
+                     pc.shN.ndim() >= 2 ? fmt::format(", {}", pc.shN.shape()[1]) : "",
+                     pc.shN.ndim() >= 3 ? fmt::format(", {}", pc.shN.shape()[2]) : "");
+
+            if (pc.shN.ndim() == 3) {
+                // shN is [N, B, 3] - transpose to [N, 3, B], then flatten to [N, 3*B]
+                LOG_INFO("write_ply_impl: shN is 3D, transposing and flattening");
+                auto shN_transposed = pc.shN.transpose(1, 2).contiguous();
+                tensors.push_back(shN_transposed.flatten(1).cpu().contiguous());
+            } else if (pc.shN.ndim() == 2) {
+                // shN is already [N, 3*B] - use as-is
+                LOG_INFO("write_ply_impl: shN is 2D, using as-is");
+                tensors.push_back(pc.shN.cpu().contiguous());
+            } else {
+                LOG_ERROR("write_ply_impl: Unexpected shN ndim: {}", pc.shN.ndim());
+                tensors.push_back(pc.shN.cpu().contiguous());
+            }
         }
 
         if (pc.opacity.is_valid()) {
@@ -441,34 +473,54 @@ namespace lfs::core {
     std::vector<std::string> SplatData::get_attribute_names() const {
         std::vector<std::string> a{"x", "y", "z", "nx", "ny", "nz"};
 
-        // _sh0 attributes: [N, 3, 1] -> 3 features
+        // _sh0 attributes - calculate based on actual dimensionality
         if (_sh0.is_valid()) {
-            size_t sh0_features = _sh0.size(1) * _sh0.size(2);
+            size_t sh0_features;
+            if (_sh0.ndim() == 3) {
+                // 3D: [N, B, 3] -> B*3 features
+                sh0_features = _sh0.shape()[1] * _sh0.shape()[2];
+            } else if (_sh0.ndim() == 2) {
+                // 2D: [N, 3*B] -> size(1) features
+                sh0_features = _sh0.shape()[1];
+            } else {
+                LOG_ERROR("Unexpected sh0 ndim in get_attribute_names: {}", _sh0.ndim());
+                sh0_features = 3; // fallback
+            }
             for (size_t i = 0; i < sh0_features; ++i) {
                 a.emplace_back("f_dc_" + std::to_string(i));
             }
         }
 
-        // _shN attributes: [N, 3, coeffs]
+        // _shN attributes - calculate based on actual dimensionality
         if (_shN.is_valid()) {
-            size_t shN_features = _shN.size(1) * _shN.size(2);
+            size_t shN_features;
+            if (_shN.ndim() == 3) {
+                // 3D: [N, B, 3] -> B*3 features
+                shN_features = _shN.shape()[1] * _shN.shape()[2];
+            } else if (_shN.ndim() == 2) {
+                // 2D: [N, 3*B] -> size(1) features
+                shN_features = _shN.shape()[1];
+            } else {
+                LOG_ERROR("Unexpected shN ndim in get_attribute_names: {}", _shN.ndim());
+                shN_features = 45; // fallback for degree 3
+            }
             for (size_t i = 0; i < shN_features; ++i) {
                 a.emplace_back("f_rest_" + std::to_string(i));
             }
         }
 
-        a.emplace_back("_opacity");
+        a.emplace_back("opacity");  // Fixed: removed underscore to match legacy
 
         // _scaling attributes
         if (_scaling.is_valid()) {
-            for (size_t i = 0; i < _scaling.size(1); ++i) {
+            for (size_t i = 0; i < _scaling.shape()[1]; ++i) {
                 a.emplace_back("scale_" + std::to_string(i));
             }
         }
 
         // _rotation attributes
         if (_rotation.is_valid()) {
-            for (size_t i = 0; i < _rotation.size(1); ++i) {
+            for (size_t i = 0; i < _rotation.shape()[1]; ++i) {
                 a.emplace_back("rot_" + std::to_string(i));
             }
         }
@@ -600,13 +652,78 @@ namespace lfs::core {
         pc.means = _means.cpu().contiguous();
         pc.normals = Tensor::zeros_like(pc.means);
 
-        // Gaussian attributes - _sh0 and _shN are in correct layout [N, 3, coeffs]
+        // Gaussian attributes - SH coefficients can be either:
+        // - 3D [N, B, 3] from initial load (need transpose+flatten)
+        // - 2D [N, 3*B] during training after densification (already correct for PLY)
+        // PLY format expects [N, 3*B]
         if (_sh0.is_valid()) {
-            pc.sh0 = _sh0.cpu().contiguous();
+            LOG_INFO("to_point_cloud: _sh0 shape before cpu/contiguous: ndim={}, shape=[{}{}{}]",
+                     _sh0.ndim(),
+                     _sh0.shape()[0],
+                     _sh0.ndim() >= 2 ? fmt::format(", {}", _sh0.shape()[1]) : "",
+                     _sh0.ndim() >= 3 ? fmt::format(", {}", _sh0.shape()[2]) : "");
+
+            auto sh0_cpu = _sh0.cpu().contiguous();
+
+            LOG_INFO("to_point_cloud: sh0_cpu shape after cpu/contiguous: ndim={}, shape=[{}{}{}]",
+                     sh0_cpu.ndim(),
+                     sh0_cpu.shape()[0],
+                     sh0_cpu.ndim() >= 2 ? fmt::format(", {}", sh0_cpu.shape()[1]) : "",
+                     sh0_cpu.ndim() >= 3 ? fmt::format(", {}", sh0_cpu.shape()[2]) : "");
+
+            if (sh0_cpu.ndim() == 3) {
+                LOG_INFO("to_point_cloud: sh0 is 3D, will transpose and flatten");
+                // Transpose from [N, B, 3] to [N, 3, B], then flatten to [N, 3*B]
+                auto sh0_transposed = sh0_cpu.transpose(1, 2);  // [N, B, 3] -> [N, 3, B]
+                size_t N = sh0_transposed.shape()[0];
+                size_t flat_dim = sh0_transposed.shape()[1] * sh0_transposed.shape()[2];
+                pc.sh0 = sh0_transposed.reshape({N, flat_dim});
+                LOG_INFO("to_point_cloud: sh0 after processing: shape=[{}, {}]", N, flat_dim);
+            } else if (sh0_cpu.ndim() == 2) {
+                LOG_INFO("to_point_cloud: sh0 is 2D, using as-is with shape=[{}, {}]",
+                         sh0_cpu.shape()[0], sh0_cpu.shape()[1]);
+                // Already 2D [N, 3*B] - use as-is
+                pc.sh0 = sh0_cpu;
+            } else {
+                LOG_ERROR("Unexpected sh0 dimensions: {}, shape: [{}]", sh0_cpu.ndim(),
+                         sh0_cpu.ndim() >= 1 ? sh0_cpu.shape()[0] : 0);
+                pc.sh0 = sh0_cpu;
+            }
         }
 
         if (_shN.is_valid()) {
-            pc.shN = _shN.cpu().contiguous();
+            LOG_INFO("to_point_cloud: _shN shape before cpu/contiguous: ndim={}, shape=[{}{}{}]",
+                     _shN.ndim(),
+                     _shN.shape()[0],
+                     _shN.ndim() >= 2 ? fmt::format(", {}", _shN.shape()[1]) : "",
+                     _shN.ndim() >= 3 ? fmt::format(", {}", _shN.shape()[2]) : "");
+
+            auto shN_cpu = _shN.cpu().contiguous();
+
+            LOG_INFO("to_point_cloud: shN_cpu shape after cpu/contiguous: ndim={}, shape=[{}{}{}]",
+                     shN_cpu.ndim(),
+                     shN_cpu.shape()[0],
+                     shN_cpu.ndim() >= 2 ? fmt::format(", {}", shN_cpu.shape()[1]) : "",
+                     shN_cpu.ndim() >= 3 ? fmt::format(", {}", shN_cpu.shape()[2]) : "");
+
+            if (shN_cpu.ndim() == 3) {
+                LOG_INFO("to_point_cloud: shN is 3D, will transpose and flatten");
+                // Transpose from [N, B, 3] to [N, 3, B], then flatten to [N, 3*B]
+                auto shN_transposed = shN_cpu.transpose(1, 2);  // [N, B, 3] -> [N, 3, B]
+                size_t N = shN_transposed.shape()[0];
+                size_t flat_dim = shN_transposed.shape()[1] * shN_transposed.shape()[2];
+                pc.shN = shN_transposed.reshape({N, flat_dim});
+                LOG_INFO("to_point_cloud: shN after processing: shape=[{}, {}]", N, flat_dim);
+            } else if (shN_cpu.ndim() == 2) {
+                LOG_INFO("to_point_cloud: shN is 2D, using as-is with shape=[{}, {}]",
+                         shN_cpu.shape()[0], shN_cpu.shape()[1]);
+                // Already 2D [N, 3*B] - use as-is
+                pc.shN = shN_cpu;
+            } else {
+                LOG_ERROR("Unexpected shN dimensions: {}, shape: [{}]", shN_cpu.ndim(),
+                         shN_cpu.ndim() >= 1 ? shN_cpu.shape()[0] : 0);
+                pc.shN = shN_cpu;
+            }
         }
 
         if (_opacity.is_valid()) {

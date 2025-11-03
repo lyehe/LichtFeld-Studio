@@ -1,15 +1,15 @@
 /* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-#include <cuda_runtime.h>
 #include <gtest/gtest.h>
-#include <iomanip>
-#include <iostream>
 #include <torch/torch.h>
+#include <cuda_runtime.h>
+#include <iostream>
+#include <iomanip>
 
 // LibTorch-free implementation
-#include "core_new/tensor.hpp"
 #include "training_new/components/sparsity_optimizer.hpp"
+#include "core_new/tensor.hpp"
 
 // Reference LibTorch implementation
 #include "training/components/sparsity_optimizer.hpp"
@@ -30,7 +30,7 @@ TEST(SparsityDebug, DetailedComparison) {
         GTEST_SKIP() << "CUDA not available";
     }
 
-    const int n = 100; // Small for detailed logging
+    const int n = 100;  // Small for detailed logging
 
     // Create identical configs
     lfs::training::ADMMSparsityOptimizer::Config new_config{
@@ -38,14 +38,16 @@ TEST(SparsityDebug, DetailedComparison) {
         .init_rho = 0.0005f,
         .prune_ratio = 0.6f,
         .update_every = 50,
-        .start_iteration = 30000};
+        .start_iteration = 30000
+    };
 
     gs::training::ADMMSparsityOptimizer::Config ref_config{
         .sparsify_steps = 15000,
         .init_rho = 0.0005f,
         .prune_ratio = 0.6f,
         .update_every = 50,
-        .start_iteration = 30000};
+        .start_iteration = 30000
+    };
 
     lfs::training::ADMMSparsityOptimizer new_opt(new_config);
     gs::training::ADMMSparsityOptimizer ref_opt(ref_config);
@@ -147,7 +149,9 @@ TEST(SparsityDebug, DetailedComparison) {
 
     for (int i = 0; i < std::min(5, n); i++) {
         float new_diff = new_opa_sigmoid_cpu[i] - new_z_cpu[i] + new_u_cpu[i];
-        float ref_diff = ref_opa_sigmoid_cpu[i].item<float>() - ref_z_cpu[i].item<float>() + ref_u_cpu[i].item<float>();
+        float ref_diff = ref_opa_sigmoid_cpu[i].item<float>()
+                       - ref_z_cpu[i].item<float>()
+                       + ref_u_cpu[i].item<float>();
 
         std::cout << "  [" << i << "] new_diff=" << new_diff << ", ref_diff=" << ref_diff << std::endl;
     }
@@ -155,7 +159,9 @@ TEST(SparsityDebug, DetailedComparison) {
     // Compute full diff norm manually
     for (int i = 0; i < n; i++) {
         float new_diff = new_opa_sigmoid_cpu[i] - new_z_cpu[i] + new_u_cpu[i];
-        float ref_diff = ref_opa_sigmoid_cpu[i].item<float>() - ref_z_cpu[i].item<float>() + ref_u_cpu[i].item<float>();
+        float ref_diff = ref_opa_sigmoid_cpu[i].item<float>()
+                       - ref_z_cpu[i].item<float>()
+                       + ref_u_cpu[i].item<float>();
 
         new_diff_sum += new_diff * new_diff;
         ref_diff_sum += ref_diff * ref_diff;

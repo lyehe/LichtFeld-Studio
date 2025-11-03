@@ -66,16 +66,18 @@ namespace lfs::training {
         // Prepare render output
         RenderOutput render_output;
         // output = image + (1 - alpha) * bg_color
-        auto alpha_complement = (alpha * -1.0f) + 1.0f; // 1 - alpha
+        auto alpha_complement = (alpha * -1.0f) + 1.0f;  // 1 - alpha
         auto bg_contribution = alpha_complement * bg_color.unsqueeze(-1).unsqueeze(-1);
         render_output.image = image + bg_contribution;
         render_output.alpha = alpha;
+        render_output.width = width;
+        render_output.height = height;
 
         // Prepare context for backward
         FastRasterizeContext ctx;
         ctx.image = image;
         ctx.alpha = alpha;
-        ctx.bg_color = bg_color; // Save bg_color for alpha gradient
+        ctx.bg_color = bg_color;  // Save bg_color for alpha gradient
 
         // Save parameters (avoid re-fetching in backward)
         ctx.means = means;
@@ -125,13 +127,13 @@ namespace lfs::training {
         if (grad_image.shape()[0] == 3) {
             // Layout: [3, H, W]
             // ∂L/∂alpha[h,w] = -sum_c(grad_image[c,h,w] * bg_color[c])
-            auto bg_expanded = ctx.bg_color.reshape({3, 1, 1});              // [3, 1, 1]
-            grad_alpha = (grad_image * bg_expanded).sum({0}, false) * -1.0f; // [H, W]
+            auto bg_expanded = ctx.bg_color.reshape({3, 1, 1});  // [3, 1, 1]
+            grad_alpha = (grad_image * bg_expanded).sum({0}, false) * -1.0f;  // [H, W]
         } else if (grad_image.shape()[2] == 3) {
             // Layout: [H, W, 3]
             // ∂L/∂alpha[h,w] = -sum_c(grad_image[h,w,c] * bg_color[c])
-            auto bg_expanded = ctx.bg_color.reshape({1, 1, 3});              // [1, 1, 3]
-            grad_alpha = (grad_image * bg_expanded).sum({2}, false) * -1.0f; // [H, W]
+            auto bg_expanded = ctx.bg_color.reshape({1, 1, 3});  // [1, 1, 3]
+            grad_alpha = (grad_image * bg_expanded).sum({2}, false) * -1.0f;  // [H, W]
         } else {
             throw std::runtime_error("Unexpected grad_image shape in fast_rasterize_backward");
         }
@@ -149,7 +151,8 @@ namespace lfs::training {
         lfs::core::Tensor grad_w2c = lfs::core::Tensor::zeros_like(ctx.w2c);
 
         // Call backward_raw with raw pointers
-        const bool update_densification_info = gaussian_model._densification_info.shape()[0] > 0;
+        const bool update_densification_info = gaussian_model._densification_info.ndim() > 0 &&
+                                                gaussian_model._densification_info.shape()[0] > 0;
         auto backward_result = fast_lfs::rasterization::backward_raw(
             update_densification_info ? gaussian_model._densification_info.ptr<float>() : nullptr,
             grad_image.ptr<float>(),
@@ -169,7 +172,7 @@ namespace lfs::training {
             grad_opacities_raw.ptr<float>(),
             grad_sh_coefficients_0.ptr<float>(),
             grad_sh_coefficients_rest.ptr<float>(),
-            nullptr, // grad_w2c not needed for now
+            nullptr,  // grad_w2c not needed for now
             n_primitives,
             ctx.active_sh_bases,
             ctx.total_bases_sh_rest,
@@ -186,11 +189,12 @@ namespace lfs::training {
 
         // Manually accumulate gradients into the parameter tensors
         // The new gradient system uses separate gradient tensors
-        gaussian_model.means_grad() = gaussian_model.means_grad() + grad_means;
-        gaussian_model.scaling_grad() = gaussian_model.scaling_grad() + grad_scales_raw;
-        gaussian_model.rotation_grad() = gaussian_model.rotation_grad() + grad_rotations_raw;
-        gaussian_model.opacity_grad() = gaussian_model.opacity_grad() + grad_opacities_raw;
-        gaussian_model.sh0_grad() = gaussian_model.sh0_grad() + grad_sh_coefficients_0;
-        gaussian_model.shN_grad() = gaussian_model.shN_grad() + grad_sh_coefficients_rest;
+        // IMPORTANT: Use in-place add_() to accumulate gradients, not assignment!
+        gaussian_model.means_grad().add_(grad_means);
+        gaussian_model.scaling_grad().add_(grad_scales_raw);
+        gaussian_model.rotation_grad().add_(grad_rotations_raw);
+        gaussian_model.opacity_grad().add_(grad_opacities_raw);
+        gaussian_model.sh0_grad().add_(grad_sh_coefficients_0);
+        gaussian_model.shN_grad().add_(grad_sh_coefficients_rest);
     }
 } // namespace lfs::training

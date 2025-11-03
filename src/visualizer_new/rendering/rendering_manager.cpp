@@ -93,7 +93,7 @@ namespace lfs::vis {
 
         try {
             // Use image_io to load the image
-            auto [data, width, height, channels] = load_image(path);
+            auto [data, width, height, channels] = lfs::core::load_image(path);
 
             if (!data) {
                 LOG_ERROR("Failed to load image data: {}", path.string());
@@ -151,7 +151,7 @@ namespace lfs::vis {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
             // Free image data
-            free_image(data);
+            lfs::core::free_image(data);
 
             LOG_DEBUG("Created GL texture {} for image: {} ({}x{})",
                       texture, path.filename().string(), width, height);

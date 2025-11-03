@@ -20,19 +20,29 @@ namespace lfs::training {
         const lfs::core::param::OptimizationParameters& params) {
 
         // Create Adam config with per-parameter learning rates
-        // Note: In the new optimizer, we'll need to set LRs per parameter type
-        // For now, we'll create with the means LR and update individual params later
         AdamConfig config;
-        config.lr = params.means_lr * splat_data.get_scene_scale();
+        config.lr = params.means_lr * splat_data.get_scene_scale();  // Default LR (for means)
         config.beta1 = 0.9f;
         config.beta2 = 0.999f;
         config.eps = 1e-15f;
 
-        auto optimizer = std::make_unique<AdamOptimizer>(splat_data, config);
+        // Set per-parameter learning rates (matching legacy MCMC strategy)
+        config.param_lrs["means"] = params.means_lr * splat_data.get_scene_scale();
+        config.param_lrs["sh0"] = params.shs_lr;
+        config.param_lrs["shN"] = params.shs_lr / 20.0f;  // ShN uses reduced LR (1/20 of SH0)
+        config.param_lrs["scaling"] = params.scaling_lr;
+        config.param_lrs["rotation"] = params.rotation_lr;
+        config.param_lrs["opacity"] = params.opacity_lr;
 
-        // TODO: Set per-parameter learning rates
-        // This will require extending AdamOptimizer to support per-parameter LRs
-        // For now, the AdamOptimizer applies the same LR to all parameters
+        LOG_DEBUG("Creating optimizer with per-parameter LRs:");
+        LOG_DEBUG("  means: {:.2e}", config.param_lrs["means"]);
+        LOG_DEBUG("  sh0: {:.2e}", config.param_lrs["sh0"]);
+        LOG_DEBUG("  shN: {:.2e}", config.param_lrs["shN"]);
+        LOG_DEBUG("  scaling: {:.2e}", config.param_lrs["scaling"]);
+        LOG_DEBUG("  rotation: {:.2e}", config.param_lrs["rotation"]);
+        LOG_DEBUG("  opacity: {:.2e}", config.param_lrs["opacity"]);
+
+        auto optimizer = std::make_unique<AdamOptimizer>(splat_data, config);
 
         return optimizer;
     }

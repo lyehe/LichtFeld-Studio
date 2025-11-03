@@ -14,6 +14,8 @@
 #include <torch/torch.h>
 #include <vector>
 
+namespace gs {
+
 std::tuple<int, int, int>
 get_image_info(std::filesystem::path p);
 std::tuple<unsigned char*, int, int, int>
@@ -31,6 +33,8 @@ void save_image(const std::filesystem::path& path,
 bool save_img_data(const std::filesystem::path& p, const std::tuple<unsigned char*, int, int, int>& image_data);
 
 void free_image(unsigned char* image);
+
+} // namespace gs
 
 // Batch image saving functionality
 namespace image_io {

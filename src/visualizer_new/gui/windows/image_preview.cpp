@@ -101,7 +101,7 @@ namespace lfs::vis::gui {
         // Load image (max_width = -1 disables downscaling for preview)
         auto [data, width, height, channels] = [&]() {
             LOG_TIMER("load_image call");
-            return ::load_image(path, -1, -1);
+            return lfs::core::load_image(path, -1, -1);
         }();
 
         // Wrap in RAII immediately
@@ -326,7 +326,7 @@ namespace lfs::vis::gui {
 
                         LOG_TRACE("Preloaded image needs downscaling by factor of {}", scale);
                         // Reload at lower resolution (max_width = -1 disables additional downscaling)
-                        auto [data, w, h, c] = ::load_image(image_paths_[prev_idx], scale, -1);
+                        auto [data, w, h, c] = lfs::core::load_image(image_paths_[prev_idx], scale, -1);
                         image_data = std::make_unique<ImageData>(data, w, h, c);
                     }
 
@@ -368,7 +368,7 @@ namespace lfs::vis::gui {
 
                         LOG_TRACE("Preloaded image needs downscaling by factor of {}", scale);
                         // Reload at lower resolution (max_width = -1 disables additional downscaling)
-                        auto [data, w, h, c] = ::load_image(image_paths_[next_idx], scale, -1);
+                        auto [data, w, h, c] = lfs::core::load_image(image_paths_[next_idx], scale, -1);
                         image_data = std::make_unique<ImageData>(data, w, h, c);
                     }
 

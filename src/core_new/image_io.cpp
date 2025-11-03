@@ -56,6 +56,8 @@ namespace {
 
 } // namespace
 
+namespace lfs::core {
+
 std::tuple<int, int, int> get_image_info(std::filesystem::path p) {
     init_oiio();
 
@@ -377,20 +379,28 @@ void save_image(const std::filesystem::path& path,
     if (images.empty())
         throw std::runtime_error("No images provided");
     if (images.size() == 1) {
-        save_image(path, images[0]);
+        lfs::core::save_image(path, images[0]);
         return;
     }
 
     // Prepare all to HWC float on CPU
     std::vector<lfs::core::Tensor> xs;
     xs.reserve(images.size());
-    for (auto img : images) {
+    for (size_t idx = 0; idx < images.size(); ++idx) {
+        auto img = images[idx];
+        LOG_INFO("save_image: Input image {} shape before conversion: [{}, {}, {}]",
+                  idx, img.shape()[0], img.shape()[1], img.shape()[2]);
+
         img = img.clone().to(lfs::core::Device::CPU).to(lfs::core::DataType::Float32);
         if (img.ndim() == 4)
             img = img.squeeze(0);
         if (img.ndim() == 3 && img.shape()[0] <= 4)
             img = img.permute({1, 2, 0});
-        xs.push_back(img.contiguous());
+        img = img.contiguous();
+
+        LOG_INFO("save_image: Image {} shape after conversion to HWC: [{}, {}, {}]",
+                  idx, img.shape()[0], img.shape()[1], img.shape()[2]);
+        xs.push_back(img);
     }
 
     // Separator (white)
@@ -404,14 +414,26 @@ void save_image(const std::filesystem::path& path,
 
     // Concatenate
     lfs::core::Tensor combo = xs[0];
+    LOG_INFO("save_image: Starting combo shape: [{}, {}, {}]",
+              combo.shape()[0], combo.shape()[1], combo.shape()[2]);
+
     for (size_t i = 1; i < xs.size(); ++i) {
+        LOG_INFO("save_image: Concatenating image {} (shape [{}, {}, {}]) along axis {}",
+                  i, xs[i].shape()[0], xs[i].shape()[1], xs[i].shape()[2], horizontal ? 1 : 0);
+
         combo = (separator_width > 0)
                     ? lfs::core::Tensor::cat({combo, sep, xs[i]}, horizontal ? 1 : 0)
                     : lfs::core::Tensor::cat({combo, xs[i]}, horizontal ? 1 : 0);
+
+        LOG_INFO("save_image: After concatenation, combo shape: [{}, {}, {}]",
+                  combo.shape()[0], combo.shape()[1], combo.shape()[2]);
     }
 
+    LOG_INFO("save_image: Final combo shape before saving: [{}, {}, {}]",
+              combo.shape()[0], combo.shape()[1], combo.shape()[2]);
+
     // Save
-    save_image(path, combo);
+    lfs::core::save_image(path, combo);
 }
 
 void free_image(unsigned char* img) { std::free(img); }
@@ -483,6 +505,8 @@ bool save_img_data(const std::filesystem::path& p, const std::tuple<unsigned cha
     return success;
 }
 
+} // namespace lfs::core
+
 namespace lfs::core::image_io {
 
     BatchImageSaver::BatchImageSaver(size_t num_workers)
@@ -519,7 +543,7 @@ namespace lfs::core::image_io {
 
     void BatchImageSaver::queue_save(const std::filesystem::path& path, lfs::core::Tensor image) {
         if (!enabled_) {
-            save_image(path, image);
+            lfs::core::save_image(path, image);
             return;
         }
         SaveTask t;
@@ -529,7 +553,7 @@ namespace lfs::core::image_io {
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             if (stop_) {
-                save_image(path, image);
+                lfs::core::save_image(path, image);
                 return;
             }
             task_queue_.push(std::move(t));
@@ -543,7 +567,7 @@ namespace lfs::core::image_io {
                                               bool horizontal,
                                               int separator_width) {
         if (!enabled_) {
-            save_image(path, images, horizontal, separator_width);
+            lfs::core::save_image(path, images, horizontal, separator_width);
             return;
         }
         SaveTask t;
@@ -558,7 +582,7 @@ namespace lfs::core::image_io {
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             if (stop_) {
-                save_image(path, images, horizontal, separator_width);
+                lfs::core::save_image(path, images, horizontal, separator_width);
                 return;
             }
             task_queue_.push(std::move(t));
@@ -602,9 +626,9 @@ namespace lfs::core::image_io {
     void BatchImageSaver::process_task(const SaveTask& t) {
         try {
             if (t.is_multi) {
-                save_image(t.path, t.images, t.horizontal, t.separator_width);
+                lfs::core::save_image(t.path, t.images, t.horizontal, t.separator_width);
             } else {
-                save_image(t.path, t.image);
+                lfs::core::save_image(t.path, t.image);
             }
         } catch (const std::exception& e) {
             LOG_ERROR("[BatchImageSaver] Error saving {}: {}", t.path.string(), e.what());

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "trainer.hpp"
+#include "loader/filesystem_utils.hpp"
 #include "components/bilateral_grid.hpp"
 #include "components/poseopt.hpp"
 #include "components/sparsity_optimizer.hpp"
@@ -11,10 +12,9 @@
 #include "kernels/fused_ssim.cuh"
 #include "kernels/regularization.cuh"
 #include "loader/cache_image_loader.hpp"
-#include "loader/filesystem_utils.hpp"
-#include "losses/losses.hpp"
 #include "rasterization/fast_rasterizer.hpp"
 #include "rasterization/rasterizer.hpp"
+#include "losses/losses.hpp"
 
 #include <ATen/cuda/CUDAEvent.h>
 #include <atomic>
@@ -110,8 +110,8 @@ namespace gs::training {
         const torch::Tensor& rendered,
         const torch::Tensor& gt_image,
         const param::OptimizationParameters& opt_params) {
-        lfs::training::losses::PhotometricLoss::Params params{.lambda_dssim = opt_params.lambda_dssim};
-        auto result = lfs::training::losses::PhotometricLoss::forward(rendered, gt_image, params);
+        gs::training::losses::PhotometricLoss::Params params{.lambda_dssim = opt_params.lambda_dssim};
+        auto result = gs::training::losses::PhotometricLoss::forward(rendered, gt_image, params);
         if (!result) {
             return std::unexpected(result.error());
         }
@@ -122,15 +122,15 @@ namespace gs::training {
     std::expected<float, std::string> Trainer::compute_scale_reg_loss(
         SplatData& splatData,
         const param::OptimizationParameters& opt_params) {
-        lfs::training::losses::ScaleRegularization::Params params{.weight = opt_params.scale_reg};
-        return lfs::training::losses::ScaleRegularization::forward(splatData.scaling_raw(), params);
+        gs::training::losses::ScaleRegularization::Params params{.weight = opt_params.scale_reg};
+        return gs::training::losses::ScaleRegularization::forward(splatData.scaling_raw(), params);
     }
 
     std::expected<float, std::string> Trainer::compute_opacity_reg_loss(
         SplatData& splatData,
         const param::OptimizationParameters& opt_params) {
-        lfs::training::losses::OpacityRegularization::Params params{.weight = opt_params.opacity_reg};
-        return lfs::training::losses::OpacityRegularization::forward(splatData.opacity_raw(), params);
+        gs::training::losses::OpacityRegularization::Params params{.weight = opt_params.opacity_reg};
+        return gs::training::losses::OpacityRegularization::forward(splatData.opacity_raw(), params);
     }
 
     std::expected<std::pair<float, bilateral_grid::BilateralGridTVContext>, std::string> Trainer::compute_bilateral_grid_tv_loss(
@@ -194,10 +194,11 @@ namespace gs::training {
         }
 
         // Delegate to loss struct
-        lfs::training::losses::SparsityLoss::Params params{
+        gs::training::losses::SparsityLoss::Params params{
             .current_iteration = iter,
-            .optimizer_ptr = sparsity_optimizer_.get()};
-        return lfs::training::losses::SparsityLoss::forward(splatData, params);
+            .optimizer_ptr = sparsity_optimizer_.get()
+        };
+        return gs::training::losses::SparsityLoss::forward(splatData, params);
     }
 
     std::expected<void, std::string> Trainer::handle_sparsity_update(
@@ -880,7 +881,7 @@ namespace gs::training {
                             RenderOutput rendered_timelapse_output;
                             if (params_.optimization.gut) {
                                 rendered_timelapse_output = rasterize(*cam_to_use, strategy_->get_model(), bg, 1.0f, false,
-                                                                      false, RenderMode::RGB, nullptr);
+                                                                     false, RenderMode::RGB, nullptr);
                             } else {
                                 rendered_timelapse_output = fast_rasterize(*cam_to_use, strategy_->get_model(), background_);
                             }

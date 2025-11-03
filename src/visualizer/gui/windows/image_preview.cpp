@@ -99,7 +99,7 @@ namespace gs::gui {
         LOG_TRACE("Loading image data from: {}", path.string());
 
         // Load image
-        auto [data, width, height, channels] = ::load_image(path);
+        auto [data, width, height, channels] = gs::load_image(path);
 
         // Wrap in RAII immediately
         auto image_data = std::make_unique<ImageData>(data, width, height, channels);
@@ -306,7 +306,7 @@ namespace gs::gui {
 
                         LOG_TRACE("Preloaded image needs downscaling by factor of {}", scale);
                         // Reload at lower resolution
-                        auto [data, w, h, c] = ::load_image(image_paths_[prev_idx], scale);
+                        auto [data, w, h, c] = gs::load_image(image_paths_[prev_idx], scale);
                         image_data = std::make_unique<ImageData>(data, w, h, c);
                     }
 
@@ -347,7 +347,7 @@ namespace gs::gui {
 
                         LOG_TRACE("Preloaded image needs downscaling by factor of {}", scale);
                         // Reload at lower resolution
-                        auto [data, w, h, c] = ::load_image(image_paths_[next_idx], scale);
+                        auto [data, w, h, c] = gs::load_image(image_paths_[next_idx], scale);
                         image_data = std::make_unique<ImageData>(data, w, h, c);
                     }
 

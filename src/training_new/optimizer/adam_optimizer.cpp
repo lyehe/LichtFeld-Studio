@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "adam_optimizer.hpp"
-#include "adam_api.h" // fast_lfs::optimizer::adam_step_raw
+#include "adam_api.h"  // fast_lfs::optimizer::adam_step_raw
 #include "core_new/logger.hpp"
 #include <cmath>
 #include <stdexcept>
@@ -11,8 +11,7 @@
 namespace lfs::training {
 
     AdamOptimizer::AdamOptimizer(lfs::core::SplatData& splat_data, const AdamConfig& config)
-        : splat_data_(splat_data),
-          config_(config) {
+        : splat_data_(splat_data), config_(config) {
 
         // Ensure gradients are allocated
         if (!splat_data_.has_gradients()) {
@@ -39,36 +38,36 @@ namespace lfs::training {
 
     lfs::core::Tensor& AdamOptimizer::get_param(ParamType type) {
         switch (type) {
-        case ParamType::Means: return splat_data_.means();
-        case ParamType::Sh0: return splat_data_.sh0();
-        case ParamType::ShN: return splat_data_.shN();
-        case ParamType::Scaling: return splat_data_.scaling_raw();
-        case ParamType::Rotation: return splat_data_.rotation_raw();
-        case ParamType::Opacity: return splat_data_.opacity_raw();
+            case ParamType::Means: return splat_data_.means();
+            case ParamType::Sh0: return splat_data_.sh0();
+            case ParamType::ShN: return splat_data_.shN();
+            case ParamType::Scaling: return splat_data_.scaling_raw();
+            case ParamType::Rotation: return splat_data_.rotation_raw();
+            case ParamType::Opacity: return splat_data_.opacity_raw();
         }
         throw std::runtime_error("Invalid param type");
     }
 
     lfs::core::Tensor& AdamOptimizer::get_grad(ParamType type) {
         switch (type) {
-        case ParamType::Means: return splat_data_.means_grad();
-        case ParamType::Sh0: return splat_data_.sh0_grad();
-        case ParamType::ShN: return splat_data_.shN_grad();
-        case ParamType::Scaling: return splat_data_.scaling_grad();
-        case ParamType::Rotation: return splat_data_.rotation_grad();
-        case ParamType::Opacity: return splat_data_.opacity_grad();
+            case ParamType::Means: return splat_data_.means_grad();
+            case ParamType::Sh0: return splat_data_.sh0_grad();
+            case ParamType::ShN: return splat_data_.shN_grad();
+            case ParamType::Scaling: return splat_data_.scaling_grad();
+            case ParamType::Rotation: return splat_data_.rotation_grad();
+            case ParamType::Opacity: return splat_data_.opacity_grad();
         }
         throw std::runtime_error("Invalid param type");
     }
 
     std::string AdamOptimizer::param_name(ParamType type) const {
         switch (type) {
-        case ParamType::Means: return "means";
-        case ParamType::Sh0: return "sh0";
-        case ParamType::ShN: return "shN";
-        case ParamType::Scaling: return "scaling";
-        case ParamType::Rotation: return "rotation";
-        case ParamType::Opacity: return "opacity";
+            case ParamType::Means: return "means";
+            case ParamType::Sh0: return "sh0";
+            case ParamType::ShN: return "shN";
+            case ParamType::Scaling: return "scaling";
+            case ParamType::Rotation: return "rotation";
+            case ParamType::Opacity: return "opacity";
         }
         return "unknown";
     }
@@ -138,6 +137,9 @@ namespace lfs::training {
         float bias_correction1_rcp = 1.0f / (1.0f - std::pow(config_.beta1, state.step_count));
         float bias_correction2_sqrt_rcp = 1.0f / std::sqrt(1.0f - std::pow(config_.beta2, state.step_count));
 
+        // Get per-parameter learning rate
+        float param_lr = get_param_lr(type);
+
         // OPTIMIZATION: Only operate on the "used" portion if we have excess capacity
         // This is safe because adam_step_raw only touches the first `numel` elements
         // The state tensors may be larger than param, but we only use state.size elements
@@ -149,12 +151,13 @@ namespace lfs::training {
             state.exp_avg_sq.ptr<float>(),
             grad.ptr<float>(),
             static_cast<int>(param.numel()),
-            config_.lr,
+            param_lr,  // Use per-parameter learning rate
             config_.beta1,
             config_.beta2,
             config_.eps,
             bias_correction1_rcp,
-            bias_correction2_sqrt_rcp);
+            bias_correction2_sqrt_rcp
+        );
     }
 
     void AdamOptimizer::reset_state_at_indices(ParamType type, const std::vector<int64_t>& indices) {
@@ -167,7 +170,7 @@ namespace lfs::training {
         }
 
         if (indices.empty()) {
-            return; // Nothing to do
+            return;  // Nothing to do
         }
 
         auto& state = states_[name];
@@ -189,13 +192,15 @@ namespace lfs::training {
             state.exp_avg.template ptr<float>(),
             indices_device_ptr,
             indices.size(),
-            row_size);
+            row_size
+        );
 
         fast_lfs::optimizer::zero_rows_at_indices(
             state.exp_avg_sq.template ptr<float>(),
             indices_device_ptr,
             indices.size(),
-            row_size);
+            row_size
+        );
 
         cudaFree(indices_device_ptr);
 
@@ -307,21 +312,24 @@ namespace lfs::training {
             if (new_values.ndim() != param.ndim()) {
                 throw std::runtime_error(
                     "add_new_params: new_values rank (" + std::to_string(new_values.ndim()) +
-                    ") doesn't match existing parameter rank (" + std::to_string(param.ndim()) + ")");
+                    ") doesn't match existing parameter rank (" + std::to_string(param.ndim()) + ")"
+                );
             }
 
             // Check that all dimensions except first match
             for (size_t i = 1; i < param.ndim(); i++) {
                 if (new_values.shape()[i] != param.shape()[i]) {
                     throw std::runtime_error(
-                        "add_new_params: new_values shape mismatch at dimension " + std::to_string(i));
+                        "add_new_params: new_values shape mismatch at dimension " + std::to_string(i)
+                    );
                 }
             }
 
             // Check device matches
             if (new_values.device() != param.device()) {
                 throw std::runtime_error(
-                    "add_new_params: new_values device doesn't match existing parameter device");
+                    "add_new_params: new_values device doesn't match existing parameter device"
+                );
             }
         }
 
@@ -349,8 +357,7 @@ namespace lfs::training {
     }
 
     void AdamOptimizer::relocate_params_at_indices(ParamType type, const std::vector<int64_t>& indices) {
-        if (indices.empty())
-            return;
+        if (indices.empty()) return;
 
         auto& param = get_param(type);
 
@@ -359,7 +366,8 @@ namespace lfs::training {
             if (idx < 0 || static_cast<size_t>(idx) >= param.shape()[0]) {
                 throw std::runtime_error(
                     "relocate_params_at_indices: index " + std::to_string(idx) +
-                    " out of bounds [0, " + std::to_string(param.shape()[0]) + ")");
+                    " out of bounds [0, " + std::to_string(param.shape()[0]) + ")"
+                );
             }
         }
 
@@ -374,8 +382,7 @@ namespace lfs::training {
     }
 
     void AdamOptimizer::relocate_params_at_indices_gpu(ParamType type, const int64_t* indices_device, size_t n_indices) {
-        if (n_indices == 0)
-            return;
+        if (n_indices == 0) return;
 
         auto& param = get_param(type);
         auto& grad = get_grad(type);
@@ -393,7 +400,8 @@ namespace lfs::training {
             grad.template ptr<float>(),
             indices_device,
             n_indices,
-            grad_row_size);
+            grad_row_size
+        );
 
         // Ensure optimizer state exists
         if (states_.find(name) == states_.end()) {
@@ -415,13 +423,15 @@ namespace lfs::training {
             state.exp_avg.template ptr<float>(),
             indices_device,
             n_indices,
-            state_row_size);
+            state_row_size
+        );
 
         fast_lfs::optimizer::zero_rows_at_indices(
             state.exp_avg_sq.template ptr<float>(),
             indices_device,
             n_indices,
-            state_row_size);
+            state_row_size
+        );
 
         LOG_DEBUG("relocate_params_at_indices_gpu: Reset state and gradients for {} at {} indices (batched GPU kernel)",
                   name, n_indices);

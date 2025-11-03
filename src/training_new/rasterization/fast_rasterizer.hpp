@@ -7,14 +7,14 @@
 #include "core_new/camera.hpp"
 #include "core_new/splat_data.hpp"
 #include "optimizer/render_output.hpp"
-#include "rasterization_api.h"
+#include <rasterization_api.h>  // Use angle brackets to search include paths, not relative
 
 namespace lfs::training {
     // Forward pass context - holds intermediate buffers needed for backward
     struct FastRasterizeContext {
         lfs::core::Tensor image;
         lfs::core::Tensor alpha;
-        lfs::core::Tensor bg_color; // Saved for alpha gradient computation
+        lfs::core::Tensor bg_color;  // Saved for alpha gradient computation
 
         // Gaussian parameters (saved to avoid re-fetching in backward)
         lfs::core::Tensor means;

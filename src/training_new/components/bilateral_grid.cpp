@@ -56,8 +56,8 @@ namespace lfs::training {
 
         // Allocate output
         lfs::core::Tensor output = lfs::core::Tensor::empty({h, w, 3},
-                                                            lfs::core::Device::CUDA,
-                                                            lfs::core::DataType::Float32);
+                                                              lfs::core::Device::CUDA,
+                                                              lfs::core::DataType::Float32);
 
         // Calculate offset to grid for this image [N, 12, L, H, W]
         size_t grid_slice_size = 12 * grid_guidance_ * grid_height_ * grid_width_;
@@ -70,7 +70,7 @@ namespace lfs::training {
             output.template ptr<float>(),
             grid_guidance_, grid_height_, grid_width_,
             h, w,
-            nullptr); // Default CUDA stream
+            nullptr);  // Default CUDA stream
 
         // Create minimal context for backward (no tensor copies, just pointers)
         BilateralGridSliceContext ctx{
@@ -92,8 +92,8 @@ namespace lfs::training {
 
         // Allocate gradient output
         lfs::core::Tensor grad_rgb = lfs::core::Tensor::empty({h, w, 3},
-                                                              lfs::core::Device::CUDA,
-                                                              lfs::core::DataType::Float32);
+                                                                lfs::core::Device::CUDA,
+                                                                lfs::core::DataType::Float32);
 
         // Calculate offset to grid slice for this image [N, 12, L, H, W]
         size_t grid_slice_size = 12 * grid_guidance_ * grid_height_ * grid_width_;
@@ -104,13 +104,13 @@ namespace lfs::training {
         // CUDA kernels use atomicAdd for gradient accumulation
         kernels::launch_bilateral_grid_slice_backward(
             grid_ptr,
-            ctx.rgb_ptr, // Use pointer from context (no tensor dereference)
+            ctx.rgb_ptr,  // Use pointer from context (no tensor dereference)
             grad_output.template ptr<float>(),
-            grad_grid_ptr, // Write directly to offset in grids_grad_
+            grad_grid_ptr,  // Write directly to offset in grids_grad_
             grad_rgb.template ptr<float>(),
             grid_guidance_, grid_height_, grid_width_,
             h, w,
-            nullptr); // Default CUDA stream
+            nullptr);  // Default CUDA stream
 
         return grad_rgb;
     }
@@ -118,8 +118,8 @@ namespace lfs::training {
     std::pair<float, BilateralGridTVContext> BilateralGrid::tv_loss_forward() {
         // Allocate output for loss (single scalar on device)
         lfs::core::Tensor tv_loss_device = lfs::core::Tensor::zeros({1},
-                                                                    lfs::core::Device::CUDA,
-                                                                    lfs::core::DataType::Float32);
+                                                                      lfs::core::Device::CUDA,
+                                                                      lfs::core::DataType::Float32);
 
         // Call CUDA kernel
         kernels::launch_bilateral_grid_tv_forward(
@@ -127,7 +127,7 @@ namespace lfs::training {
             tv_loss_device.template ptr<float>(),
             tv_temp_buffer_.template ptr<float>(),
             num_images_, grid_guidance_, grid_height_, grid_width_,
-            nullptr); // Default CUDA stream
+            nullptr);  // Default CUDA stream
 
         // Copy loss to host
         float tv_loss_value = tv_loss_device.item<float>();
@@ -137,17 +137,17 @@ namespace lfs::training {
     }
 
     void BilateralGrid::tv_loss_backward(
-        const BilateralGridTVContext& /*ctx*/, // Unused (context is empty)
+        const BilateralGridTVContext& /*ctx*/,  // Unused (context is empty)
         float grad_loss) {
 
         // Write gradients directly to grids_grad_ (no temp allocation needed)
         // CUDA kernel uses atomicAdd for accumulation
         kernels::launch_bilateral_grid_tv_backward(
-            grids_.template ptr<float>(), // Use class member directly
+            grids_.template ptr<float>(),        // Use class member directly
             grad_loss,
-            grids_grad_.template ptr<float>(), // Write directly to gradient buffer
+            grids_grad_.template ptr<float>(),  // Write directly to gradient buffer
             num_images_, grid_guidance_, grid_height_, grid_width_,
-            nullptr); // Default CUDA stream
+            nullptr);  // Default CUDA stream
     }
 
     void BilateralGrid::zero_grad() {

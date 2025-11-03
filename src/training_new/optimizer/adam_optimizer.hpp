@@ -96,26 +96,29 @@
 namespace lfs::training {
 
     struct AdamConfig {
-        float lr = 1e-3f;
+        float lr = 1e-3f;  // Default learning rate (used if per-param LRs not set)
         float beta1 = 0.9f;
         float beta2 = 0.999f;
         float eps = 1e-8f;
 
+        // Per-parameter learning rates (optional - if not set, uses lr)
+        std::unordered_map<std::string, float> param_lrs;
+
         // Memory optimization settings (for optimizer state, not parameters)
-        float growth_factor = 1.5f;  // Multiply capacity by this when growing (like std::vector)
-                                     // Default 1.5x means ~50% fewer reallocations than exact-fit
-        size_t initial_capacity = 0; // Initial capacity (0 = auto, >0 = pre-allocate to this size)
-                                     // Set to max expected Gaussians to avoid ALL reallocations
+        float growth_factor = 1.5f;      // Multiply capacity by this when growing (like std::vector)
+                                         // Default 1.5x means ~50% fewer reallocations than exact-fit
+        size_t initial_capacity = 0;     // Initial capacity (0 = auto, >0 = pre-allocate to this size)
+                                         // Set to max expected Gaussians to avoid ALL reallocations
     };
 
     struct AdamParamState {
-        lfs::core::Tensor exp_avg;    // First moment estimate
-        lfs::core::Tensor exp_avg_sq; // Second moment estimate
+        lfs::core::Tensor exp_avg;       // First moment estimate
+        lfs::core::Tensor exp_avg_sq;    // Second moment estimate
         int64_t step_count = 0;
 
         // Capacity tracking for efficient growth
-        size_t capacity = 0; // Total allocated capacity (first dimension)
-        size_t size = 0;     // Currently used size (first dimension)
+        size_t capacity = 0;             // Total allocated capacity (first dimension)
+        size_t size = 0;                 // Currently used size (first dimension)
     };
 
     // Parameter type enum (public for state manipulation)
@@ -138,9 +141,24 @@ namespace lfs::training {
         // Zero gradients
         void zero_grad(int iteration);
 
-        // Update learning rate
+        // Update learning rate (global or per-parameter)
         void set_lr(float lr) { config_.lr = lr; }
         float get_lr() const { return config_.lr; }
+
+        // Set per-parameter learning rate
+        void set_param_lr(ParamType type, float lr) {
+            config_.param_lrs[param_name(type)] = lr;
+        }
+
+        // Get per-parameter learning rate (falls back to global lr if not set)
+        float get_param_lr(ParamType type) const {
+            auto name = param_name(type);
+            auto it = config_.param_lrs.find(name);
+            if (it != config_.param_lrs.end()) {
+                return it->second;
+            }
+            return config_.lr;
+        }
 
         // ===== SAFE MCMC OPERATIONS =====
         // These methods atomically update both parameters and optimizer state

@@ -181,10 +181,10 @@ namespace lfs::core {
 
         // Convert to float and normalize, then permute to [C, H, W]
         image = image.to(DataType::Float32) / 255.0f;
-        image = image.permute({2, 0, 1});
+        image = image.permute({2, 0, 1}).contiguous();  // Make contiguous BEFORE CUDA transfer
 
         // Transfer to CUDA
-        image = image.to(Device::CUDA).contiguous();
+        image = image.to(Device::CUDA);
 
         // Free the original data
         free_image(data);

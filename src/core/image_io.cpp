@@ -56,6 +56,8 @@ namespace {
 
 } // namespace
 
+namespace gs {
+
 std::tuple<int, int, int> get_image_info(std::filesystem::path p) {
     init_oiio();
 
@@ -325,7 +327,7 @@ void save_image(const std::filesystem::path& path,
     if (images.empty())
         throw std::runtime_error("No images provided");
     if (images.size() == 1) {
-        save_image(path, images[0]);
+        gs::save_image(path, images[0]);
         return;
     }
 
@@ -359,7 +361,7 @@ void save_image(const std::filesystem::path& path,
     }
 
     // Save
-    save_image(path, combo);
+    gs::save_image(path, combo);
 }
 
 void free_image(unsigned char* img) { std::free(img); }
@@ -431,6 +433,8 @@ bool save_img_data(const std::filesystem::path& p, const std::tuple<unsigned cha
     return success;
 }
 
+} // namespace gs
+
 namespace image_io {
 
     BatchImageSaver::BatchImageSaver(size_t num_workers)
@@ -467,7 +471,7 @@ namespace image_io {
 
     void BatchImageSaver::queue_save(const std::filesystem::path& path, torch::Tensor image) {
         if (!enabled_) {
-            save_image(path, image);
+            gs::save_image(path, image);
             return;
         }
         SaveTask t;
@@ -477,7 +481,7 @@ namespace image_io {
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             if (stop_) {
-                save_image(path, image);
+                gs::save_image(path, image);
                 return;
             }
             task_queue_.push(std::move(t));
@@ -491,7 +495,7 @@ namespace image_io {
                                               bool horizontal,
                                               int separator_width) {
         if (!enabled_) {
-            save_image(path, images, horizontal, separator_width);
+            gs::save_image(path, images, horizontal, separator_width);
             return;
         }
         SaveTask t;
@@ -506,7 +510,7 @@ namespace image_io {
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             if (stop_) {
-                save_image(path, images, horizontal, separator_width);
+                gs::save_image(path, images, horizontal, separator_width);
                 return;
             }
             task_queue_.push(std::move(t));
@@ -550,9 +554,9 @@ namespace image_io {
     void BatchImageSaver::process_task(const SaveTask& t) {
         try {
             if (t.is_multi) {
-                save_image(t.path, t.images, t.horizontal, t.separator_width);
+                gs::save_image(t.path, t.images, t.horizontal, t.separator_width);
             } else {
-                save_image(t.path, t.image);
+                gs::save_image(t.path, t.image);
             }
         } catch (const std::exception& e) {
             LOG_ERROR("[BatchImageSaver] Error saving {}: {}", t.path.string(), e.what());

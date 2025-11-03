@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "trainer.hpp"
-#include "loader_new/filesystem_utils.hpp"
+#include "loader/filesystem_utils.hpp"
 // TODO: Port components to LibTorch-free implementation
 #include "components/bilateral_grid.hpp"
 #include "components/sparsity_optimizer.hpp"
@@ -41,8 +41,7 @@ namespace lfs::training {
         }
 
         // Reset all components
-        // TODO: Port progress, poseopt to LibTorch-free implementation
-        // progress_.reset();
+        progress_.reset();
         bilateral_grid_.reset();
         bilateral_grid_optimizer_.reset();
         bilateral_grid_scheduler_.reset();
@@ -389,14 +388,13 @@ namespace lfs::training {
             //     poseopt_module_ = std::make_unique<PoseOptimizationModule>();
             // }
 
-            // TODO: Port progress to LibTorch-free implementation
             // Create progress bar based on headless flag
-            // if (params.optimization.headless) {
-            //     progress_ = std::make_unique<TrainingProgress>(
-            //         params_.optimization.iterations, // This now includes sparsity steps if enabled
-            //         /*update_frequency=*/100);
-            //     LOG_DEBUG("Progress bar initialized for {} total iterations", params_.optimization.iterations);
-            // }
+            if (params.optimization.headless) {
+                progress_ = std::make_unique<TrainingProgress>(
+                    params_.optimization.iterations, // This now includes sparsity steps if enabled
+                    /*update_frequency=*/100);
+                LOG_DEBUG("Progress bar initialized for {} total iterations", params_.optimization.iterations);
+            }
 
             // TODO: Port metrics to LibTorch-free implementation
             // Initialize the evaluator - it handles all metrics internally
@@ -449,18 +447,16 @@ namespace lfs::training {
         // Handle pause/resume
         if (pause_requested_.load() && !is_paused_.load()) {
             is_paused_ = true;
-            // TODO: Port progress to LibTorch-free implementation
-            // if (progress_) {
-            //     progress_->pause();
-            // }
+            if (progress_) {
+                progress_->pause();
+            }
             LOG_INFO("Training paused at iteration {}", iter);
             LOG_DEBUG("Click 'Resume Training' to continue.");
         } else if (!pause_requested_.load() && is_paused_.load()) {
             is_paused_ = false;
-            // TODO: Port progress to LibTorch-free implementation
-            // if (progress_) {
-            //     progress_->resume(iter, current_loss_.load(), static_cast<int>(strategy_->get_model().size()));
-            // }
+            if (progress_) {
+                progress_->resume(iter, current_loss_.load(), static_cast<int>(strategy_->get_model().size()));
+            }
             LOG_INFO("Training resumed at iteration {}", iter);
         }
 
@@ -576,7 +572,7 @@ namespace lfs::training {
         //
         // // Fast path: modulation disabled: return base background_
         // if (!opt.bg_modulation) {
-        return background_;
+            return background_;
         // }
         //
         // const float w_mix = inv_weight_piecewise(iter, opt.iterations);
@@ -610,13 +606,13 @@ namespace lfs::training {
             //         return std::unexpected("Training on cameras with ortho model is not supported yet.");
             //     }
             // } else {
-            if (cam->radial_distortion().numel() != 0 ||
-                cam->tangential_distortion().numel() != 0) {
-                return std::unexpected("Distorted images detected.  You can use --gut option to train on cameras with distortion.");
-            }
-            if (cam->camera_model_type() != gsplat::CameraModelType::PINHOLE) {
-                return std::unexpected("You must use --gut option to train on cameras with non-pinhole model.");
-            }
+                if (cam->radial_distortion().numel() != 0 ||
+                    cam->tangential_distortion().numel() != 0) {
+                    return std::unexpected("Distorted images detected.  You can use --gut option to train on cameras with distortion.");
+                }
+                if (cam->camera_model_type() != gsplat::CameraModelType::PINHOLE) {
+                    return std::unexpected("You must use --gut option to train on cameras with non-pinhole model.");
+                }
             // }
 
             current_iteration_ = iter;
@@ -681,10 +677,10 @@ namespace lfs::training {
             // Use the render mode from parameters (FastGS backend only for now)
             // TODO: Port 3DGUT rasterizer to LibTorch-free implementation
             // if (!params_.optimization.gut) {
-            // FastGS backend
-            auto [output, ctx] = fast_rasterize_forward(*cam, strategy_->get_model(), bg);
-            r_output = output;
-            fast_raster_ctx = std::move(ctx);
+                // FastGS backend
+                auto [output, ctx] = fast_rasterize_forward(*cam, strategy_->get_model(), bg);
+                r_output = output;
+                fast_raster_ctx = std::move(ctx);
             // } else:
             //     // GUT backend: Use manual rasterizer (no autograd)
             //     auto [output, ctx] = rasterize_forward(*cam, strategy_->get_model(), bg,
@@ -782,13 +778,12 @@ namespace lfs::training {
             // Store the loss value immediately
             current_loss_ = loss_value;
 
-            // TODO: Port progress to LibTorch-free implementation
             // Update progress synchronously if needed
-            // if (progress_) {
-            //     progress_->update(iter, loss_value,
-            //                       static_cast<int>(strategy_->get_model().size()),
-            //                       strategy_->is_refining(iter));
-            // }
+            if (progress_) {
+                progress_->update(iter, loss_value,
+                                  static_cast<int>(strategy_->get_model().size()),
+                                  strategy_->is_refining(iter));
+            }
 
             // TODO: Port events system to use lfs::core events
             // Emit training progress event (throttled to reduce GUI updates)
@@ -905,17 +900,17 @@ namespace lfs::training {
                             //     rendered_timelapse_output = rasterize(*cam_to_use, strategy_->get_model(), bg, 1.0f, false,
                             //                                          false, RenderMode::RGB, nullptr);
                             // } else {
-                            rendered_timelapse_output = fast_rasterize(*cam_to_use, strategy_->get_model(), background_);
+                                rendered_timelapse_output = fast_rasterize(*cam_to_use, strategy_->get_model(), background_);
                             // }
 
                             // Get folder name to save in by stripping file extension
-                            std::string folder_name = lfs::loader::strip_extension(img_name);
+                            std::string folder_name = gs::loader::strip_extension(img_name);
 
                             auto output_path = params_.dataset.output_path / "timelapse" / folder_name;
                             std::filesystem::create_directories(output_path);
 
                             lfs::core::image_io::save_image_async(output_path / std::format("{:06d}.jpg", iter),
-                                                                  rendered_timelapse_output.image);
+                                                                   rendered_timelapse_output.image);
                         } else {
                             LOG_WARN("Timelapse image '{}' not found in dataset.", img_name);
                         }
@@ -965,9 +960,7 @@ namespace lfs::training {
 
         is_running_ = true; // Now we can start
         LOG_INFO("Starting training loop with {} workers", params_.optimization.num_workers);
-
-        // IMPORTANT: Initialize image loader BEFORE creating dataloader
-        // (dataloader worker threads will call CacheLoader::getInstance())
+        // initializing image loader
         auto& cache_loader = lfs::loader::CacheLoader::getInstance(params_.dataset.loading_params.use_cpu_memory, params_.dataset.loading_params.use_fs_cache);
         cache_loader.reset_cache();
         // in case we call getInstance multiple times and cache parameters/dataset were changed by user
@@ -979,15 +972,13 @@ namespace lfs::training {
             const int num_workers = params_.optimization.num_workers;
             const RenderMode render_mode = stringToRenderMode(params_.optimization.render_mode);
 
-            // TODO: Port progress to LibTorch-free implementation
-            // if (progress_) {
-            //     progress_->update(iter, current_loss_.load(),
-            //                       static_cast<int>(strategy_->get_model().size()),
-            //                       strategy_->is_refining(iter));
-            // }
+            if (progress_) {
+                progress_->update(iter, current_loss_.load(),
+                                  static_cast<int>(strategy_->get_model().size()),
+                                  strategy_->is_refining(iter));
+            }
 
             // Use infinite dataloader to avoid epoch restarts
-            // (worker threads start immediately and will use CacheLoader)
             auto train_dataloader = create_infinite_dataloader_from_dataset(train_dataset_, num_workers);
 
             LOG_DEBUG("Starting training iterations");
@@ -1061,15 +1052,14 @@ namespace lfs::training {
                 //     .emit();
             }
 
-            // TODO: Port progress to LibTorch-free implementation
-            // if (progress_) {
-            //     progress_->complete();
-            // }
+            if (progress_) {
+                progress_->complete();
+            }
             // TODO: Port metrics to LibTorch-free implementation
             // evaluator_->save_report();
-            // if (progress_) {
-            //     progress_->print_final_summary(static_cast<int>(strategy_->get_model().size()));
-            // }
+            if (progress_) {
+                progress_->print_final_summary(static_cast<int>(strategy_->get_model().size()));
+            }
 
             is_running_ = false;
             training_complete_ = true;

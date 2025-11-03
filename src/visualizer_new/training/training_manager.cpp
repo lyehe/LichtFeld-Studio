@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "training/training_manager.hpp"
+#include "core_new/events.hpp"
 #include "core_new/logger.hpp"
 #include "training_new/training_setup.hpp"
 #include <cstring>

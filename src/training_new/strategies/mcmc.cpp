@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "mcmc.hpp"
-#include "core_new/logger.hpp"
 #include "kernels/mcmc_kernels.hpp"
 #include "strategy_utils.hpp"
+#include "core_new/logger.hpp"
 #include <cmath>
 
 namespace lfs::training {
@@ -29,7 +29,8 @@ namespace lfs::training {
         _optimizer->relocate_params_at_indices_gpu(
             param_type,
             sampled_indices.ptr<int64_t>(),
-            sampled_indices.numel());
+            sampled_indices.numel()
+        );
     }
 
     int MCMC::relocate_gs() {
@@ -89,7 +90,8 @@ namespace lfs::training {
             n_max,
             new_opacities.ptr<float>(),
             new_scales.ptr<float>(),
-            sampled_opacities.numel());
+            sampled_opacities.numel()
+        );
 
         // Clamp new opacities
         new_opacities = new_opacities.clamp(_params->min_opacity, 1.0f - 1e-7f);
@@ -176,37 +178,44 @@ namespace lfs::training {
             n_max,
             new_opacities.ptr<float>(),
             new_scales.ptr<float>(),
-            sampled_opacities.numel());
+            sampled_opacities.numel()
+        );
 
         // Clamp new opacities
         new_opacities = new_opacities.clamp(_params->min_opacity, 1.0f - 1e-7f);
 
-        // Update existing Gaussians FIRST (before concatenation)
+        // Prepare new opacity and scaling values (after relocation)
         Tensor new_opacity_raw = (new_opacities / (Tensor::ones_like(new_opacities) - new_opacities)).log();
+        Tensor new_scaling_raw = new_scales.log();
 
         if (_splat_data.opacity_raw().ndim() == 2) {
             new_opacity_raw = new_opacity_raw.unsqueeze(-1);
         }
 
-        _splat_data.opacity_raw().index_put_(sampled_idxs, new_opacity_raw);
-        _splat_data.scaling_raw().index_put_(sampled_idxs, new_scales.log());
-
         // Prepare new Gaussians to concatenate
+        // For means, sh0, shN, rotation: copy from sampled indices
         auto new_means = _splat_data.means().index_select(0, sampled_idxs);
         auto new_sh0 = _splat_data.sh0().index_select(0, sampled_idxs);
         auto new_shN = _splat_data.shN().index_select(0, sampled_idxs);
-        auto new_scaling = _splat_data.scaling_raw().index_select(0, sampled_idxs);
         auto new_rotation = _splat_data.rotation_raw().index_select(0, sampled_idxs);
-        auto new_opacity = _splat_data.opacity_raw().index_select(0, sampled_idxs);
+        // For opacity and scaling: use the relocated (modified) values directly
+        auto new_opacity = new_opacity_raw;
+        auto new_scaling = new_scaling_raw;
 
         // Concatenate all parameters using optimizer's add_new_params
-        // Note: add_new_params automatically updates both parameters and optimizer state
+        // Note: add_new_params REPLACES the parameter tensors with concatenated versions
         _optimizer->add_new_params(ParamType::Means, new_means);
         _optimizer->add_new_params(ParamType::Sh0, new_sh0);
         _optimizer->add_new_params(ParamType::ShN, new_shN);
         _optimizer->add_new_params(ParamType::Scaling, new_scaling);
         _optimizer->add_new_params(ParamType::Rotation, new_rotation);
         _optimizer->add_new_params(ParamType::Opacity, new_opacity);
+
+        // CRITICAL: Now update the original sampled Gaussians with relocated opacity/scaling
+        // This must be done AFTER add_new_params because add_new_params replaces the tensors
+        // Update at the original indices (0 to current_n-1), not the concatenated indices
+        _splat_data.opacity_raw().index_put_(sampled_idxs, new_opacity_raw);
+        _splat_data.scaling_raw().index_put_(sampled_idxs, new_scaling_raw);
 
         return n_new;
     }
@@ -228,7 +237,8 @@ namespace lfs::training {
             noise.ptr<float>(),
             _splat_data.means().ptr<float>(),
             current_lr,
-            _splat_data.size());
+            _splat_data.size()
+        );
     }
 
     void MCMC::post_backward(int iter, RenderOutput& render_output) {
@@ -249,7 +259,7 @@ namespace lfs::training {
             int n_added = add_new_gs();
             if (n_added > 0) {
                 LOG_DEBUG("MCMC: Added {} new Gaussians at iteration {} (total: {})",
-                          n_added, iter, _splat_data.size());
+                         n_added, iter, _splat_data.size());
             }
         }
 

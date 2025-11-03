@@ -687,6 +687,10 @@ namespace lfs::core {
         auto idx_same_device = ensure_same_device(idx);
         auto vals_same_device = ensure_same_device(vals);
 
+        // Check if this is row-wise assignment (idx is 1D, vals is multi-dimensional)
+        // Example: tensor[indices] = values where tensor:[N,M], indices:[K], values:[K,M]
+        bool is_row_assignment = (idx_same_device.ndim() == 1 && vals_same_device.ndim() >= 2 && ndim() >= 2);
+
         // Helper lambda for index_put_ implementation
         auto index_put_impl = [&]<typename DataT, typename IndexT>() {
             if (device_ == Device::CUDA) {
@@ -699,38 +703,80 @@ namespace lfs::core {
                 DataT* data = cpu_tensor.ptr<DataT>();
                 const IndexT* indices = cpu_idx.ptr<IndexT>();
                 const DataT* values = cpu_vals.ptr<DataT>();
-                size_t num_elements = cpu_tensor.numel();
 
-                for (size_t i = 0; i < cpu_idx.numel(); ++i) {
-                    IndexT pos = indices[i];
-                    if (pos < 0)
-                        pos += num_elements;
-                    if (pos >= 0 && pos < static_cast<IndexT>(num_elements)) {
-                        data[pos] = values[i];
+                if (is_row_assignment) {
+                    // Row-wise assignment: copy entire rows
+                    size_t row_size = 1;
+                    for (size_t i = 1; i < cpu_tensor.ndim(); ++i) {
+                        row_size *= cpu_tensor.shape()[i];
+                    }
+                    size_t num_rows = cpu_tensor.shape()[0];
+
+                    for (size_t i = 0; i < cpu_idx.numel(); ++i) {
+                        IndexT row_idx = indices[i];
+                        if (row_idx < 0)
+                            row_idx += num_rows;
+                        if (row_idx >= 0 && row_idx < static_cast<IndexT>(num_rows)) {
+                            // Copy entire row
+                            std::memcpy(data + row_idx * row_size,
+                                       values + i * row_size,
+                                       row_size * sizeof(DataT));
+                        }
+                    }
+                } else {
+                    // Element-wise assignment
+                    size_t num_elements = cpu_tensor.numel();
+                    for (size_t i = 0; i < cpu_idx.numel(); ++i) {
+                        IndexT pos = indices[i];
+                        if (pos < 0)
+                            pos += num_elements;
+                        if (pos >= 0 && pos < static_cast<IndexT>(num_elements)) {
+                            data[pos] = values[i];
+                        }
                     }
                 }
 
                 *this = cpu_tensor.to(device_);
             } else {
-                // CPU implementation with parallel execution
+                // CPU implementation
                 DataT* data = ptr<DataT>();
                 const IndexT* indices = idx_same_device.ptr<IndexT>();
                 const DataT* values = vals_same_device.ptr<DataT>();
-                size_t num_elements = numel();
 
-                // IMPORTANT: Use sequential execution to avoid TBB threading issues with CUDA
-                // TBB worker threads don't have CUDA device context, causing cudaErrorInvalidDevice
-                std::for_each(std::execution::seq,
-                              std::views::iota(size_t(0), idx.numel()).begin(),
-                              std::views::iota(size_t(0), idx.numel()).end(),
-                              [data, indices, values, num_elements](size_t i) {
-                                  IndexT pos = indices[i];
-                                  if (pos < 0)
-                                      pos += num_elements;
-                                  if (pos >= 0 && pos < static_cast<IndexT>(num_elements)) {
-                                      data[pos] = values[i];
-                                  }
-                              });
+                if (is_row_assignment) {
+                    // Row-wise assignment
+                    size_t row_size = 1;
+                    for (size_t i = 1; i < ndim(); ++i) {
+                        row_size *= shape()[i];
+                    }
+                    size_t num_rows = shape()[0];
+
+                    for (size_t i = 0; i < idx_same_device.numel(); ++i) {
+                        IndexT row_idx = indices[i];
+                        if (row_idx < 0)
+                            row_idx += num_rows;
+                        if (row_idx >= 0 && row_idx < static_cast<IndexT>(num_rows)) {
+                            // Copy entire row
+                            std::memcpy(data + row_idx * row_size,
+                                       values + i * row_size,
+                                       row_size * sizeof(DataT));
+                        }
+                    }
+                } else {
+                    // Element-wise assignment
+                    size_t num_elements = numel();
+                    std::for_each(std::execution::seq,
+                                  std::views::iota(size_t(0), idx.numel()).begin(),
+                                  std::views::iota(size_t(0), idx.numel()).end(),
+                                  [data, indices, values, num_elements](size_t i) {
+                                      IndexT pos = indices[i];
+                                      if (pos < 0)
+                                          pos += num_elements;
+                                      if (pos >= 0 && pos < static_cast<IndexT>(num_elements)) {
+                                          data[pos] = values[i];
+                                      }
+                                  });
+                }
             }
         };
 

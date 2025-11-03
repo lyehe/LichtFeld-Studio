@@ -136,11 +136,11 @@ namespace lfs::vis::gui {
         // Set application icon - use the resource path helper
         try {
             const auto icon_path = lfs::vis::getAssetPath("lichtfeld-icon.png");
-            const auto [data, width, height, channels] = load_image_with_alpha(icon_path);
+            const auto [data, width, height, channels] = lfs::core::load_image_with_alpha(icon_path);
 
             GLFWimage image{width, height, data};
             glfwSetWindowIcon(viewer_->getWindow(), 1, &image);
-            free_image(data);
+            lfs::core::free_image(data);
         } catch (const std::exception& e) {
             LOG_WARN("Could not load application icon: {}", e.what());
         }

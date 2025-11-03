@@ -8,21 +8,20 @@
 #include "components/bilateral_grid.hpp"
 #include "components/sparsity_optimizer.hpp"
 // #include "components/poseopt.hpp"
-#include "core_new/events.hpp"
+#include "core/events.hpp"         // Using old events system for now
 #include "core_new/parameters.hpp"
 #include "dataset.hpp"
-#include "lfs/kernels/bilateral_grid.cuh" // Kernels are ported
+#include "lfs/kernels/bilateral_grid.cuh"  // Kernels are ported
 // TODO: Port metrics to LibTorch-free implementation
 // #include "metrics/metrics.hpp"
 #include "optimizer/scheduler.hpp"
-// TODO: Port progress to LibTorch-free implementation
-// #include "progress.hpp"
-#include "project/project.hpp" // Using old project system for now
+#include "progress.hpp"
+#include "project/project.hpp"  // Using old project system for now
 // TODO: Port 3DGUT rasterizer to LibTorch-free implementation
 // #include "rasterization/rasterizer.hpp"
+#include "strategies/istrategy.hpp"
 #include "core_new/camera.hpp"
 #include "core_new/tensor.hpp"
-#include "strategies/istrategy.hpp"
 #include <atomic>
 #include <expected>
 #include <memory>
@@ -175,13 +174,12 @@ namespace lfs::training {
 
         lfs::core::Tensor background_{};
         lfs::core::Tensor bg_mix_buffer_;
-        // TODO: Port progress to LibTorch-free implementation
-        // std::unique_ptr<TrainingProgress> progress_;
+        std::unique_ptr<TrainingProgress> progress_;
         size_t train_dataset_size_ = 0;
 
         // Bilateral grid components
         std::unique_ptr<BilateralGrid> bilateral_grid_;
-        std::unique_ptr<lfs::training::AdamOptimizer> bilateral_grid_optimizer_; // Use ported Adam
+        std::unique_ptr<lfs::training::AdamOptimizer> bilateral_grid_optimizer_;  // Use ported Adam
         std::unique_ptr<WarmupExponentialLR> bilateral_grid_scheduler_;
 
         // TODO: Port pose optimization to LibTorch-free implementation

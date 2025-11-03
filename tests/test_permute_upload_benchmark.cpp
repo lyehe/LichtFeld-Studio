@@ -796,3 +796,4 @@ TEST_F(PermuteUploadBenchmarkTest, ContiguousVsStridedTransfer) {
     std::cout << "  - Non-contiguous transfers may trigger gather/copy operations" << std::endl;
     std::cout << "  - Large difference indicates need for contiguous() call before transfer" << std::endl;
 }
+

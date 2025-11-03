@@ -57,6 +57,10 @@ set(OPTIONAL_TEST_FILES
     test_tensor_move.cpp
     test_mcmc.cpp
     test_loader_comparison.cpp  # Comprehensive comparison between old and new loaders
+    test_ply_loading_comparison.cpp  # PLY loading comparison between legacy and new
+    test_ply_save_comparison.cpp  # PLY saving comparison between legacy and new
+    test_mcmc_add_new_gs_comparison.cpp  # Compare MCMC add_new_gs between legacy and new
+    test_training_debug.cpp     # Training debug module - compare legacy vs new training
     test_tensor_benchmark.cpp
     test_memory_pool_benchmark.cpp  # benchmarks CudaMemoryPool (now internal)
     test_broadcast_benchmark.cpp
@@ -88,8 +92,6 @@ set(OPTIONAL_TEST_FILES
     test_default_strategy_operations_comparison.cpp
     test_dtype_operations_comprehensive.cpp
     test_tensor_bugs.cpp
-    test_tensor_struct_init.cpp
-    benchmark_slice_assignment.cpp
     test_densification_performance.cpp
     test_densification_old_vs_new.cpp
     test_densification_profile.cpp
@@ -144,6 +146,7 @@ target_link_libraries(lichtfeld_tests PRIVATE
     gs_rendering
     gs_training
     gs_training_kernels
+    gs_training_debug  # Training debug module for comparison
     gs_project
     gs_geometry
     gs_core

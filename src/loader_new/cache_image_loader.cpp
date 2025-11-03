@@ -323,12 +323,12 @@ namespace lfs::loader {
 
         if (is_image_being_loaded) {
             LOG_DEBUG("Image {} is being loaded by another thread, loading directly", cache_key);
-            return load_image(path, params.resize_factor, params.max_width);
+            return lfs::core::load_image(path, params.resize_factor, params.max_width);
         }
 
         // Load the image
 
-        auto [img_data, width, height, channels] = load_image(path, params.resize_factor, params.max_width);
+        auto [img_data, width, height, channels] = lfs::core::load_image(path, params.resize_factor, params.max_width);
 
         if (img_data == nullptr) {
             std::lock_guard<std::mutex> lock(cpu_cache_mutex_);
@@ -377,7 +377,7 @@ namespace lfs::loader {
 
     std::tuple<unsigned char*, int, int, int> CacheLoader::load_cached_image_from_fs(const std::filesystem::path& path, const LoadParams& params) {
         if (cache_folder_.empty()) {
-            return load_image(path, params.resize_factor, params.max_width);
+            return lfs::core::load_image(path, params.resize_factor, params.max_width);
         }
 
         std::string unique_name = std::format("rf_{}_mw_{}_", params.resize_factor, params.max_width) + path.filename().string();
@@ -387,10 +387,10 @@ namespace lfs::loader {
         std::tuple<unsigned char*, int, int, int> result;
         if (does_cache_image_exists(cache_img_path)) {
             // Load image synchronously
-            result = load_image(cache_img_path);
+            result = lfs::core::load_image(cache_img_path);
         } else {
 
-            result = load_image(path, params.resize_factor, params.max_width);
+            result = lfs::core::load_image(path, params.resize_factor, params.max_width);
 
             // we want only one thread to save the data - if we enter this scope either we save the image or it exists
             bool is_image_being_saved = false;
@@ -405,7 +405,7 @@ namespace lfs::loader {
             }
 
             if (!is_image_being_saved) { // only one thread should enter this scope
-                bool success = save_img_data(cache_img_path, result);
+                bool success = lfs::core::save_img_data(cache_img_path, result);
 
                 if (!success) {
                     throw std::runtime_error("failed saving image" + path.filename().string() + " in cache folder " + cache_folder_.string());
@@ -444,9 +444,9 @@ namespace lfs::loader {
             }
             clear_cpu_cache(); // cache does not suppose to be occupied
 
-            auto [img_data, width, height, channels] = load_image(path, params.resize_factor, params.max_width);
+            auto [img_data, width, height, channels] = lfs::core::load_image(path, params.resize_factor, params.max_width);
 
-            free_image(img_data);
+            lfs::core::free_image(img_data);
 
             std::size_t img_size = static_cast<std::size_t>(width) * height * channels;
             std::size_t required_bytes = img_size * num_expected_images_;
@@ -464,7 +464,7 @@ namespace lfs::loader {
                     LOG_INFO("skip cpu memory cache by user");
                 }
 
-                auto [org_width, org_height, org_channels] = get_image_info(path);
+                auto [org_width, org_height, org_channels] = lfs::core::get_image_info(path);
                 if (use_fs_cache_ && (params.resize_factor > 1 || params.max_width < org_width)) {
                     LOG_INFO("Images are preprocessed. Changing Cache to FS Mode");
                     cache_mode_ = CacheMode::FileSystem;
@@ -491,7 +491,7 @@ namespace lfs::loader {
             return load_cached_image_from_fs(path, params);
         }
 
-        return load_image(path, params.resize_factor, params.max_width);
+        return lfs::core::load_image(path, params.resize_factor, params.max_width);
     }
 
     void CacheLoader::print_cache_status() const {
