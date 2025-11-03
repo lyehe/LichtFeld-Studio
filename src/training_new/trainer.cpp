@@ -8,6 +8,7 @@
 #include "components/bilateral_grid.hpp"
 #include "components/sparsity_optimizer.hpp"
 // #include "components/poseopt.hpp"
+#include "core_new/events.hpp"
 #include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
 #include "optimizer/adam_optimizer.hpp"
@@ -785,17 +786,16 @@ namespace lfs::training {
                                   strategy_->is_refining(iter));
             }
 
-            // TODO: Port events system to use lfs::core events
             // Emit training progress event (throttled to reduce GUI updates)
-            // if (iter % 10 == 0 || iter == 1) {
-            //     // Only update every 10 iterations
-            //     events::state::TrainingProgress{
-            //         .iteration = iter,
-            //         .loss = loss_value,
-            //         .num_gaussians = static_cast<int>(strategy_->get_model().size()),
-            //         .is_refining = strategy_->is_refining(iter)}
-            //         .emit();
-            // }
+            if (iter % 10 == 0 || iter == 1) {
+                // Only update every 10 iterations
+                lfs::core::events::state::TrainingProgress{
+                    .iteration = iter,
+                    .loss = loss_value,
+                    .num_gaussians = static_cast<int>(strategy_->get_model().size()),
+                    .is_refining = strategy_->is_refining(iter)}
+                    .emit();
+            }
             {
                 // TODO: Port to LibTorch-free implementation
                 // torch::NoGradGuard no_grad;
