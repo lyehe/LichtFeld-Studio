@@ -429,7 +429,7 @@ __global__ void fusedssim_backwardCUDA(
 // LibTorch-Free API
 namespace lfs::training::kernels {
 
-std::pair<float, SSIMContext> ssim_forward(
+std::pair<lfs::core::Tensor, SSIMContext> ssim_forward(
     const lfs::core::Tensor& img1_input,
     const lfs::core::Tensor& img2_input,
     bool apply_valid_padding) {
@@ -488,7 +488,8 @@ std::pair<float, SSIMContext> ssim_forward(
     }
 
     // Use tensor library's optimized mean (warp reductions + vectorized loads)
-    float ssim_value = ssim_map_cropped.mean().item<float>();
+    // CRITICAL FIX: Return Tensor (on GPU) instead of syncing to CPU with .item<float>()!
+    lfs::core::Tensor ssim_value_tensor = ssim_map_cropped.mean();  // Keep on GPU!
 
     // Save context for backward
     SSIMContext ctx;
@@ -501,7 +502,7 @@ std::pair<float, SSIMContext> ssim_forward(
     ctx.original_w = w;
     ctx.apply_valid_padding = apply_valid_padding;
 
-    return {ssim_value, ctx};
+    return {ssim_value_tensor, ctx};
 }
 
 lfs::core::Tensor ssim_backward(

@@ -29,10 +29,10 @@ struct ScaleRegularization {
      * @param scaling_raw [N, 3] raw scaling parameters
      * @param scaling_raw_grad [N, 3] gradient tensor (will be accumulated to)
      * @param params Loss parameters
-     * @return loss_value or error
+     * @return loss_tensor (GPU) or error - loss stays on GPU!
      * @note Accumulates gradients directly to scaling_raw_grad
      */
-    static std::expected<float, std::string> forward(
+    static std::expected<lfs::core::Tensor, std::string> forward(
         const lfs::core::Tensor& scaling_raw,
         lfs::core::Tensor& scaling_raw_grad,
         const Params& params);
@@ -57,10 +57,10 @@ struct OpacityRegularization {
      * @param opacity_raw [N, 1] raw opacity parameters
      * @param opacity_raw_grad [N, 1] gradient tensor (will be accumulated to)
      * @param params Loss parameters
-     * @return loss_value or error
+     * @return loss_tensor (GPU) or error - loss stays on GPU!
      * @note Accumulates gradients directly to opacity_raw_grad
      */
-    static std::expected<float, std::string> forward(
+    static std::expected<lfs::core::Tensor, std::string> forward(
         const lfs::core::Tensor& opacity_raw,
         lfs::core::Tensor& opacity_raw_grad,
         const Params& params);

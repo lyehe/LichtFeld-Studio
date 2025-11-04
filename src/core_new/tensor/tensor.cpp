@@ -504,7 +504,7 @@ namespace lfs::core {
     }
 
     // ============= Device Transfer =============
-    Tensor Tensor::to(Device device) const {
+    Tensor Tensor::to(Device device, cudaStream_t stream) const {
         if (!is_valid()) {
             LOG_ERROR("Cannot transfer invalid tensor to device");
             return Tensor();
@@ -618,14 +618,27 @@ namespace lfs::core {
         if (device_ == Device::CPU && device == Device::CUDA) {
             // Use cudaMemcpyAsync with pinned memory for maximum PCIe bandwidth (~7-11 GB/s)
             // CPU tensor now uses pinned memory (allocated via PinnedMemoryAllocator)
-            CHECK_CUDA(cudaMemcpyAsync(t.data_, src, bytes(), cudaMemcpyHostToDevice, 0));
-            CHECK_CUDA(cudaDeviceSynchronize()); // Ensure transfer completes before returning
+            cudaStream_t transfer_stream = stream ? stream : 0;
+            CHECK_CUDA(cudaMemcpyAsync(t.data_, src, bytes(), cudaMemcpyHostToDevice, transfer_stream));
+
+            // If stream is provided, caller is responsible for sync
+            if (!stream) {
+                CHECK_CUDA(cudaDeviceSynchronize()); // Ensure transfer completes before returning
+            }
         } else if (device_ == Device::CUDA && device == Device::CPU) {
             // API BOUNDARY: Sync before GPU→CPU transfer
-            cudaDeviceSynchronize();
+            if (stream) {
+                cudaStreamSynchronize(stream);
+            } else {
+                cudaDeviceSynchronize();
+            }
             // Async transfer for GPU→CPU as well (destination is pinned)
-            CHECK_CUDA(cudaMemcpyAsync(t.data_, src, bytes(), cudaMemcpyDeviceToHost, 0));
-            CHECK_CUDA(cudaDeviceSynchronize()); // Ensure transfer completes before returning
+            cudaStream_t transfer_stream = stream ? stream : 0;
+            CHECK_CUDA(cudaMemcpyAsync(t.data_, src, bytes(), cudaMemcpyDeviceToHost, transfer_stream));
+
+            if (!stream) {
+                CHECK_CUDA(cudaDeviceSynchronize()); // Ensure transfer completes before returning
+            }
         }
 
         return t;

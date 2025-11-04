@@ -124,16 +124,19 @@ namespace lfs::training {
             std::stop_token stop_token = {});
 
         // Compute photometric loss AND gradient manually (no autograd)
-        std::expected<std::pair<float, lfs::core::Tensor>, std::string> compute_photometric_loss_with_gradient(
+        // Returns GPU tensor for loss (avoid sync!)
+        std::expected<std::pair<lfs::core::Tensor, lfs::core::Tensor>, std::string> compute_photometric_loss_with_gradient(
             const lfs::core::Tensor& rendered,
             const lfs::core::Tensor& gt_image,
             const lfs::core::param::OptimizationParameters& opt_params);
 
-        std::expected<float, std::string> compute_scale_reg_loss(
+        // Returns GPU tensor for loss (avoid sync!)
+        std::expected<lfs::core::Tensor, std::string> compute_scale_reg_loss(
             lfs::core::SplatData& splatData,
             const lfs::core::param::OptimizationParameters& opt_params);
 
-        std::expected<float, std::string> compute_opacity_reg_loss(
+        // Returns GPU tensor for loss (avoid sync!)
+        std::expected<lfs::core::Tensor, std::string> compute_opacity_reg_loss(
             lfs::core::SplatData& splatData,
             const lfs::core::param::OptimizationParameters& opt_params);
 

@@ -387,9 +387,6 @@ namespace lfs::core::tensor_ops {
         cub::DeviceScan::ExclusiveSum(temp_storage.get(), temp_bytes,
                                       mask, scan_result.get(), n, stream);
 
-        if (stream != 0)
-            cudaStreamSynchronize(stream);
-
         int blocks = (n + 255) / 256;
         masked_scatter_compact_kernel<<<blocks, 256, 0, stream>>>(
             data, mask, src, scan_result.get(), n);
@@ -442,13 +439,9 @@ namespace lfs::core::tensor_ops {
                                          data_ptr, data_ptr + n,
                                          ops::is_nonzero_bool_op());
 
-        // Then write to device memory
-        cudaMemcpyAsync(count, &result, sizeof(size_t), cudaMemcpyHostToDevice, stream);
-
-        // Ensure the copy completes before we return (and potentially destroy 'result')
-        if (stream) {
-            cudaStreamSynchronize(stream);
-        }
+        // Write to device memory (use sync copy since result is stack variable)
+        // OPTIMIZATION: cudaMemcpy (blocking) is more efficient than cudaMemcpyAsync + cudaStreamSynchronize
+        cudaMemcpy(count, &result, sizeof(size_t), cudaMemcpyHostToDevice);
     }
 
     void launch_count_nonzero_float(const float* data, size_t* count, size_t n, cudaStream_t stream) {
@@ -465,12 +458,9 @@ namespace lfs::core::tensor_ops {
                                          ops::is_nonzero_op<float>());
 
         // Then write to device memory
-        cudaMemcpyAsync(count, &result, sizeof(size_t), cudaMemcpyHostToDevice, stream);
-
-        // Ensure the copy completes before we return (and potentially destroy 'result')
-        if (stream) {
-            cudaStreamSynchronize(stream);
-        }
+        // Write to device memory (use sync copy since result is stack variable)
+        // OPTIMIZATION: cudaMemcpy (blocking) is more efficient than cudaMemcpyAsync + cudaStreamSynchronize
+        cudaMemcpy(count, &result, sizeof(size_t), cudaMemcpyHostToDevice);
     }
 
     // ============= Index Operations =============

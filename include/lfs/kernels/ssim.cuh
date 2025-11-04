@@ -20,8 +20,7 @@ struct SSIMContext {
     bool apply_valid_padding;
 };
 
-// Manual SSIM forward (no autograd) - returns (loss_value, context)
-std::pair<float, SSIMContext> ssim_forward(
+std::pair<lfs::core::Tensor, SSIMContext> ssim_forward(
     const lfs::core::Tensor& img1,
     const lfs::core::Tensor& img2,
     bool apply_valid_padding = true);

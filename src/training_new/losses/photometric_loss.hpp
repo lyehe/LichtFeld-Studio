@@ -23,7 +23,8 @@ struct PhotometricLoss {
     };
 
     struct Context {
-        lfs::core::Tensor grad_image; ///< [H, W, C] gradient w.r.t. rendered image
+        lfs::core::Tensor loss_tensor; ///< [1] scalar loss on GPU (avoid sync!)
+        lfs::core::Tensor grad_image;  ///< [H, W, C] gradient w.r.t. rendered image
     };
 
     /**
@@ -31,9 +32,9 @@ struct PhotometricLoss {
      * @param rendered [H, W, C] rendered image
      * @param gt_image [H, W, C] ground truth image
      * @param params Loss parameters
-     * @return (loss_value, context) or error
+     * @return (loss_tensor, context) or error - loss stays on GPU!
      */
-    static std::expected<std::pair<float, Context>, std::string> forward(
+    static std::expected<std::pair<lfs::core::Tensor, Context>, std::string> forward(
         const lfs::core::Tensor& rendered,
         const lfs::core::Tensor& gt_image,
         const Params& params);

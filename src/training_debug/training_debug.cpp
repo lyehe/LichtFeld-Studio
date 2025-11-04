@@ -817,7 +817,8 @@ std::expected<void, std::string> run_training_loop_comparison(
         if (!new_loss_result) {
             return std::unexpected(std::format("New loss computation failed: {}", new_loss_result.error()));
         }
-        auto [new_loss_value, new_loss_ctx] = *new_loss_result;
+        auto [new_loss_tensor, new_loss_ctx] = *new_loss_result;
+        float new_loss_value = new_loss_tensor.item<float>();  // Extract scalar from tensor
 
         spdlog::info("[{}] Loss - Legacy: {:.6f}, New: {:.6f}, Diff: {:.6f}",
                      iter,

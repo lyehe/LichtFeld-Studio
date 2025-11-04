@@ -105,7 +105,79 @@ namespace lfs::core {
 
         _FoVx = focal2fov(_focal_x, _camera_width);
         _FoVy = focal2fov(_focal_y, _camera_height);
+
+        // Create CUDA stream for async image loading (like reference implementation)
+        cudaStreamCreate(&_stream);
     }
+
+    Camera::~Camera() {
+        // Destroy CUDA stream if it was created
+        if (_stream) {
+            cudaStreamDestroy(_stream);
+            _stream = nullptr;
+        }
+    }
+
+    Camera::Camera(Camera&& other) noexcept
+        : _FoVx(other._FoVx),
+          _FoVy(other._FoVy),
+          _uid(other._uid),
+          _focal_x(other._focal_x),
+          _focal_y(other._focal_y),
+          _center_x(other._center_x),
+          _center_y(other._center_y),
+          _R(std::move(other._R)),
+          _T(std::move(other._T)),
+          _radial_distortion(std::move(other._radial_distortion)),
+          _tangential_distortion(std::move(other._tangential_distortion)),
+          _image_path(std::move(other._image_path)),
+          _image_name(std::move(other._image_name)),
+          _camera_width(other._camera_width),
+          _camera_height(other._camera_height),
+          _image_width(other._image_width),
+          _image_height(other._image_height),
+          _world_view_transform(std::move(other._world_view_transform)),
+          _cam_position(std::move(other._cam_position)),
+          _stream(other._stream) {
+        // Take ownership of the stream
+        other._stream = nullptr;
+    }
+
+    Camera& Camera::operator=(Camera&& other) noexcept {
+        if (this != &other) {
+            // Destroy our current stream
+            if (_stream) {
+                cudaStreamDestroy(_stream);
+            }
+
+            // Move all members
+            _FoVx = other._FoVx;
+            _FoVy = other._FoVy;
+            _uid = other._uid;
+            _focal_x = other._focal_x;
+            _focal_y = other._focal_y;
+            _center_x = other._center_x;
+            _center_y = other._center_y;
+            _R = std::move(other._R);
+            _T = std::move(other._T);
+            _radial_distortion = std::move(other._radial_distortion);
+            _tangential_distortion = std::move(other._tangential_distortion);
+            _image_path = std::move(other._image_path);
+            _image_name = std::move(other._image_name);
+            _camera_width = other._camera_width;
+            _camera_height = other._camera_height;
+            _image_width = other._image_width;
+            _image_height = other._image_height;
+            _world_view_transform = std::move(other._world_view_transform);
+            _cam_position = std::move(other._cam_position);
+
+            // Take ownership of the stream
+            _stream = other._stream;
+            other._stream = nullptr;
+        }
+        return *this;
+    }
+
     Camera::Camera(const Camera& other, const Tensor& transform)
         : _uid(other._uid),
           _focal_x(other._focal_x),
@@ -127,6 +199,9 @@ namespace lfs::core {
           _FoVx(other._FoVx),
           _FoVy(other._FoVy) {
         _world_view_transform = transform;
+
+        // Create CUDA stream for async image loading
+        cudaStreamCreate(&_stream);
     }
     Tensor Camera::K() const {
         // Create [1, 3, 3] zero matrix on same device as world_view_transform
@@ -183,11 +258,19 @@ namespace lfs::core {
         image = image.to(DataType::Float32) / 255.0f;
         image = image.permute({2, 0, 1}).contiguous();  // Make contiguous BEFORE CUDA transfer
 
-        // Transfer to CUDA
-        image = image.to(Device::CUDA);
+        // This allows image loading to overlap with GPU compute
+        // Transfer to CUDA using async stream transfer
+        image = image.to(Device::CUDA, _stream);
 
         // Free the original data
         free_image(data);
+
+        // Sync stream to ensure transfer completes before returning
+        if (_stream) {
+            cudaStreamSynchronize(_stream);
+        } else {
+            // If no stream, the sync already happened in .to()
+        }
 
         return image;
     }

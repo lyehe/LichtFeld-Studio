@@ -9,7 +9,7 @@
 
 namespace lfs::training::losses {
 
-std::expected<std::pair<float, PhotometricLoss::Context>, std::string>
+std::expected<std::pair<lfs::core::Tensor, PhotometricLoss::Context>, std::string>
 PhotometricLoss::forward(
     const lfs::core::Tensor& rendered,
     const lfs::core::Tensor& gt_image,
@@ -25,7 +25,7 @@ PhotometricLoss::forward(
         }
 
         lfs::core::Tensor grad_combined;
-        float total_loss;
+        lfs::core::Tensor loss_tensor_gpu;
 
         // Optimize: only compute what's needed based on lambda_dssim
         if (params.lambda_dssim == 0.0f) {
@@ -34,29 +34,28 @@ PhotometricLoss::forward(
             size_t num_blocks = std::min((N + 255) / 256, size_t(1024));
 
             grad_combined = lfs::core::Tensor::empty(rendered_4d.shape(), lfs::core::Device::CUDA);
-            auto loss_tensor = lfs::core::Tensor::zeros({1}, lfs::core::Device::CUDA);
+            loss_tensor_gpu = lfs::core::Tensor::zeros({1}, lfs::core::Device::CUDA);
             auto temp_buffer = lfs::core::Tensor::empty({num_blocks}, lfs::core::Device::CUDA);
 
             lfs::training::kernels::launch_fused_l1_loss(
                 rendered_4d.ptr<float>(),
                 gt_4d.ptr<float>(),
                 grad_combined.ptr<float>(),
-                loss_tensor.ptr<float>(),
+                loss_tensor_gpu.ptr<float>(),
                 temp_buffer.ptr<float>(),
                 N,
                 nullptr);
 
-            total_loss = loss_tensor.item<float>();
-
         } else if (params.lambda_dssim == 1.0f) {
             // Pure SSIM loss - skip L1 computation entirely
-            auto [ssim_value, ssim_ctx] = lfs::training::kernels::ssim_forward(
+            auto [ssim_value_tensor, ssim_ctx] = lfs::training::kernels::ssim_forward(
                 rendered_4d, gt_4d, /*apply_valid_padding=*/true);
-            float ssim_loss = 1.0f - ssim_value;
+
+            // Compute loss on GPU: loss = 1 - ssim (NO CPU SYNC!)
+            loss_tensor_gpu = lfs::core::Tensor::full({1}, 1.0f, lfs::core::Device::CUDA) - ssim_value_tensor;
 
             // Backward: d(loss)/d(ssim) = -1 (since loss = 1 - ssim)
             grad_combined = lfs::training::kernels::ssim_backward(ssim_ctx, -1.0f);
-            total_loss = ssim_loss;
 
         } else {
             // Combined loss - compute both
@@ -77,12 +76,14 @@ PhotometricLoss::forward(
                 N,
                 nullptr);
 
-            float l1_loss = l1_loss_tensor.item<float>();
+            // NO .item<float>() - keep on GPU!
 
             // SSIM component
-            auto [ssim_value, ssim_ctx] = lfs::training::kernels::ssim_forward(
+            auto [ssim_value_tensor, ssim_ctx] = lfs::training::kernels::ssim_forward(
                 rendered_4d, gt_4d, /*apply_valid_padding=*/true);
-            float ssim_loss = 1.0f - ssim_value;
+
+            // Compute SSIM loss on GPU: loss = 1 - ssim (NO CPU SYNC!)
+            auto ssim_loss_tensor = lfs::core::Tensor::full({1}, 1.0f, lfs::core::Device::CUDA) - ssim_value_tensor;
 
             // Backward: d(loss)/d(ssim) = -1 (since loss = 1 - ssim)
             auto grad_ssim = lfs::training::kernels::ssim_backward(ssim_ctx, -1.0f);
@@ -91,9 +92,9 @@ PhotometricLoss::forward(
             grad_combined = grad_l1 * (1.0f - params.lambda_dssim) +
                            grad_ssim * params.lambda_dssim;
 
-            // Compute total loss
-            total_loss = (1.0f - params.lambda_dssim) * l1_loss +
-                        params.lambda_dssim * ssim_loss;
+            // Combine losses on GPU (NO CPU SYNC!)
+            loss_tensor_gpu = l1_loss_tensor * (1.0f - params.lambda_dssim) +
+                             ssim_loss_tensor * params.lambda_dssim;
         }
 
         // Remove batch dimension if input was 3D
@@ -101,8 +102,11 @@ PhotometricLoss::forward(
             grad_combined = grad_combined.squeeze(0);
         }
 
-        Context ctx{.grad_image = grad_combined};
-        return std::make_pair(total_loss, ctx);
+        Context ctx{
+            .loss_tensor = loss_tensor_gpu,
+            .grad_image = grad_combined
+        };
+        return std::make_pair(loss_tensor_gpu, ctx);
     } catch (const std::exception& e) {
         return std::unexpected(std::format("Error computing photometric loss with gradient: {}", e.what()));
     }

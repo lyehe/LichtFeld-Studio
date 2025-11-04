@@ -1515,9 +1515,6 @@ namespace lfs::core::tensor_ops {
                     outer_size, dim_size, inner_size, outer, inner);
             }
         }
-
-        if (stream)
-            cudaStreamSynchronize(stream);
     }
 
     // ============= CONCATENATION OPERATIONS =============

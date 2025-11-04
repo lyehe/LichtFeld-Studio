@@ -8,13 +8,13 @@
 
 namespace lfs::training::losses {
 
-std::expected<float, std::string> ScaleRegularization::forward(
+std::expected<lfs::core::Tensor, std::string> ScaleRegularization::forward(
     const lfs::core::Tensor& scaling_raw,
     lfs::core::Tensor& scaling_raw_grad,
     const Params& params) {
     try {
         if (params.weight <= 0.0f) {
-            return 0.0f;
+            return lfs::core::Tensor::zeros({1}, lfs::core::Device::CUDA);
         }
 
         // Validate inputs
@@ -30,7 +30,7 @@ std::expected<float, std::string> ScaleRegularization::forward(
 
         size_t n = scaling_raw.numel();
         if (n == 0) {
-            return 0.0f;
+            return lfs::core::Tensor::zeros({1}, lfs::core::Device::CUDA);
         }
 
         // Allocate temporary buffers
@@ -48,22 +48,21 @@ std::expected<float, std::string> ScaleRegularization::forward(
             params.weight,
             nullptr);
 
-        // Copy result to host
-        float loss = loss_tensor.item<float>();
-        return loss;
+        // NO .item<float>() - keep on GPU!
+        return loss_tensor;
 
     } catch (const std::exception& e) {
         return std::unexpected(std::format("Error in ScaleRegularization::forward: {}", e.what()));
     }
 }
 
-std::expected<float, std::string> OpacityRegularization::forward(
+std::expected<lfs::core::Tensor, std::string> OpacityRegularization::forward(
     const lfs::core::Tensor& opacity_raw,
     lfs::core::Tensor& opacity_raw_grad,
     const Params& params) {
     try {
         if (params.weight <= 0.0f) {
-            return 0.0f;
+            return lfs::core::Tensor::zeros({1}, lfs::core::Device::CUDA);
         }
 
         // Validate inputs
@@ -79,7 +78,7 @@ std::expected<float, std::string> OpacityRegularization::forward(
 
         size_t n = opacity_raw.numel();
         if (n == 0) {
-            return 0.0f;
+            return lfs::core::Tensor::zeros({1}, lfs::core::Device::CUDA);
         }
 
         // Allocate temporary buffers
@@ -97,9 +96,8 @@ std::expected<float, std::string> OpacityRegularization::forward(
             params.weight,
             nullptr);
 
-        // Copy result to host
-        float loss = loss_tensor.item<float>();
-        return loss;
+        // NO .item<float>() - keep on GPU!
+        return loss_tensor;
 
     } catch (const std::exception& e) {
         return std::unexpected(std::format("Error in OpacityRegularization::forward: {}", e.what()));

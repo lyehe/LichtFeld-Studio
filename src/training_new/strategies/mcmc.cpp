@@ -180,7 +180,6 @@ namespace lfs::training {
                 opacity_dim,
                 N  // Pass N for bounds checking
             );
-            cudaDeviceSynchronize();
         }
 
         // Update optimizer states for all parameters

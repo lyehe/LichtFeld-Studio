@@ -83,7 +83,7 @@ TEST(LfsLossesTest, ScaleRegularization_Basic) {
     auto result = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, params);
 
     ASSERT_TRUE(result.has_value()) << result.error();
-    float new_loss = *result;
+    float new_loss = result->item<float>();  // Sync tensor to CPU
 
     // Compute with old implementation
     auto torch_scaling_raw = to_torch(scaling_raw);
@@ -109,7 +109,7 @@ TEST(LfsLossesTest, ScaleRegularization_ZeroWeight) {
     auto result = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, params);
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_FLOAT_EQ(*result, 0.0f);
+    EXPECT_FLOAT_EQ(result->item<float>(), 0.0f);
 
     // Gradient should be unchanged (all zeros)
     auto grad_vec = scaling_raw_grad.cpu().to_vector();
@@ -127,7 +127,7 @@ TEST(LfsLossesTest, ScaleRegularization_LargeScale) {
     auto result = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, params);
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_GT(*result, 0.0f);
+    EXPECT_GT(result->item<float>(), 0.0f);
 
     // Verify gradient is non-zero
     auto grad_sum = scaling_raw_grad.abs().sum();
@@ -150,7 +150,7 @@ TEST(LfsLossesTest, OpacityRegularization_Basic) {
     auto result = OpacityRegularization::forward(opacity_raw, opacity_raw_grad, params);
 
     ASSERT_TRUE(result.has_value()) << result.error();
-    float new_loss = *result;
+    float new_loss = result->item<float>();  // Sync tensor to CPU
 
     // Old implementation
     auto torch_opacity_raw = to_torch(opacity_raw);
@@ -173,7 +173,7 @@ TEST(LfsLossesTest, OpacityRegularization_ZeroWeight) {
     auto result = OpacityRegularization::forward(opacity_raw, opacity_raw_grad, params);
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_FLOAT_EQ(*result, 0.0f);
+    EXPECT_FLOAT_EQ(result->item<float>(), 0.0f);
 }
 
 TEST(LfsLossesTest, OpacityRegularization_GradientAccumulation) {
@@ -207,11 +207,14 @@ TEST(LfsLossesTest, PhotometricLoss_PureL1) {
     auto result = PhotometricLoss::forward(rendered, gt_image, params);
 
     ASSERT_TRUE(result.has_value()) << result.error();
-    auto [loss, ctx] = *result;
+    auto [loss_tensor, ctx] = *result;
 
     // Manually compute L1 loss
     auto diff = (rendered - gt_image).abs();
     float expected_loss = diff.mean().item<float>();
+
+    // Sync loss to CPU for comparison
+    float loss = loss_tensor.item<float>();
 
     EXPECT_TRUE(float_close(loss, expected_loss, 1e-5f, 1e-6f))
         << "L1 loss: " << loss << " vs expected: " << expected_loss;
@@ -232,7 +235,10 @@ TEST(LfsLossesTest, PhotometricLoss_PureSSIM) {
     auto result = PhotometricLoss::forward(rendered, gt_image, params);
 
     ASSERT_TRUE(result.has_value()) << result.error();
-    auto [loss, ctx] = *result;
+    auto [loss_tensor, ctx] = *result;
+
+    // Sync to CPU for comparison
+    float loss = loss_tensor.item<float>();
 
     // Loss should be in range [0, 2] (1 - SSIM, where SSIM is in [-1, 1])
     EXPECT_GE(loss, 0.0f);
@@ -256,21 +262,22 @@ TEST(LfsLossesTest, PhotometricLoss_Combined) {
     auto result = PhotometricLoss::forward(rendered, gt_image, params);
 
     ASSERT_TRUE(result.has_value()) << result.error();
-    auto [combined_loss, combined_ctx] = *result;
+    auto [combined_loss_tensor, combined_ctx] = *result;
 
     // Compute pure L1
     params.lambda_dssim = 0.0f;
     auto l1_result = PhotometricLoss::forward(rendered, gt_image, params);
     ASSERT_TRUE(l1_result.has_value());
-    float l1_loss = l1_result->first;
+    float l1_loss = l1_result->first.item<float>();
 
     // Compute pure SSIM
     params.lambda_dssim = 1.0f;
     auto ssim_result = PhotometricLoss::forward(rendered, gt_image, params);
     ASSERT_TRUE(ssim_result.has_value());
-    float ssim_loss = ssim_result->first;
+    float ssim_loss = ssim_result->first.item<float>();
 
     // Combined should be weighted average
+    float combined_loss = combined_loss_tensor.item<float>();
     float expected_combined = 0.8f * l1_loss + 0.2f * ssim_loss;
     EXPECT_TRUE(float_close(combined_loss, expected_combined, 1e-4f, 1e-5f))
         << "Combined: " << combined_loss << " vs expected: " << expected_combined;
@@ -285,7 +292,10 @@ TEST(LfsLossesTest, PhotometricLoss_IdenticalImages) {
     auto result = PhotometricLoss::forward(image, image, params);
 
     ASSERT_TRUE(result.has_value());
-    auto [loss, ctx] = *result;
+    auto [loss_tensor, ctx] = *result;
+
+    // Sync to CPU for comparison
+    float loss = loss_tensor.item<float>();
 
     // Loss should be very close to zero for identical images
     EXPECT_LT(loss, 1e-4f) << "Loss for identical images should be near zero";
@@ -368,7 +378,7 @@ TEST(LfsLossesTest, EdgeCase_SingleElement) {
     auto result = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, params);
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_GT(*result, 0.0f);
+    EXPECT_GT(result->item<float>(), 0.0f);
 }
 
 TEST(LfsLossesTest, EdgeCase_VeryLargeWeight) {
@@ -379,7 +389,7 @@ TEST(LfsLossesTest, EdgeCase_VeryLargeWeight) {
     auto result = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, params);
 
     ASSERT_TRUE(result.has_value());
-    EXPECT_GT(*result, 0.0f);
+    EXPECT_GT(result->item<float>(), 0.0f);
 }
 
 TEST(LfsLossesTest, EdgeCase_SmallImage) {

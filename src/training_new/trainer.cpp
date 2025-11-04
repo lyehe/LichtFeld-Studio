@@ -26,6 +26,7 @@
 #include <cuda_runtime.h>
 #include <expected>
 #include <memory>
+#include <nvtx3/nvToolsExt.h>
 
 namespace lfs::training {
 
@@ -112,7 +113,8 @@ namespace lfs::training {
     }
 
     // Compute photometric loss AND gradient manually (using loss struct)
-    std::expected<std::pair<float, lfs::core::Tensor>, std::string> Trainer::compute_photometric_loss_with_gradient(
+    // Returns GPU tensors (loss and gradient) - NO SYNC!
+    std::expected<std::pair<lfs::core::Tensor, lfs::core::Tensor>, std::string> Trainer::compute_photometric_loss_with_gradient(
         const lfs::core::Tensor& rendered,
         const lfs::core::Tensor& gt_image,
         const lfs::core::param::OptimizationParameters& opt_params) {
@@ -121,18 +123,20 @@ namespace lfs::training {
         if (!result) {
             return std::unexpected(result.error());
         }
-        auto [loss, ctx] = *result;
-        return std::make_pair(loss, ctx.grad_image);
+        auto [loss_tensor, ctx] = *result;
+        return std::make_pair(loss_tensor, ctx.grad_image);
     }
 
-    std::expected<float, std::string> Trainer::compute_scale_reg_loss(
+    // Returns GPU tensor for loss - NO SYNC!
+    std::expected<lfs::core::Tensor, std::string> Trainer::compute_scale_reg_loss(
         lfs::core::SplatData& splatData,
         const lfs::core::param::OptimizationParameters& opt_params) {
         lfs::training::losses::ScaleRegularization::Params params{.weight = opt_params.scale_reg};
         return lfs::training::losses::ScaleRegularization::forward(splatData.scaling_raw(), splatData.scaling_grad(), params);
     }
 
-    std::expected<float, std::string> Trainer::compute_opacity_reg_loss(
+    // Returns GPU tensor for loss - NO SYNC!
+    std::expected<lfs::core::Tensor, std::string> Trainer::compute_opacity_reg_loss(
         lfs::core::SplatData& splatData,
         const lfs::core::param::OptimizationParameters& opt_params) {
         lfs::training::losses::OpacityRegularization::Params params{.weight = opt_params.opacity_reg};
@@ -668,7 +672,9 @@ namespace lfs::training {
             // auto adjusted_cam_pos = poseopt_module_->forward(cam->world_view_transform(), torch::tensor({cam->uid()}));
             // auto adjusted_cam = Camera(*cam, adjusted_cam_pos);
 
+            nvtxRangePush("background_for_step");
             lfs::core::Tensor& bg = background_for_step(iter);
+            nvtxRangePop();
 
             RenderOutput r_output;
             std::optional<FastRasterizeContext> fast_raster_ctx;
@@ -679,9 +685,11 @@ namespace lfs::training {
             // TODO: Port 3DGUT rasterizer to LibTorch-free implementation
             // if (!params_.optimization.gut) {
                 // FastGS backend
+                nvtxRangePush("rasterize_forward");
                 auto [output, ctx] = fast_rasterize_forward(*cam, strategy_->get_model(), bg);
                 r_output = output;
                 fast_raster_ctx = std::move(ctx);
+                nvtxRangePop();
             // } else:
             //     // GUT backend: Use manual rasterizer (no autograd)
             //     auto [output, ctx] = rasterize_forward(*cam, strategy_->get_model(), bg,
@@ -699,9 +707,11 @@ namespace lfs::training {
             }
 
             // Compute photometric loss and gradients manually (no autograd)
-            float loss_value;
+            // Keep loss on GPU to avoid sync!
+            lfs::core::Tensor loss_tensor_gpu;
             lfs::core::Tensor grad_image;
 
+            nvtxRangePush("compute_photometric_loss");
             auto loss_grad_result = compute_photometric_loss_with_gradient(
                 r_output.image,
                 gt_image,
@@ -709,53 +719,71 @@ namespace lfs::training {
             if (!loss_grad_result) {
                 return std::unexpected(loss_grad_result.error());
             }
-            auto [loss_val, grad] = *loss_grad_result;
-            loss_value = loss_val;
+            auto [loss_t, grad] = *loss_grad_result;
+            loss_tensor_gpu = loss_t;
             grad_image = grad;
+            nvtxRangePop();
 
             // Bilateral grid backward if enabled
+            nvtxRangePush("bilateral_grid_backward");
             if (bilateral_grid_ && params_.optimization.use_bilateral_grid && bilateral_ctx.has_value()) {
                 grad_image = bilateral_grid_->apply_backward(*bilateral_ctx, grad_image);
             }
+            nvtxRangePop();
 
-            // Scale regularization loss
+            // Scale regularization loss - accumulate on GPU
+            nvtxRangePush("compute_scale_reg_loss");
             auto scale_loss_result = compute_scale_reg_loss(strategy_->get_model(), params_.optimization);
             if (!scale_loss_result) {
                 return std::unexpected(scale_loss_result.error());
             }
-            loss_value += *scale_loss_result;
+            loss_tensor_gpu = loss_tensor_gpu + *scale_loss_result;
+            nvtxRangePop();
 
-            // Opacity regularization loss
+            // Opacity regularization loss - accumulate on GPU
+            nvtxRangePush("compute_opacity_reg_loss");
             auto opacity_loss_result = compute_opacity_reg_loss(strategy_->get_model(), params_.optimization);
             if (!opacity_loss_result) {
                 return std::unexpected(opacity_loss_result.error());
             }
-            loss_value += *opacity_loss_result;
+            loss_tensor_gpu = loss_tensor_gpu + *opacity_loss_result;
+            nvtxRangePop();
 
             // Bilateral grid TV loss (manual forward/backward - no autograd)
+            // NOTE: This still returns float - would need to be converted to Tensor for full GPU accumulation
+            nvtxRangePush("compute_bilateral_grid_tv_loss");
             auto tv_loss_result = compute_bilateral_grid_tv_loss(bilateral_grid_, params_.optimization);
             if (!tv_loss_result) {
                 return std::unexpected(tv_loss_result.error());
             }
             auto [tv_loss_value, tv_ctx] = *tv_loss_result;
 
-            // Accumulate TV loss
-            loss_value += tv_loss_value;
+            // Accumulate TV loss on GPU
+            if (tv_loss_value > 0.0f) {
+                auto tv_loss_tensor = lfs::core::Tensor::full({1}, tv_loss_value, lfs::core::Device::CUDA);
+                loss_tensor_gpu = loss_tensor_gpu + tv_loss_tensor;
+            }
 
             // Backward for TV loss (gradient w.r.t. TV loss is 1.0 since we're just adding it)
             if (bilateral_grid_ && params_.optimization.use_bilateral_grid && tv_loss_value > 0.0f) {
                 bilateral_grid_->tv_loss_backward(tv_ctx, params_.optimization.tv_loss_weight);
             }
+            nvtxRangePop();
 
             // Add sparsity loss (manual forward/backward - no autograd)
+            // NOTE: This still returns float - would need to be converted to Tensor for full GPU accumulation
+            nvtxRangePush("compute_sparsity_loss");
             auto sparsity_loss_result = compute_sparsity_loss_forward(iter, strategy_->get_model());
             if (!sparsity_loss_result) {
                 return std::unexpected(sparsity_loss_result.error());
             }
             auto [sparsity_loss_value, sparsity_ctx] = *sparsity_loss_result;
 
-            // Accumulate sparsity loss
-            loss_value += sparsity_loss_value;
+            // Accumulate sparsity loss on GPU
+            if (sparsity_loss_value > 0.0f) {
+                auto sparsity_loss_tensor = lfs::core::Tensor::full({1}, sparsity_loss_value, lfs::core::Device::CUDA);
+                loss_tensor_gpu = loss_tensor_gpu + sparsity_loss_tensor;
+            }
 
             // Backward for sparsity loss (gradient w.r.t. sparsity loss is 1.0)
             if (sparsity_optimizer_ && sparsity_optimizer_->should_apply_loss(iter) && sparsity_loss_value > 0.0f) {
@@ -765,8 +793,10 @@ namespace lfs::training {
                     return std::unexpected(backward_result.error());
                 }
             }
+            nvtxRangePop();
 
             // Call explicit backward for rasterizers
+            nvtxRangePush("rasterize_backward");
             if (fast_raster_ctx.has_value()) {
                 fast_rasterize_backward(*fast_raster_ctx, grad_image, strategy_->get_model());
             }
@@ -775,20 +805,26 @@ namespace lfs::training {
             //     // GUT path: Use manual rasterizer backward (no autograd)
             //     rasterize_backward(*gut_raster_ctx, grad_image, strategy_->get_model());
             // }
+            nvtxRangePop();
 
-            // Store the loss value immediately
-            current_loss_ = loss_value;
-
-            // Update progress synchronously if needed
-            if (progress_) {
-                progress_->update(iter, loss_value,
-                                  static_cast<int>(strategy_->get_model().size()),
-                                  strategy_->is_refining(iter));
-            }
-
-            // Emit training progress event (throttled to reduce GUI updates)
+            // Only sync loss to CPU when needed for display (every 10 iterations)
+            // This is the KEY optimization - we avoid 9000+ GPU syncs!
+            float loss_value = 0.0f;
             if (iter % 10 == 0 || iter == 1) {
-                // Only update every 10 iterations
+                // Sync loss to CPU only for display
+                loss_value = loss_tensor_gpu.item<float>();
+
+                // Store the loss value
+                current_loss_ = loss_value;
+
+                // Update progress synchronously if needed
+                if (progress_) {
+                    progress_->update(iter, loss_value,
+                                      static_cast<int>(strategy_->get_model().size()),
+                                      strategy_->is_refining(iter));
+                }
+
+                // Emit training progress event
                 lfs::core::events::state::TrainingProgress{
                     .iteration = iter,
                     .loss = loss_value,
@@ -806,6 +842,7 @@ namespace lfs::training {
 
                     // Execute strategy post-backward and step
                     // Only call post_backward during base training (not during sparsification)
+                    nvtxRangePush("strategy_post_backward");
                     if (params_.optimization.enable_sparsity) {
                         int base_iterations = params_.optimization.iterations - params_.optimization.sparsify_steps;
                         if (iter <= base_iterations) {
@@ -816,8 +853,11 @@ namespace lfs::training {
                         // No sparsity, always call post_backward
                         strategy_->post_backward(iter, r_output);
                     }
+                    nvtxRangePop();
 
+                    nvtxRangePush("strategy_step");
                     strategy_->step(iter);
+                    nvtxRangePop();
 
                     // TODO: Implement AdamOptimizer for bilateral grid
                     // if (params_.optimization.use_bilateral_grid) {

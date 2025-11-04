@@ -464,9 +464,11 @@ std::pair<float, torch::Tensor> reference_l1_loss_torch_fwd_bwd(const torch::Ten
 // Reference SSIM using old kernels (include/lfs/kernels/ssim.cuh)
 // FAIR COMPARISON: Also compute backward (same as PhotometricLoss)
 float reference_ssim_old_kernels(const lfs::core::Tensor& img1, const lfs::core::Tensor& img2) {
-    auto [ssim_value, ctx] = lfs::training::kernels::ssim_forward(img1, img2);
+    auto [ssim_value_tensor, ctx] = lfs::training::kernels::ssim_forward(img1, img2);
     // Compute backward to match what PhotometricLoss does
     auto grad = lfs::training::kernels::ssim_backward(ctx, -1.0f);
+    // Sync to CPU for testing (acceptable in tests)
+    float ssim_value = ssim_value_tensor.item<float>();
     return 1.0f - ssim_value;  // Convert to D-SSIM loss (1 - SSIM)
 }
 
@@ -620,7 +622,7 @@ TEST(LossesBenchmark, NumericalAccuracy_L1) {
     // Compute losses
     float torch_loss = reference_l1_loss_torch_fwd(img1_torch, img2_torch);
     auto lfs_result = PhotometricLoss::forward(img1_lfs, img2_lfs, PhotometricLoss::Params{.lambda_dssim = 0.0f});
-    float lfs_loss = lfs_result.value().first;  // std::pair<float, Context>
+    float lfs_loss = lfs_result.value().first.item<float>();  // Sync tensor to CPU
 
     float abs_error = std::abs(torch_loss - lfs_loss);
     float rel_error = abs_error / std::max(torch_loss, 1e-8f);
@@ -644,7 +646,7 @@ TEST(LossesBenchmark, NumericalAccuracy_SSIM) {
     // Compute losses
     float old_loss = reference_ssim_old_kernels(img1, img2);
     auto lfs_result = PhotometricLoss::forward(img1, img2, PhotometricLoss::Params{.lambda_dssim = 1.0f});
-    float lfs_loss = lfs_result.value().first;  // std::pair<float, Context>
+    float lfs_loss = lfs_result.value().first.item<float>();  // Sync tensor to CPU
 
     float abs_error = std::abs(old_loss - lfs_loss);
     float rel_error = abs_error / std::max(old_loss, 1e-8f);
@@ -669,7 +671,7 @@ TEST(LossesBenchmark, NumericalAccuracy_PhotometricCombined) {
     // Compute losses
     float ref_loss = reference_photometric_combined(rendered, gt_image, lambda_dssim);
     auto lfs_result = PhotometricLoss::forward(rendered, gt_image, PhotometricLoss::Params{.lambda_dssim = lambda_dssim});
-    float lfs_loss = lfs_result.value().first;  // std::pair<float, Context>
+    float lfs_loss = lfs_result.value().first.item<float>();  // Sync tensor to CPU
 
     float abs_error = std::abs(ref_loss - lfs_loss);
     float rel_error = abs_error / std::max(ref_loss, 1e-8f);
@@ -692,7 +694,7 @@ TEST(LossesBenchmark, GradientCorrectness_L1) {
 
     // Compute analytical gradients (forward already computes them)
     auto result = PhotometricLoss::forward(img1, img2, PhotometricLoss::Params{.lambda_dssim = 0.0f});
-    auto [loss, ctx] = result.value();
+    auto [loss_tensor, ctx] = result.value();
     auto grad_analytical = ctx.grad_image;
 
     // Convert to PyTorch for easier numerical gradient checking
@@ -724,7 +726,7 @@ TEST(LossesBenchmark, GradientCorrectness_SSIM) {
 
     // Compute analytical gradients (LFS - forward already computes them)
     auto result = PhotometricLoss::forward(img1, img2, PhotometricLoss::Params{.lambda_dssim = 1.0f});
-    auto [loss, ctx] = result.value();
+    auto [loss_tensor, ctx] = result.value();
     auto grad_analytical = ctx.grad_image;
 
     // Compute numerical gradients using finite differences
@@ -747,13 +749,13 @@ TEST(LossesBenchmark, GradientCorrectness_SSIM) {
                 auto img1_plus_cpu = img1_cpu.clone();
                 img1_plus_cpu.template ptr<float>()[idx] += epsilon;
                 auto img1_plus = img1_plus_cpu.to(Device::CUDA);
-                float loss_plus = PhotometricLoss::forward(img1_plus, img2, PhotometricLoss::Params{.lambda_dssim = 1.0f}).value().first;
+                float loss_plus = PhotometricLoss::forward(img1_plus, img2, PhotometricLoss::Params{.lambda_dssim = 1.0f}).value().first.item<float>();
 
                 // Perturb -epsilon
                 auto img1_minus_cpu = img1_cpu.clone();
                 img1_minus_cpu.template ptr<float>()[idx] -= epsilon;
                 auto img1_minus = img1_minus_cpu.to(Device::CUDA);
-                float loss_minus = PhotometricLoss::forward(img1_minus, img2, PhotometricLoss::Params{.lambda_dssim = 1.0f}).value().first;
+                float loss_minus = PhotometricLoss::forward(img1_minus, img2, PhotometricLoss::Params{.lambda_dssim = 1.0f}).value().first.item<float>();
 
                 // Numerical gradient
                 float grad_num = (loss_plus - loss_minus) / (2.0f * epsilon);
@@ -787,7 +789,7 @@ TEST(LossesBenchmark, GradientCorrectness_Combined) {
 
     // Compute analytical gradients (forward already computes them)
     auto result = PhotometricLoss::forward(img1, img2, PhotometricLoss::Params{.lambda_dssim = lambda_dssim});
-    auto [loss, ctx] = result.value();
+    auto [loss_tensor, ctx] = result.value();
     auto grad_analytical = ctx.grad_image;
 
     // Compute numerical gradients (subset)
@@ -808,12 +810,12 @@ TEST(LossesBenchmark, GradientCorrectness_Combined) {
                 auto img1_plus_cpu = img1_cpu.clone();
                 img1_plus_cpu.template ptr<float>()[idx] += epsilon;
                 auto img1_plus = img1_plus_cpu.to(Device::CUDA);
-                float loss_plus = PhotometricLoss::forward(img1_plus, img2, PhotometricLoss::Params{.lambda_dssim = lambda_dssim}).value().first;
+                float loss_plus = PhotometricLoss::forward(img1_plus, img2, PhotometricLoss::Params{.lambda_dssim = lambda_dssim}).value().first.item<float>();
 
                 auto img1_minus_cpu = img1_cpu.clone();
                 img1_minus_cpu.template ptr<float>()[idx] -= epsilon;
                 auto img1_minus = img1_minus_cpu.to(Device::CUDA);
-                float loss_minus = PhotometricLoss::forward(img1_minus, img2, PhotometricLoss::Params{.lambda_dssim = lambda_dssim}).value().first;
+                float loss_minus = PhotometricLoss::forward(img1_minus, img2, PhotometricLoss::Params{.lambda_dssim = lambda_dssim}).value().first.item<float>();
 
                 float grad_num = (loss_plus - loss_minus) / (2.0f * epsilon);
                 float grad_ana = grad_analytical_cpu.template ptr<float>()[idx];
@@ -845,7 +847,7 @@ TEST(LossesBenchmark, GradientCorrectness_ScaleRegularization) {
 
     // Compute analytical gradients (new implementation)
     auto scaling_raw_grad = Tensor::zeros({N, 3}, Device::CUDA);
-    float loss = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, ScaleRegularization::Params{.weight = weight}).value();
+    float loss = ScaleRegularization::forward(scaling_raw, scaling_raw_grad, ScaleRegularization::Params{.weight = weight}).value().item<float>();
 
     // Compute numerical gradients using finite differences (subset)
     const float epsilon = 1e-4f;
@@ -863,14 +865,14 @@ TEST(LossesBenchmark, GradientCorrectness_ScaleRegularization) {
         scaling_plus_cpu.template ptr<float>()[i] += epsilon;
         auto scaling_plus = scaling_plus_cpu.to(Device::CUDA);
         auto grad_plus = Tensor::zeros({N, 3}, Device::CUDA);
-        float loss_plus = ScaleRegularization::forward(scaling_plus, grad_plus, ScaleRegularization::Params{.weight = weight}).value();
+        float loss_plus = ScaleRegularization::forward(scaling_plus, grad_plus, ScaleRegularization::Params{.weight = weight}).value().item<float>();
 
         // Perturb -epsilon
         auto scaling_minus_cpu = scaling_raw_cpu.clone();
         scaling_minus_cpu.template ptr<float>()[i] -= epsilon;
         auto scaling_minus = scaling_minus_cpu.to(Device::CUDA);
         auto grad_minus = Tensor::zeros({N, 3}, Device::CUDA);
-        float loss_minus = ScaleRegularization::forward(scaling_minus, grad_minus, ScaleRegularization::Params{.weight = weight}).value();
+        float loss_minus = ScaleRegularization::forward(scaling_minus, grad_minus, ScaleRegularization::Params{.weight = weight}).value().item<float>();
 
         // Numerical gradient
         float grad_num = (loss_plus - loss_minus) / (2.0f * epsilon);
@@ -901,7 +903,7 @@ TEST(LossesBenchmark, GradientCorrectness_OpacityRegularization) {
 
     // Compute analytical gradients (new implementation)
     auto opacity_raw_grad = Tensor::zeros({N, 1}, Device::CUDA);
-    float loss = OpacityRegularization::forward(opacity_raw, opacity_raw_grad, OpacityRegularization::Params{.weight = weight}).value();
+    float loss = OpacityRegularization::forward(opacity_raw, opacity_raw_grad, OpacityRegularization::Params{.weight = weight}).value().item<float>();
 
     // Compute numerical gradients using finite differences (subset)
     const float epsilon = 1e-4f;
@@ -919,14 +921,14 @@ TEST(LossesBenchmark, GradientCorrectness_OpacityRegularization) {
         opacity_plus_cpu.template ptr<float>()[i] += epsilon;
         auto opacity_plus = opacity_plus_cpu.to(Device::CUDA);
         auto grad_plus = Tensor::zeros({N, 1}, Device::CUDA);
-        float loss_plus = OpacityRegularization::forward(opacity_plus, grad_plus, OpacityRegularization::Params{.weight = weight}).value();
+        float loss_plus = OpacityRegularization::forward(opacity_plus, grad_plus, OpacityRegularization::Params{.weight = weight}).value().item<float>();
 
         // Perturb -epsilon
         auto opacity_minus_cpu = opacity_raw_cpu.clone();
         opacity_minus_cpu.template ptr<float>()[i] -= epsilon;
         auto opacity_minus = opacity_minus_cpu.to(Device::CUDA);
         auto grad_minus = Tensor::zeros({N, 1}, Device::CUDA);
-        float loss_minus = OpacityRegularization::forward(opacity_minus, grad_minus, OpacityRegularization::Params{.weight = weight}).value();
+        float loss_minus = OpacityRegularization::forward(opacity_minus, grad_minus, OpacityRegularization::Params{.weight = weight}).value().item<float>();
 
         // Numerical gradient
         float grad_num = (loss_plus - loss_minus) / (2.0f * epsilon);

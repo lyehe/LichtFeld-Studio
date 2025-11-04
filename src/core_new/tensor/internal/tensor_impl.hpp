@@ -1042,7 +1042,7 @@ namespace lfs::core {
         // Memory operations
         Tensor clone() const;      // Deep copy
         Tensor contiguous() const; // Materialize to contiguous if strided
-        Tensor to(Device device) const;
+        Tensor to(Device device, cudaStream_t stream = nullptr) const;
         Tensor to(DataType dtype) const;
         bool is_contiguous() const { return is_contiguous_; }
 

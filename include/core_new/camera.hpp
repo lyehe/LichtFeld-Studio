@@ -30,11 +30,14 @@ namespace lfs::core {
                int uid);
         Camera(const Camera&, const Tensor& transform);
 
-        // Delete copy, allow move
+        // Destructor to clean up CUDA stream
+        ~Camera();
+
+        // Delete copy, define proper move semantics
         Camera(const Camera&) = delete;
         Camera& operator=(const Camera&) = delete;
-        Camera(Camera&&) = default;
-        Camera& operator=(Camera&&) = default;
+        Camera(Camera&& other) noexcept;
+        Camera& operator=(Camera&& other) noexcept;
 
         // Initialize GPU tensors on demand
         void initialize_cuda_tensors();

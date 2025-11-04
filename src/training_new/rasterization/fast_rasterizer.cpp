@@ -140,17 +140,7 @@ namespace lfs::training {
 
         const int n_primitives = static_cast<int>(ctx.means.shape()[0]);
 
-        // Allocate gradient tensors
-        lfs::core::Tensor grad_means = lfs::core::Tensor::zeros({static_cast<size_t>(n_primitives), 3});
-        lfs::core::Tensor grad_scales_raw = lfs::core::Tensor::zeros({static_cast<size_t>(n_primitives), 3});
-        lfs::core::Tensor grad_rotations_raw = lfs::core::Tensor::zeros({static_cast<size_t>(n_primitives), 4});
-        lfs::core::Tensor grad_opacities_raw = lfs::core::Tensor::zeros({static_cast<size_t>(n_primitives), 1});
-        lfs::core::Tensor grad_sh_coefficients_0 = lfs::core::Tensor::zeros({static_cast<size_t>(n_primitives), 1, 3});
-        lfs::core::Tensor grad_sh_coefficients_rest = lfs::core::Tensor::zeros(
-            {static_cast<size_t>(n_primitives), static_cast<size_t>(ctx.total_bases_sh_rest), 3});
-        lfs::core::Tensor grad_w2c = lfs::core::Tensor::zeros_like(ctx.w2c);
-
-        // Call backward_raw with raw pointers
+        // Call backward_raw with raw pointers to SplatData gradient buffers
         const bool update_densification_info = gaussian_model._densification_info.ndim() > 0 &&
                                                 gaussian_model._densification_info.shape()[0] > 0;
         auto backward_result = fast_lfs::rasterization::backward_raw(
@@ -166,12 +156,12 @@ namespace lfs::training {
             ctx.w2c.contiguous().ptr<float>(),
             ctx.cam_position.contiguous().ptr<float>(),
             ctx.forward_ctx,
-            grad_means.ptr<float>(),
-            grad_scales_raw.ptr<float>(),
-            grad_rotations_raw.ptr<float>(),
-            grad_opacities_raw.ptr<float>(),
-            grad_sh_coefficients_0.ptr<float>(),
-            grad_sh_coefficients_rest.ptr<float>(),
+            gaussian_model.means_grad().ptr<float>(),        // Direct access to SplatData gradients
+            gaussian_model.scaling_grad().ptr<float>(),
+            gaussian_model.rotation_grad().ptr<float>(),
+            gaussian_model.opacity_grad().ptr<float>(),
+            gaussian_model.sh0_grad().ptr<float>(),
+            gaussian_model.shN_grad().ptr<float>(),
             nullptr,  // grad_w2c not needed for now
             n_primitives,
             ctx.active_sh_bases,
@@ -187,14 +177,7 @@ namespace lfs::training {
             throw std::runtime_error(std::string("Backward failed: ") + backward_result.error_message);
         }
 
-        // Manually accumulate gradients into the parameter tensors
-        // The new gradient system uses separate gradient tensors
-        // IMPORTANT: Use in-place add_() to accumulate gradients, not assignment!
-        gaussian_model.means_grad().add_(grad_means);
-        gaussian_model.scaling_grad().add_(grad_scales_raw);
-        gaussian_model.rotation_grad().add_(grad_rotations_raw);
-        gaussian_model.opacity_grad().add_(grad_opacities_raw);
-        gaussian_model.sh0_grad().add_(grad_sh_coefficients_0);
-        gaussian_model.shN_grad().add_(grad_sh_coefficients_rest);
+        // No need to accumulate - gradients were written directly to SplatData buffers
+        // The trainer calls zero_gradients() at the start of each iteration
     }
 } // namespace lfs::training
