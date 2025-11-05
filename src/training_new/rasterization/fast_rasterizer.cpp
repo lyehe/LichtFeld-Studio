@@ -37,9 +37,21 @@ namespace lfs::training {
         const int n_primitives = static_cast<int>(means.shape()[0]);
         const int total_bases_sh_rest = static_cast<int>(shN.shape()[1]);
 
-        // Allocate output tensors
-        core::Tensor image = core::Tensor::empty({3, static_cast<size_t>(height), static_cast<size_t>(width)});
-        core::Tensor alpha = core::Tensor::empty({1, static_cast<size_t>(height), static_cast<size_t>(width)});
+        // Pre-allocate output tensors (reused across iterations)
+        thread_local core::Tensor image;
+        thread_local core::Tensor alpha;
+        thread_local core::Tensor output_image;
+        thread_local int last_width = -1;
+        thread_local int last_height = -1;
+
+        // Only reallocate if dimensions changed
+        if (last_width != width || last_height != height) {
+            image = core::Tensor::empty({3, static_cast<size_t>(height), static_cast<size_t>(width)});
+            alpha = core::Tensor::empty({1, static_cast<size_t>(height), static_cast<size_t>(width)});
+            output_image = core::Tensor::empty({3, static_cast<size_t>(height), static_cast<size_t>(width)}, core::Device::CUDA);
+            last_width = width;
+            last_height = height;
+        }
 
         // Call forward_raw with raw pointers (no PyTorch wrappers)
         auto forward_ctx = fast_lfs::rasterization::forward_raw(
@@ -68,7 +80,7 @@ namespace lfs::training {
         // Prepare render output
         RenderOutput render_output;
         // output = image + (1 - alpha) * bg_color
-        auto output_image = core::Tensor::empty({3, static_cast<size_t>(height), static_cast<size_t>(width)}, core::Device::CUDA);
+        // (output_image is pre-allocated above)
 
         kernels::launch_fused_background_blend(
             image.ptr<float>(),
