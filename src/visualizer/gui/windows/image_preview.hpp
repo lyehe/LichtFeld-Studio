@@ -33,7 +33,7 @@ namespace gs::gui {
 
         ~ImageData() {
             if (data_) {
-                gs::free_image(data_);
+                ::free_image(data_);
             }
         }
 
@@ -51,7 +51,7 @@ namespace gs::gui {
         ImageData& operator=(ImageData&& other) noexcept {
             if (this != &other) {
                 if (data_) {
-                    gs::free_image(data_);
+                    ::free_image(data_);
                 }
                 data_ = std::exchange(other.data_, nullptr);
                 width_ = std::exchange(other.width_, 0);

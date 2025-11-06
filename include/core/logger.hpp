@@ -54,17 +54,11 @@ namespace gs::core {
             auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count() % 1000;
 
             // Extract just the filename from the full path
-            // Handle case where filename might be null (when called via spdlog:: directly)
-            std::string_view filename;
-            if (msg.source.filename != nullptr) {
-                std::string_view full_path(msg.source.filename);
-                auto last_slash = full_path.find_last_of("/\\");
-                filename = (last_slash != std::string_view::npos)
-                                                ? full_path.substr(last_slash + 1)
-                                                : full_path;
-            } else {
-                filename = "";
-            }
+            std::string_view full_path(msg.source.filename);
+            auto last_slash = full_path.find_last_of("/\\");
+            std::string_view filename = (last_slash != std::string_view::npos)
+                ? full_path.substr(last_slash + 1)
+                : full_path;
 
             // Check if this is a Performance log (has [PERF] prefix)
             std::string_view msg_view(msg.payload.data(), msg.payload.size());

@@ -92,9 +92,6 @@ namespace gs {
 
         SplatData crop_by_cropbox(const gs::geometry::BoundingBox& bounding_box) const;
 
-        // Convert to point cloud for export (public for testing)
-        PointCloud to_point_cloud() const;
-
     public:
         // Holds the magnitude of the screen space gradient
         torch::Tensor _densification_info = torch::empty({0});
@@ -114,6 +111,9 @@ namespace gs {
         // Async save management
         mutable std::mutex _save_mutex;
         mutable std::vector<std::future<void>> _save_futures;
+
+        // Convert to point cloud for export
+        PointCloud to_point_cloud() const;
 
         // Helper methods for async save management
         void wait_for_saves() const;
