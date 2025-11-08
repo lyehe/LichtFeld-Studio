@@ -97,6 +97,34 @@ namespace gs::visualizer {
             return translation_gizmo_tool_.get();
         }
 
+        // Import/Export status
+        bool hasImportMessage() const {
+            if (import_message_.empty() && import_error_.empty()) return false;
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - import_timestamp_).count();
+            return elapsed < 3000; // Show for 3 seconds
+        }
+
+        struct ImportStatus {
+            bool is_success;
+            std::string text;
+        };
+
+        ImportStatus getImportStatus() const {
+            if (!import_error_.empty()) {
+                return {false, import_error_};
+            }
+            return {true, import_message_};
+        }
+
+        bool hasGutAutoEnabledWarning() const {
+            return gut_auto_enabled_warning_;
+        }
+
+        void clearGutAutoEnabledWarning() {
+            gut_auto_enabled_warning_ = false;
+        }
+
         std::shared_ptr<TrainerManager> trainer_manager_;
 
         // GUI manager
@@ -121,6 +149,8 @@ namespace gs::visualizer {
         void handleTrainingCompleted(const events::state::TrainingCompleted& event);
         void handleLoadFileCommand(const events::cmd::LoadFile& cmd);
         void handleSaveProject(const events::cmd::SaveProject& cmd);
+        void handleExportConfig(const events::cmd::ExportConfig& cmd);
+        void handleImportConfig(const events::cmd::ImportConfig& cmd);
 
         // Tool initialization
         void initializeTools();
@@ -145,6 +175,16 @@ namespace gs::visualizer {
         bool window_initialized_ = false;
         bool gui_initialized_ = false;
         bool tools_initialized_ = false; // Added this member!
+
+        // Import/Export status tracking
+        bool import_success_ = false;
+        std::string import_message_;
+        std::string import_error_;
+        std::chrono::steady_clock::time_point import_timestamp_;
+
+        // Gut auto-enable warning tracking
+        bool gut_auto_enabled_warning_ = false;
+
         // Project
         std::shared_ptr<gs::management::Project> project_ = nullptr;
         void updateProjectOnModules();

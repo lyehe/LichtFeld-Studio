@@ -7,6 +7,7 @@
 #include "core/splat_data.hpp"
 #include "rasterization/fast_rasterizer.hpp"
 #include "rasterization/rasterizer.hpp"
+#include <c10/cuda/CUDAFunctions.h>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -146,7 +147,9 @@ namespace gs::training {
         try {
             model_ = torch::jit::load(model_path);
             model_.eval();
-            model_.to(torch::kCUDA);
+            // Move model to current CUDA device
+            torch::Device device(torch::kCUDA, c10::cuda::current_device());
+            model_.to(device);
             model_loaded_ = true;
             std::cout << "LPIPS model loaded from: " << model_path << std::endl;
         } catch (const c10::Error& e) {
@@ -168,9 +171,11 @@ namespace gs::training {
         auto pred_normalized = 2.0f * pred - 1.0f;
         auto target_normalized = 2.0f * target - 1.0f;
 
-        // Ensure inputs are on CUDA and contiguous
-        pred_normalized = pred_normalized.to(torch::kCUDA).contiguous();
-        target_normalized = target_normalized.to(torch::kCUDA).contiguous();
+        // Ensure inputs are on the same device as the prediction tensor and contiguous
+        // Use pred's device to ensure compatibility with the LPIPS model
+        auto device = pred.device();
+        pred_normalized = pred_normalized.to(device).contiguous();
+        target_normalized = target_normalized.to(device).contiguous();
 
         // Forward pass through LPIPS model
         std::vector<torch::jit::IValue> inputs;
@@ -394,6 +399,10 @@ namespace gs::training {
             throw std::runtime_error("Evaluation is not enabled");
         }
 
+        // Get the current CUDA device for tensor transfers
+        // This ensures tensors from dataloader workers (which may use GPU 0) are moved to the correct device
+        torch::Device device(torch::kCUDA, c10::cuda::current_device());
+
         EvalMetrics result;
         result.num_gaussians = static_cast<int>(splatData.size());
         result.iteration = iteration;
@@ -423,7 +432,7 @@ namespace gs::training {
         for (auto& batch : *val_dataloader) {
             auto camera_with_image = batch[0].data;
             Camera* cam = camera_with_image.camera; // rasterize needs non-const Camera&
-            torch::Tensor gt_image = std::move(camera_with_image.image).to(torch::kCUDA);
+            torch::Tensor gt_image = std::move(camera_with_image.image).to(device);
 
             // TODO: const_cast is certainly not the correct solution here!
             auto& splatData_mutable = const_cast<SplatData&>(splatData);

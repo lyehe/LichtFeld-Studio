@@ -32,6 +32,7 @@ namespace gs {
                    gsplat::CameraModelType camera_model_type,
                    const std::string& image_name,
                    const std::filesystem::path& image_path,
+                   const std::filesystem::path& mask_path,
                    int camera_width, int camera_height,
                    int uid)
         : _uid(uid),
@@ -46,6 +47,7 @@ namespace gs {
           _camera_model_type(camera_model_type),
           _image_name(image_name),
           _image_path(image_path),
+          _mask_path(mask_path),
           _camera_width(camera_width),
           _camera_height(camera_height),
           _image_width(camera_width),

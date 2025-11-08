@@ -5,6 +5,7 @@
 #pragma once
 
 #include "core/camera.hpp"
+#include "core/image_io.hpp"
 #include "core/parameters.hpp"
 #include "loader/loader.hpp"
 #include "loader/filesystem_utils.hpp"
@@ -19,6 +20,7 @@ namespace gs::training {
     struct CameraWithImage {
         Camera* camera;
         torch::Tensor image;
+        torch::Tensor mask;  // Mask tensor (white=keep/object, black=masked/background)
     };
 
     using CameraExample = torch::data::Example<CameraWithImage, torch::Tensor>;
@@ -81,7 +83,48 @@ namespace gs::training {
             auto& cam = _cameras[camera_idx];
 
             torch::Tensor image = cam->load_and_get_image(_datasetConfig.resize_factor, _datasetConfig.max_width);
-            return {{cam.get(), std::move(image)}, torch::empty({})};
+
+            // Load mask if available
+            torch::Tensor mask;
+            if (!cam->mask_path().empty() && std::filesystem::exists(cam->mask_path())) {
+                // Load mask using the same image loading infrastructure
+                auto pinned_options = torch::TensorOptions().dtype(torch::kUInt8).pinned_memory(true);
+
+                auto [mask_data, mask_w, mask_h, mask_c] = load_image(cam->mask_path(), _datasetConfig.resize_factor, _datasetConfig.max_width);
+
+                // Create tensor from pinned memory
+                mask = torch::from_blob(
+                    mask_data,
+                    {mask_h, mask_w, mask_c},
+                    {mask_w * mask_c, mask_c, 1},
+                    pinned_options);
+
+                // Transfer to GPU and convert to float [0, 1]
+                // For grayscale, take first channel only
+                mask = mask.to(torch::kCUDA, /*non_blocking=*/true)
+                           .index({torch::indexing::Slice(), torch::indexing::Slice(), 0})
+                           .to(torch::kFloat32) / 255.0f;
+
+                // Apply inversion if requested (done once during loading, not per-iteration)
+                if (_datasetConfig.invert_masks) {
+                    mask = 1.0f - mask;
+                }
+
+                // Apply threshold clamping (done once during loading, not per-iteration)
+                // Values >= threshold become 1.0 (definite object), < threshold keep original value (soft falloff)
+                // This preserves soft transitions in background regions for opacity penalty
+                if (_datasetConfig.mask_threshold > 0.0f && _datasetConfig.mask_threshold < 1.0f) {
+                    mask = torch::where(mask >= _datasetConfig.mask_threshold, 1.0f, mask);
+                }
+
+                // Free the original data
+                free_image(mask_data);
+            } else {
+                // No mask - create empty tensor
+                mask = torch::empty({0}, torch::kFloat32);
+            }
+
+            return {{cam.get(), std::move(image), std::move(mask)}, torch::empty({})};
         }
 
         torch::optional<size_t> size() const override {

@@ -77,6 +77,22 @@ namespace gs::gui {
 
                 ImGui::Separator();
 
+                if (ImGui::MenuItem("Export Config...")) {
+                    LOG_DEBUG("Export Config clicked");
+                    if (on_export_config_) {
+                        on_export_config_();
+                    }
+                }
+
+                if (ImGui::MenuItem("Import Config...")) {
+                    LOG_DEBUG("Import Config clicked");
+                    if (on_import_config_) {
+                        on_import_config_();
+                    }
+                }
+
+                ImGui::Separator();
+
                 if (ImGui::MenuItem("Exit")) {
                     LOG_DEBUG("Exit clicked");
                     if (on_exit_) {
@@ -586,6 +602,14 @@ namespace gs::gui {
 
     void MenuBar::setOnSaveProject(std::function<void()> callback) {
         on_save_project_ = std::move(callback);
+    }
+
+    void MenuBar::setOnExportConfig(std::function<void()> callback) {
+        on_export_config_ = std::move(callback);
+    }
+
+    void MenuBar::setOnImportConfig(std::function<void()> callback) {
+        on_import_config_ = std::move(callback);
     }
 
     void MenuBar::setOnExit(std::function<void()> callback) {

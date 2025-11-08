@@ -10,7 +10,7 @@
 #include "gui/panels/tools_panel.hpp"
 #include "gui/panels/training_panel.hpp"
 #include "gui/ui_widgets.hpp"
-#include "gui/utils/windows_utils.hpp"
+#include "gui/utils/file_dialogs.hpp"
 #include "gui/windows/file_browser.hpp"
 #include "gui/windows/project_changed_dialog_box.hpp"
 
@@ -62,36 +62,35 @@ namespace gs::gui {
 
     void GuiManager::initMenuBar() {
         menu_bar_->setOnImportDataset([this]() {
-            window_states_["file_browser"] = true;
-#ifdef WIN32
-            // show native windows file dialog for project file selection
-            OpenDatasetFolderDialog();
-
-            // hide the file browser
-            events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif // WIN32
+            OpenDatasetFolderDialog([this](const std::string& path) {
+                std::filesystem::path dataset_path(path);
+                if (std::filesystem::is_directory(dataset_path)) {
+                    events::cmd::LoadFile{.path = dataset_path, .is_dataset = true}.emit();
+                    LOG_INFO("Loading dataset: {}", dataset_path.string());
+                }
+                // hide the file browser
+                events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
+            });
         });
 
         menu_bar_->setOnOpenProject([this]() {
-            window_states_["file_browser"] = true;
-#ifdef WIN32
-            // show native windows file dialog for project file selection
-            OpenProjectFileDialog();
-
-            // hide the file browser
-            events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif // WIN32
+            OpenProjectFileDialog([this](const std::string& path) {
+                std::filesystem::path project_path(path);
+                events::cmd::LoadProject{.path = project_path}.emit();
+                LOG_INFO("Loading project file: {}", project_path.string());
+                // hide the file browser
+                events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
+            });
         });
 
         menu_bar_->setOnImportPLY([this]() {
-            window_states_["file_browser"] = true;
-#ifdef WIN32
-            // show native windows file dialog for project file selection
-            OpenPlyFileDialog();
-
-            // hide the file browser
-            events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif // WIN32
+            OpenPlyFileDialog([this](const std::string& path) {
+                std::filesystem::path ply_path(path);
+                events::cmd::LoadFile{.path = ply_path}.emit();
+                LOG_INFO("Loading PLY file: {}", ply_path.string());
+                // hide the file browser
+                events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
+            });
         });
 
         menu_bar_->setOnSaveProjectAs([this]() {
@@ -102,6 +101,24 @@ namespace gs::gui {
             if (viewer_->project_) {
                 events::cmd::SaveProject{viewer_->project_->getProjectOutputFolder().string()}.emit();
             }
+        });
+
+        menu_bar_->setOnExportConfig([this]() {
+            ExportConfigFileDialog([](const std::string& path) {
+                events::cmd::ExportConfig{.path = path}.emit();
+                LOG_INFO("Exporting config to: {}", path);
+            });
+        });
+
+        menu_bar_->setOnImportConfig([this]() {
+            ImportConfigFileDialog([](const std::string& path) {
+                events::cmd::ImportConfig{.path = path}.emit();
+                LOG_INFO("Importing config from: {}", path);
+            });
+#ifndef WIN32
+            // On Linux, also show the file browser
+            window_states_["file_browser"] = true;
+#endif
         });
 
         menu_bar_->setOnExit([this]() {
@@ -335,6 +352,32 @@ namespace gs::gui {
             project_changed_dialog_box_->render(&window_states_["project_changed_dialog_box"]);
         }
 
+        // 3DGUT auto-enabled warning popup
+        if (viewer_->hasGutAutoEnabledWarning()) {
+            ImGui::OpenPopup("3DGUT Auto-Enabled");
+            viewer_->clearGutAutoEnabledWarning();
+        }
+
+        if (ImGui::BeginPopupModal("3DGUT Auto-Enabled", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.2f, 1.0f)); // Warning yellow
+            ImGui::Text("Warning: Camera Distortion Detected");
+            ImGui::PopStyleColor();
+
+            ImGui::Spacing();
+            ImGui::TextWrapped("Your dataset contains cameras with distortion parameters (radial or tangential).");
+            ImGui::TextWrapped("The 3DGUT rasterizer has been automatically enabled to properly handle lens distortion.");
+            ImGui::Spacing();
+
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::EndPopup();
+        }
+
         if (window_states_["save_project_browser_before_exit"]) {
 #ifdef WIN32
             bool was_project_saved = save_project_browser_->SaveProjectFileDialog(&window_states_["save_project_browser_before_exit"]);
@@ -347,6 +390,26 @@ namespace gs::gui {
                 LOG_INFO("Exiting LichtFeldStudio gracefully after project save");
             }
         }
+
+        // Update cross-platform file dialogs (for Linux/other platforms)
+#ifndef WIN32
+        RenderExportConfigDialog();
+
+        // Handle file browser callbacks for config import
+        if (window_states_["file_browser"]) {
+            auto import_cb = GetImportConfigCallback();
+            if (import_cb) {
+                // Set file browser callback to handle config import
+                file_browser_->setOnFileSelected([import_cb](const std::filesystem::path& path, bool is_dataset) {
+                    // Only handle .json files for config import
+                    if (!is_dataset && path.extension() == ".json") {
+                        import_cb(path.string());
+                        ClearPendingCallbacks();
+                    }
+                });
+            }
+        }
+#endif
 
         if (window_states_["show_save_browser"]) {
 #ifdef WIN32
