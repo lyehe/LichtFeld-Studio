@@ -56,7 +56,7 @@ namespace gs {
             std::string strategy = "mcmc";                    // Optimization strategy: mcmc, default.
             MaskMode mask_mode = MaskMode::None;              // Mask mode: none, segment, ignore, alpha_consistent
             bool invert_masks = false;                        // If true, inverts mask values (0.0 <-> 1.0) during loading
-            float mask_opacity_penalty_weight = 100.0f;       // Opacity penalty weight for segment mask mode
+            float mask_opacity_penalty_weight = 1.0f;         // Opacity penalty weight for segment mask mode
             float mask_opacity_penalty_power = 2.0f;          // Power for penalty falloff curve (1=linear, 2=quadratic, higher=gentler on uncertain regions)
             float mask_threshold = 0.5f;                      // Threshold for clamping masks: >= threshold → 1.0, < threshold → keep original (soft falloff)
             bool preload_to_ram = false;                      // If true, the entire dataset will be loaded into RAM at startup
