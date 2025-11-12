@@ -322,6 +322,13 @@ namespace lfs::core {
         DataType dtype_ = DataType::Float32;
         bool is_view_ = false;
 
+        // Capacity management for in-place growth (like std::vector)
+        // capacity_ is the number of "rows" (dim 0) that can fit in the allocated buffer
+        // logical_size_ is the current logical number of rows (same as shape_[0])
+        // When capacity_ > 0, the buffer is larger than needed to allow in-place growth
+        size_t capacity_ = 0;      // Reserved capacity along dimension 0 (0 = no reservation)
+        size_t logical_size_ = 0;  // Logical size along dimension 0 (same as shape_[0])
+
         // Cached alignment flags (computed once on allocation)
         bool is_aligned_16_ = false;  // 16-byte alignment for float4 vectorization
         bool is_aligned_128_ = false; // 128-byte alignment for cache line optimization
@@ -1038,6 +1045,16 @@ namespace lfs::core {
             }
             return shape_[dim];
         }
+
+        // Capacity management (for in-place growth like std::vector)
+        // capacity() returns the reserved capacity along dimension 0 (0 = no reservation)
+        // logical_size() returns the logical size along dimension 0 (same as shape()[0])
+        size_t capacity() const { return capacity_; }
+        size_t logical_size() const { return logical_size_; }
+
+        // reserve() pre-allocates memory for future growth along dimension 0
+        // Supports multi-dimensional tensors: [N, D1, D2, ...] reserves N "rows"
+        void reserve(size_t new_capacity);
 
         // Memory operations
         Tensor clone() const;      // Deep copy
@@ -2039,6 +2056,46 @@ namespace lfs::core {
         Tensor index_select(int dim, const Tensor& indices) const;
         Tensor gather(int dim, const Tensor& indices) const;
         Tensor take(const Tensor& indices) const;
+
+        /**
+         * Append gathered elements in-place to the end of this tensor along dimension 0.
+         * This is a fused operation that combines index_select + cat without allocating
+         * intermediate tensors.
+         *
+         * Requirements:
+         * - This tensor must have capacity_ > 0 (pre-allocated with reserve())
+         * - capacity_ must be sufficient to hold logical_size_ + indices.numel()
+         * - Only works for dim=0 (appending along first dimension)
+         *
+         * Example:
+         *   auto param = Tensor::randn({1000, 3}, Device::CUDA);
+         *   param.reserve(2000);  // Pre-allocate capacity
+         *   auto indices = Tensor::from_vector({0, 5, 10}, {3}, Device::CUDA);
+         *   param.append_gather(indices);  // Now param.shape() = {1003, 3}
+         *
+         * This is equivalent to:
+         *   param = Tensor::cat({param, param.index_select(0, indices)}, 0);
+         * but without the index_select allocation and extra memcpy.
+         *
+         * @param indices 1D tensor of indices to gather (same device as this tensor)
+         * @return reference to this tensor (for chaining)
+         */
+        Tensor& append_gather(const Tensor& indices);
+
+        /**
+         * Append zeros in-place to the end of this tensor along dimension 0.
+         * This is more efficient than cat() with zeros() as it avoids allocating
+         * intermediate tensors when capacity is available.
+         *
+         * Requirements:
+         * - This tensor must have capacity_ > 0 (pre-allocated with reserve())
+         * - capacity_ must be sufficient to hold logical_size_ + n_rows
+         * - Only works for dim=0 (appending along first dimension)
+         *
+         * @param n_rows Number of zero rows to append
+         * @return reference to this tensor (for chaining)
+         */
+        Tensor& append_zeros(size_t n_rows);
 
         // Lazy indexing operations (returns expression template)
         auto gather_lazy(const Tensor& indices) const -> PermutationExpr<TensorLeaf, TensorLeaf>;

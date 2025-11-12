@@ -6,6 +6,7 @@
 #include "kernels/mcmc_kernels.hpp"
 #include "strategy_utils.hpp"
 #include "core_new/logger.hpp"
+#include "core_new/tensor/internal/memory_pool.hpp"
 #include <cmath>
 
 namespace lfs::training {
@@ -392,29 +393,16 @@ namespace lfs::training {
             _splat_data.scaling_raw().index_put_(sampled_idxs, new_scaling_raw);
         }
 
-        // Prepare new Gaussians to concatenate (gather updated values)
-        Tensor new_means, new_sh0, new_shN, new_rotation, new_opacity_to_add, new_scaling_to_add;
+        // Use fused append_gather() operation - NO intermediate allocations!
         {
-            LOG_TIMER("add_new_gather_params");
-            // Gather parameters for new Gaussians
+            LOG_TIMER("add_new_params_gather");
             // NOTE: We must gather opacity/scaling AFTER updating them above!
-            new_means = _splat_data.means().index_select(0, sampled_idxs);
-            new_sh0 = _splat_data.sh0().index_select(0, sampled_idxs);
-            new_shN = _splat_data.shN().index_select(0, sampled_idxs);
-            new_rotation = _splat_data.rotation_raw().index_select(0, sampled_idxs);
-            new_opacity_to_add = _splat_data.opacity_raw().index_select(0, sampled_idxs);
-            new_scaling_to_add = _splat_data.scaling_raw().index_select(0, sampled_idxs);
-        }
-
-        // Concatenate all parameters using optimizer's add_new_params
-        {
-            LOG_TIMER("add_new_concatenate_params");
-            _optimizer->add_new_params(ParamType::Means, new_means);
-            _optimizer->add_new_params(ParamType::Sh0, new_sh0);
-            _optimizer->add_new_params(ParamType::ShN, new_shN);
-            _optimizer->add_new_params(ParamType::Scaling, new_scaling_to_add);
-            _optimizer->add_new_params(ParamType::Rotation, new_rotation);
-            _optimizer->add_new_params(ParamType::Opacity, new_opacity_to_add);
+            _optimizer->add_new_params_gather(ParamType::Means, sampled_idxs);
+            _optimizer->add_new_params_gather(ParamType::Sh0, sampled_idxs);
+            _optimizer->add_new_params_gather(ParamType::ShN, sampled_idxs);
+            _optimizer->add_new_params_gather(ParamType::Rotation, sampled_idxs);
+            _optimizer->add_new_params_gather(ParamType::Opacity, sampled_idxs);
+            _optimizer->add_new_params_gather(ParamType::Scaling, sampled_idxs);
         }
 
         return n_new;
@@ -471,6 +459,9 @@ namespace lfs::training {
                 LOG_DEBUG("MCMC: Added {} new Gaussians at iteration {} (total: {})",
                          n_added, iter, _splat_data.size());
             }
+            // Release cached memory from cudaMallocAsync pool to avoid memory bloat
+            // This is especially important after add_new_gs() which creates many temporary tensors
+            lfs::core::CudaMemoryPool::instance().trim_cached_memory();
         }
 
         // Inject noise to positions every iteration
@@ -537,6 +528,37 @@ namespace lfs::training {
         using namespace lfs::core;
 
         _params = std::make_unique<const lfs::core::param::OptimizationParameters>(optimParams);
+
+        // Pre-allocate tensor capacity if max_cap is specified
+        if (_params->max_cap > 0) {
+            const size_t capacity = static_cast<size_t>(_params->max_cap);
+            LOG_INFO("Pre-allocating capacity for {} Gaussians (attributes + gradients)", capacity);
+
+            try {
+                // Pre-allocate attribute tensors
+                _splat_data.means().reserve(capacity);
+                _splat_data.sh0().reserve(capacity);
+                _splat_data.shN().reserve(capacity);
+                _splat_data.scaling_raw().reserve(capacity);
+                _splat_data.rotation_raw().reserve(capacity);
+                _splat_data.opacity_raw().reserve(capacity);
+
+                // Pre-allocate gradient tensors (must allocate gradients first)
+                if (!_splat_data.has_gradients()) {
+                    _splat_data.allocate_gradients();
+                }
+                _splat_data.means_grad().reserve(capacity);
+                _splat_data.sh0_grad().reserve(capacity);
+                _splat_data.shN_grad().reserve(capacity);
+                _splat_data.scaling_grad().reserve(capacity);
+                _splat_data.rotation_grad().reserve(capacity);
+                _splat_data.opacity_grad().reserve(capacity);
+
+                LOG_INFO("Tensor capacity pre-allocation complete (attributes + gradients)");
+            } catch (const std::exception& e) {
+                LOG_WARN("Failed to pre-allocate capacity: {}. Continuing without pre-allocation.", e.what());
+            }
+        }
 
         // Initialize binomial coefficients (same as original)
         const int n_max = 51;

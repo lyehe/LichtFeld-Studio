@@ -1234,11 +1234,143 @@ namespace lfs::core {
             total_size_along_dim += shape[resolved_dim];
         }
 
-        // Build result shape
+        // Build result shape (needed for both in-place and standard paths)
         std::vector<size_t> result_dims = first_shape.dims();
         result_dims[resolved_dim] = total_size_along_dim;
 
+        // ============= IN-PLACE OPTIMIZATION CHECK =============
+        // Check if we can grow the first tensor in-place using reserved capacity
+        // Conditions:
+        // 1. First tensor must own its data (not a view)
+        // 2. First tensor must have reserved capacity
+        // 3. Concatenation must be along dimension 0 (first dimension)
+        // 4. First tensor must have enough capacity for the total size
+        // Check if in-place optimization is possible
+        LOG_DEBUG("  In-place check: tensors[0] id={}, data_ptr={}, capacity={}, shape[0]={}, total_needed={}",
+                 tensors[0].id_, tensors[0].data_, tensors[0].capacity_, tensors[0].shape()[0], total_size_along_dim);
+        if (tensors.size() > 1) {
+            LOG_DEBUG("  tensors[1] id={}, data_ptr={}, capacity={}, shape[0]={}",
+                     tensors[1].id_, tensors[1].data_, tensors[1].capacity_, tensors[1].shape()[0]);
+        }
+
+        // IN-PLACE OPTIMIZATION: Reuse pre-allocated capacity when available
+        // FIXED: Move assignment operator now properly transfers capacity_ and logical_size_
+        if (resolved_dim == 0 &&
+            tensors[0].data_owner_ &&
+            tensors[0].capacity_ > 0 &&
+            tensors[0].capacity_ >= total_size_along_dim) {
+
+            LOG_DEBUG("  ✓ IN-PLACE OPTIMIZATION: Reusing buffer");
+            // IN-PLACE PATH: Reuse first tensor's pre-allocated buffer
+            // IMPORTANT: Use logical_size_ (actual current size) not shape_[0] which may be stale after reserve()
+            const size_t first_size = (tensors[0].capacity_ > 0 && tensors[0].logical_size_ > 0)
+                                       ? tensors[0].logical_size_
+                                       : first_shape[0];
+            const size_t row_size = tensors[0].numel() / first_shape[0]; // elements per "row" based on CURRENT shape
+            const size_t element_size = dtype_size(first_dtype);
+
+            LOG_DEBUG("Tensor::cat() IN-PLACE: growing tensor #{} from {} to {} rows (capacity {})",
+                      tensors[0].id_, first_size, total_size_along_dim, tensors[0].capacity_);
+            LOG_DEBUG("  first_shape[0]={}, logical_size={}, numel={}, row_size={}, element_size={}",
+                      first_shape[0], tensors[0].logical_size_, tensors[0].numel(), row_size, element_size);
+            LOG_DEBUG("  Buffer offset calculation: first_size={} * row_size={} * element_size={} = {} bytes",
+                      first_size, row_size, element_size, first_size * row_size * element_size);
+
+            // Create result tensor that shares the first tensor's buffer
+            Tensor result;
+            result.shape_ = TensorShape(result_dims);
+            result.strides_ = result.shape_.strides();
+            result.storage_offset_ = 0;
+            result.is_contiguous_ = true;
+            result.device_ = first_device;
+            result.dtype_ = first_dtype;
+            result.data_ = tensors[0].data_;
+            result.data_owner_ = tensors[0].data_owner_;  // Share ownership
+            result.capacity_ = tensors[0].capacity_;
+            result.logical_size_ = total_size_along_dim;
+            result.is_view_ = false;  // Not a view, it owns the data (via shared_ptr)
+            result.stream_ = tensors[0].stream_;  // Inherit stream from first tensor
+            result.compute_alignment();  // Compute alignment flags
+            result.id_ = Tensor::next_id_++;
+
+            LOG_DEBUG("  Result tensor: id={}, data_ptr={}, capacity={}, logical_size={}",
+                      result.id_, result.data_, result.capacity_, result.logical_size_);
+
+            // Copy additional tensors into the reserved space
+            if (first_device == Device::CUDA) {
+                size_t offset = first_size * row_size * element_size;
+                LOG_DEBUG("  Starting CUDA memcpy for {} additional tensors, initial offset={} bytes",
+                          tensors.size() - 1, offset);
+
+                // Validate destination buffer before copying
+                cudaPointerAttributes dest_attrs;
+                cudaError_t attr_err = cudaPointerGetAttributes(&dest_attrs, result.data_);
+                if (attr_err != cudaSuccess) {
+                    LOG_ERROR("  Destination buffer validation FAILED: {}", cudaGetErrorString(attr_err));
+                    LOG_ERROR("  Buffer ptr={}, attempting to access at offset={}", result.data_, offset);
+                    cudaGetLastError(); // Clear error
+                } else {
+                    LOG_DEBUG("  Destination buffer valid: type={}, device={}, devicePtr={}, hostPtr={}",
+                             static_cast<int>(dest_attrs.type), dest_attrs.device, dest_attrs.devicePointer, dest_attrs.hostPointer);
+                }
+
+                for (size_t i = 1; i < tensors.size(); ++i) {
+                    const size_t bytes = tensors[i].bytes();
+                    const size_t tensor_rows = tensors[i].shape()[0];
+                    const void* src_ptr = tensors[i].raw_ptr();
+                    LOG_DEBUG("  Copying tensor[{}]: shape_[0]={}, numel={}, {} bytes from src={} at offset {}",
+                             i, tensor_rows, tensors[i].numel(), bytes, src_ptr, offset);
+
+                    // Validate source buffer
+                    cudaPointerAttributes src_attrs;
+                    attr_err = cudaPointerGetAttributes(&src_attrs, src_ptr);
+                    if (attr_err != cudaSuccess) {
+                        LOG_ERROR("  Source buffer validation FAILED: {}", cudaGetErrorString(attr_err));
+                        cudaGetLastError(); // Clear error
+                    } else {
+                        LOG_DEBUG("  Source buffer valid: type={}, device={}, devicePtr={}",
+                                 static_cast<int>(src_attrs.type), src_attrs.device, src_attrs.devicePointer);
+                    }
+
+                    cudaError_t err = cudaMemcpy(
+                        static_cast<char*>(result.data_) + offset,
+                        src_ptr,
+                        bytes,
+                        cudaMemcpyDeviceToDevice);
+                    if (err != cudaSuccess) {
+                        LOG_ERROR("  cudaMemcpy FAILED: {}", cudaGetErrorString(err));
+                        LOG_ERROR("  Source tensor[{}]: ptr={}, device={}, is_contiguous={}, is_view={}",
+                                  i, src_ptr, static_cast<int>(tensors[i].device()),
+                                  tensors[i].is_contiguous(), tensors[i].is_view());
+                        LOG_ERROR("  Destination: buffer_start={}, offset={}, bytes={}, total={}",
+                                  result.data_, offset, bytes, offset + bytes);
+                        throw std::runtime_error(std::string("cudaMemcpy failed in in-place cat: ") + cudaGetErrorString(err));
+                    }
+                    offset += bytes;
+                }
+                LOG_DEBUG("  CUDA memcpy complete, final offset={} bytes", offset);
+            } else {
+                size_t offset = first_size * row_size * element_size;
+                for (size_t i = 1; i < tensors.size(); ++i) {
+                    const size_t bytes = tensors[i].bytes();
+                    std::memcpy(
+                        static_cast<char*>(result.data_) + offset,
+                        tensors[i].raw_ptr(),
+                        bytes);
+                    offset += bytes;
+                }
+            }
+
+            LOG_DEBUG("  ← Returning IN-PLACE result: id={}, data_ptr={}, capacity={}",
+                     result.id_, result.data_, result.capacity_);
+            return result;
+        }
+
+        // ============= FALLBACK: Standard allocation path =============
+        LOG_DEBUG("  → SLOW PATH: Allocating new buffer");
         auto result = Tensor::empty(TensorShape(result_dims), first_device, first_dtype);
+        LOG_DEBUG("  Created new tensor: id={}, data_ptr={}, capacity={}",
+                 result.id_, result.raw_ptr(), result.capacity_);
 
         size_t element_size = dtype_size(first_dtype);
 
@@ -1268,6 +1400,8 @@ namespace lfs::core {
                 }
             }
 
+            LOG_DEBUG("  ← Returning SLOW PATH result: id={}, data_ptr={}, capacity={}",
+                     result.id_, result.raw_ptr(), result.capacity_);
             return result;
         }
 

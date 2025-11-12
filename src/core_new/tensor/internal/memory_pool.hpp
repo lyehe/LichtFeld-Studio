@@ -402,10 +402,11 @@ namespace lfs::core {
                 size_t after_free = 0;
                 cudaMemGetInfo(&after_free, &total);
 
-                if (after_free > before_free) {
-                    printf("[MEMORY] Trimmed pool: freed %.2f GB\n",
-                           (after_free - before_free) / (1024.0 * 1024.0 * 1024.0));
-                }
+                // Removed verbose logging - memory pool trimming is expected behavior
+                // if (after_free > before_free) {
+                //     printf("[MEMORY] Trimmed pool: freed %.2f GB\n",
+                //            (after_free - before_free) / (1024.0 * 1024.0 * 1024.0));
+                // }
             }
 #endif
         }

@@ -34,6 +34,14 @@ namespace lfs::training {
         config.param_lrs["rotation"] = params.rotation_lr;
         config.param_lrs["opacity"] = params.opacity_lr;
 
+        // Pre-allocate optimizer state capacity to avoid reallocations during training
+        // This dramatically reduces peak memory usage by avoiding double-buffering during growth
+        if (params.max_cap > 0) {
+            config.initial_capacity = static_cast<size_t>(params.max_cap);
+            config.growth_factor = 1.5f;  // Still allow growth beyond max_cap if needed
+            LOG_INFO("AdamOptimizer: pre-allocating capacity for {} Gaussians (optimizer states)", config.initial_capacity);
+        }
+
         LOG_DEBUG("Creating optimizer with per-parameter LRs:");
         LOG_DEBUG("  means: {:.2e}", config.param_lrs["means"]);
         LOG_DEBUG("  sh0: {:.2e}", config.param_lrs["sh0"]);

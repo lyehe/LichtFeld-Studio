@@ -96,3 +96,65 @@ TEST(TensorReserveInplaceCat, GradientPattern) {
     EXPECT_EQ(attrs_result.shape()[0], 15);
     EXPECT_EQ(grads_result.shape()[0], 15);
 }
+
+TEST(TensorReserveInplaceCat, DeviceConsistencyCheck) {
+    // Test to expose device corruption bug
+    // This test verifies that all tensors maintain correct device throughout cat operation
+
+    auto t1 = Tensor::zeros({10, 5}, Device::CUDA);
+    t1.reserve(100);
+
+    // Verify t1 device BEFORE cat
+    EXPECT_EQ(t1.device(), Device::CUDA);
+    std::cout << "t1 device before cat: " << static_cast<int>(t1.device()) << std::endl;
+
+    auto t2 = Tensor::ones({5, 5}, Device::CUDA);
+
+    // Verify t2 device
+    EXPECT_EQ(t2.device(), Device::CUDA);
+    std::cout << "t2 device: " << static_cast<int>(t2.device()) << std::endl;
+
+    // This should use in-place cat
+    auto result = Tensor::cat({t1, t2}, 0);
+
+    // Verify result device
+    EXPECT_EQ(result.device(), Device::CUDA);
+    std::cout << "result device after cat: " << static_cast<int>(result.device()) << std::endl;
+
+    // Verify shape
+    EXPECT_EQ(result.shape()[0], 15);
+    EXPECT_EQ(result.capacity(), 100);
+
+    // Try to access the data to trigger any device-related errors
+    auto result_cpu = result.cpu();
+    EXPECT_EQ(result_cpu.device(), Device::CPU);
+}
+
+TEST(TensorReserveInplaceCat, MultipleInplaceCats) {
+    // Test multiple sequential in-place cats to see if device gets corrupted
+    auto base = Tensor::zeros({10, 3}, Device::CUDA);
+    base.reserve(200);
+
+    EXPECT_EQ(base.device(), Device::CUDA);
+    std::cout << "Initial base device: " << static_cast<int>(base.device()) << std::endl;
+
+    // Do multiple cats in sequence
+    for (int i = 0; i < 5; i++) {
+        auto addition = Tensor::ones({5, 3}, Device::CUDA);
+        EXPECT_EQ(addition.device(), Device::CUDA);
+        std::cout << "Iteration " << i << " - addition device: " << static_cast<int>(addition.device()) << std::endl;
+
+        base = Tensor::cat({base, addition}, 0);
+
+        EXPECT_EQ(base.device(), Device::CUDA) << "Device mismatch at iteration " << i;
+        std::cout << "Iteration " << i << " - base device after cat: " << static_cast<int>(base.device()) << std::endl;
+        std::cout << "Iteration " << i << " - base shape: " << base.shape()[0] << std::endl;
+    }
+
+    EXPECT_EQ(base.shape()[0], 35);  // 10 + 5*5
+    EXPECT_EQ(base.capacity(), 200);
+
+    // Verify we can read the data
+    auto cpu_result = base.cpu();
+    EXPECT_EQ(cpu_result.shape()[0], 35);
+}

@@ -93,6 +93,8 @@ namespace lfs::core {
           is_aligned_16_(other.is_aligned_16_), // Copy alignment flags
           is_aligned_128_(other.is_aligned_128_),
           stream_(other.stream_), // Copy stream assignment
+          capacity_(other.capacity_),       // Copy capacity management
+          logical_size_(other.logical_size_),
           id_(next_id_++) {
 
         if (profiling_enabled_) {
@@ -174,6 +176,14 @@ namespace lfs::core {
         is_aligned_16_ = other.is_aligned_16_; // Copy alignment flags
         is_aligned_128_ = other.is_aligned_128_;
         stream_ = other.stream_; // Copy stream assignment
+        // capacity_ and logical_size_ apply to the specific buffer allocation
+        // When we're doing shallow copy (sharing buffer), we share these too
+        if (capacity_ != other.capacity_ && capacity_ > 1000000) {
+            LOG_WARN("Assignment operator: LOSING CAPACITY! this.capacity={} → other.capacity={}, this.data_={}, other.data_={}",
+                     capacity_, other.capacity_, data_, other.data_);
+        }
+        capacity_ = other.capacity_;
+        logical_size_ = other.logical_size_;
         id_ = next_id_++;
 
         if (profiling_enabled_) {
@@ -199,6 +209,8 @@ namespace lfs::core {
           is_aligned_16_(std::exchange(other.is_aligned_16_, false)),
           is_aligned_128_(std::exchange(other.is_aligned_128_, false)),
           stream_(std::exchange(other.stream_, nullptr)),
+          capacity_(std::exchange(other.capacity_, 0)),
+          logical_size_(std::exchange(other.logical_size_, 0)),
           id_(other.id_) {
 
         if (profiling_enabled_) {
@@ -272,6 +284,8 @@ namespace lfs::core {
             is_aligned_16_ = std::exchange(other.is_aligned_16_, false);
             is_aligned_128_ = std::exchange(other.is_aligned_128_, false);
             stream_ = std::exchange(other.stream_, nullptr);
+            capacity_ = std::exchange(other.capacity_, 0);
+            logical_size_ = std::exchange(other.logical_size_, 0);
             id_ = other.id_;
 
             if (profiling_enabled_) {
@@ -2022,6 +2036,81 @@ namespace lfs::core {
         }
 
         return true;
+    }
+
+    // ============= Capacity Management =============
+
+    void Tensor::reserve(size_t new_capacity) {
+        // Validate tensor state
+        if (!data_owner_) {
+            throw TensorError("reserve() requires an owning tensor (not a view)", this);
+        }
+        if (shape_.rank() == 0) {
+            throw TensorError("reserve() requires tensor with at least 1 dimension", this);
+        }
+
+        // Get current size (use shape_[0], not logical_size_ which may be stale/uninitialized)
+        const size_t current_rows = shape_[0];
+
+        // If already at or above requested capacity, just update logical_size_ and return
+        if (capacity_ >= new_capacity) {
+            // Make sure logical_size_ is correct (in case reserve was called after resize)
+            logical_size_ = current_rows;
+            return;
+        }
+
+        // Calculate sizes
+        const size_t row_size = numel() / current_rows; // elements per "row"
+        const size_t new_total_elements = new_capacity * row_size;
+        const size_t element_size = dtype_size(dtype_);
+        const size_t new_bytes = new_total_elements * element_size;
+
+        // First, explicitly release the old buffer to avoid double allocation
+        // This ensures the old buffer is freed BEFORE we allocate the new one
+        void* old_data = data_;
+        std::shared_ptr<void> old_owner = data_owner_;  // Keep reference temporarily
+
+        // Allocate new buffer
+        void* new_data = nullptr;
+        if (device_ == Device::CUDA) {
+            CHECK_CUDA(cudaMalloc(&new_data, new_bytes));
+        } else {
+            new_data = std::malloc(new_bytes);
+            if (!new_data) {
+                throw TensorError("Failed to allocate CPU memory for reserve()", this);
+            }
+        }
+
+        // Copy existing data
+        if (old_data && numel() > 0) {
+            const size_t copy_bytes = numel() * element_size;
+            if (device_ == Device::CUDA) {
+                CHECK_CUDA(cudaMemcpy(new_data, old_data, copy_bytes, cudaMemcpyDeviceToDevice));
+            } else {
+                std::memcpy(new_data, old_data, copy_bytes);
+            }
+        }
+
+        // Update tensor state with new buffer
+        data_ = new_data;
+        data_owner_ = std::shared_ptr<void>(new_data, [device = device_](void* ptr) {
+            if (device == Device::CUDA) {
+                cudaFree(ptr);
+            } else {
+                std::free(ptr);
+            }
+        });
+        capacity_ = new_capacity;
+        logical_size_ = current_rows;  // Set to actual current size (from shape_[0])
+
+        // Explicitly release old buffer AFTER copy is complete
+        // This ensures we don't have both buffers alive at the same time
+        old_owner.reset();  // Decrement ref count, potentially freeing old buffer immediately
+
+        if (profiling_enabled_) {
+            LOG_DEBUG("Tensor #{}: reserved capacity {} (current size {}, row_size {})",
+                      id_, new_capacity, current_rows, row_size);
+        }
     }
 
     // ============= Error Classes =============

@@ -394,6 +394,45 @@ namespace lfs::training {
         extend_state_for_new_params(type, n_new);
     }
 
+    void AdamOptimizer::add_new_params_gather(ParamType type, const lfs::core::Tensor& indices) {
+        LOG_DEBUG("add_new_params_gather for {}", param_name(type));
+
+        // Get parameter and gradient references
+        auto& param = get_param(type);
+        auto& grad = get_grad(type);
+
+        if (!param.is_valid()) {
+            LOG_ERROR("add_new_params_gather: parameter {} not initialized", param_name(type));
+            return;
+        }
+
+        if (indices.device() != param.device()) {
+            LOG_ERROR("add_new_params_gather: indices device doesn't match parameter device");
+            return;
+        }
+
+        size_t n_new = indices.numel();
+        size_t n_current = param.shape()[0];
+
+        LOG_DEBUG("  Appending {} new values to {} existing values", n_new, n_current);
+
+        // Use fused append_gather() operation - NO INTERMEDIATE ALLOCATION!
+        param.append_gather(indices);
+
+        // Extend gradient with zeros using append_zeros() - NO INTERMEDIATE ALLOCATION!
+        LOG_DEBUG("  add_new_params_gather gradient extension:");
+        LOG_DEBUG("    existing grad: shape[0]={}, capacity={}, ndim={}",
+                  grad.shape()[0], grad.capacity(), grad.ndim());
+
+        grad.append_zeros(n_new);
+
+        LOG_DEBUG("    result grad: shape[0]={}, capacity={}, ndim={}",
+                  grad.shape()[0], grad.capacity(), grad.ndim());
+
+        // Extend optimizer state (this can be optimized with capacity tracking)
+        extend_state_for_new_params(type, n_new);
+    }
+
     void AdamOptimizer::relocate_params_at_indices(ParamType type, const std::vector<int64_t>& indices) {
         if (indices.empty()) return;
 

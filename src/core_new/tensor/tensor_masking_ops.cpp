@@ -1487,6 +1487,185 @@ namespace lfs::core {
         return Tensor();
     }
 
+    Tensor& Tensor::append_gather(const Tensor& indices) {
+        if (!is_valid() || !indices.is_valid()) {
+            LOG_ERROR("append_gather: invalid tensor");
+            return *this;
+        }
+
+        if (indices.ndim() != 1) {
+            LOG_ERROR("append_gather: indices must be 1D, got {}D", indices.ndim());
+            return *this;
+        }
+
+        if (indices.device() != device_) {
+            LOG_ERROR("append_gather: device mismatch (tensor: {}, indices: {})",
+                      device_name(device_), device_name(indices.device()));
+            return *this;
+        }
+
+        if (capacity_ == 0) {
+            LOG_ERROR("append_gather: tensor must have capacity > 0 (call reserve() first)");
+            return *this;
+        }
+
+        if (ndim() == 0) {
+            LOG_ERROR("append_gather: tensor must have at least 1 dimension");
+            return *this;
+        }
+
+        size_t n_gather = indices.numel();
+
+        // Use logical_size_ if set, otherwise use shape_[0] (for tensors not created with reserve())
+        const size_t current_size = (capacity_ > 0 && logical_size_ > 0) ? logical_size_ : shape_[0];
+        size_t new_size = current_size + n_gather;
+
+        LOG_DEBUG("append_gather: capacity_={}, logical_size_={}, shape_[0]={}, current_size={}, n_gather={}, new_size={}",
+                  capacity_, logical_size_, shape_[0], current_size, n_gather, new_size);
+
+        if (new_size > capacity_) {
+            LOG_ERROR("append_gather: insufficient capacity (need {}, have {})", new_size, capacity_);
+            return *this;
+        }
+
+        // Calculate row size (all elements in dims 1+)
+        size_t row_size = 1;
+        for (size_t i = 1; i < shape_.rank(); i++) {
+            row_size *= shape_[i];
+        }
+
+        // Calculate write offset (in elements, not rows)
+        size_t write_offset_elements = current_size * row_size;
+
+        // Convert Int64 indices to Int32 for kernel
+        auto indices_same_device = ensure_same_device(indices);
+        bool is_int64 = indices_same_device.dtype() == DataType::Int64;
+        Tensor indices_int32;
+        if (is_int64) {
+            indices_int32 = indices_same_device.to(DataType::Int32);
+        }
+        const int* idx_ptr = is_int64 ? indices_int32.ptr<int>() : indices_same_device.ptr<int>();
+
+        // Launch kernel to append gathered rows directly to the end
+        if (device_ == Device::CUDA) {
+            // Calculate output pointer (write starts at current_size rows)
+            float* output_ptr = ptr<float>() + write_offset_elements;
+
+            LOG_DEBUG("  Launching index_select kernel: write_offset_elements={}, output_ptr_offset={}, n_gather={}",
+                      write_offset_elements, write_offset_elements * sizeof(float), n_gather);
+
+            // Create temporary shape for the output (same as input but with n_gather rows)
+            std::vector<size_t> output_shape = shape_.dims();
+            output_shape[0] = n_gather;
+
+            // Use index_select kernel to gather into the output location
+            if (dtype_ == DataType::Float32) {
+                tensor_ops::launch_index_select(ptr<float>(), idx_ptr,
+                                                output_ptr, output_shape.data(),
+                                                shape_.rank(), 0, n_gather,
+                                                0 /*BoundaryMode::Assert*/, stream_);
+
+                // IMPORTANT: Synchronize to ensure kernel completes
+                CHECK_CUDA(cudaStreamSynchronize(stream_));
+                LOG_DEBUG("  index_select kernel completed");
+            } else {
+                LOG_ERROR("append_gather: only Float32 dtype supported for now");
+                return *this;
+            }
+        } else {
+            // CPU implementation
+            const float* src = ptr<float>();
+            float* dst = ptr<float>() + write_offset_elements;
+
+            for (size_t i = 0; i < n_gather; i++) {
+                int sel = idx_ptr[i];
+                if (sel < 0) {
+                    sel += static_cast<int>(logical_size_);
+                }
+
+                if (sel < 0 || sel >= static_cast<int>(logical_size_)) {
+                    LOG_ERROR("append_gather: index {} out of range [0, {})", sel, logical_size_);
+                    return *this;
+                }
+
+                // Copy entire row
+                std::memcpy(dst + i * row_size,
+                            src + sel * row_size,
+                            row_size * sizeof(float));
+            }
+        }
+
+        // Update logical size and shape
+        logical_size_ = new_size;
+        auto new_shape = shape_.dims();
+        new_shape[0] = new_size;
+        shape_ = TensorShape(new_shape);
+
+        LOG_DEBUG("append_gather: grew tensor from {} to {} rows (capacity: {})",
+                  logical_size_ - n_gather, logical_size_, capacity_);
+
+        return *this;
+    }
+
+    Tensor& Tensor::append_zeros(size_t n_rows) {
+        LOG_DEBUG("append_zeros: n_rows={}", n_rows);
+
+        if (n_rows == 0) {
+            return *this;
+        }
+
+        // Validation: check capacity
+        if (capacity_ == 0) {
+            throw std::runtime_error("append_zeros() requires tensor with capacity > 0 (use reserve() first)");
+        }
+
+        if (shape_.rank() == 0) {
+            throw std::runtime_error("Cannot append to scalar tensor");
+        }
+
+        // Calculate sizes
+        const size_t current_size = (logical_size_ > 0) ? logical_size_ : shape_[0];
+        const size_t new_size = current_size + n_rows;
+
+        if (new_size > capacity_) {
+            throw std::runtime_error(fmt::format(
+                "append_zeros() requires sufficient capacity: current={}, n_rows={}, new_size={}, capacity={}",
+                current_size, n_rows, new_size, capacity_));
+        }
+
+        // Calculate row size in elements
+        size_t row_size = 1;
+        for (size_t i = 1; i < shape_.rank(); i++) {
+            row_size *= shape_[i];
+        }
+
+        // Calculate write offset in elements
+        size_t write_offset_elements = current_size * row_size;
+        size_t zero_elements = n_rows * row_size;
+        size_t zero_bytes = zero_elements * dtype_size(dtype_);
+
+        // Zero out the appended region
+        if (device_ == Device::CUDA) {
+            void* write_ptr = static_cast<uint8_t*>(data_) + write_offset_elements * dtype_size(dtype_);
+            CHECK_CUDA(cudaMemsetAsync(write_ptr, 0, zero_bytes, stream_));
+            CHECK_CUDA(cudaStreamSynchronize(stream_));
+        } else {
+            void* write_ptr = static_cast<uint8_t*>(data_) + write_offset_elements * dtype_size(dtype_);
+            std::memset(write_ptr, 0, zero_bytes);
+        }
+
+        // Update logical size and shape
+        logical_size_ = new_size;
+        auto new_shape = shape_.dims();
+        new_shape[0] = new_size;
+        shape_ = TensorShape(new_shape);
+
+        LOG_DEBUG("append_zeros: grew tensor from {} to {} rows (capacity: {})",
+                  logical_size_ - n_rows, logical_size_, capacity_);
+
+        return *this;
+    }
+
 #undef CHECK_CUDA
 
 } // namespace lfs::core

@@ -187,6 +187,20 @@ namespace lfs::training {
         void add_new_params(ParamType type, const lfs::core::Tensor& new_values, bool validate = false);
 
         /**
+         * Add new parameters using fused append_gather() operation.
+         * This is more efficient than add_new_params() as it avoids allocating
+         * intermediate tensors from index_select().
+         *
+         * Requirements:
+         * - Parameter must have pre-allocated capacity (via reserve())
+         * - indices must be on the same device as the parameter
+         *
+         * @param type Parameter type to extend
+         * @param indices Indices to gather from existing parameter values
+         */
+        void add_new_params_gather(ParamType type, const lfs::core::Tensor& indices);
+
+        /**
          * Reset optimizer state at specific indices (e.g., relocated dead Gaussians)
          * Also zeros out the corresponding gradients to ensure clean state.
          *
