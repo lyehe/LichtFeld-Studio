@@ -19,7 +19,8 @@ namespace gs::gui {
         HRESULT selectFileNative(PWSTR& strDirectory,
                                  COMDLG_FILTERSPEC rgSpec[],
                                  UINT cFileTypes,
-                                 bool blnDirectory) {
+                                 bool blnDirectory,
+                                 LPCWSTR defaultFolder) {
 
             HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
             if (FAILED(hr)) {
@@ -48,6 +49,16 @@ namespace gs::gui {
                             } else {
                                 pFileOpen->SetOptions(dwOptions | FOS_NOCHANGEDIR | FOS_FILEMUSTEXIST);
                             }
+                        }
+                    }
+
+                    // Set default folder if provided
+                    if (defaultFolder != nullptr) {
+                        IShellItem* pDefaultFolder = nullptr;
+                        hr = SHCreateItemFromParsingName(defaultFolder, NULL, IID_PPV_ARGS(&pDefaultFolder));
+                        if (SUCCEEDED(hr)) {
+                            pFileOpen->SetFolder(pDefaultFolder);
+                            pDefaultFolder->Release();
                         }
                     }
 
@@ -80,7 +91,8 @@ namespace gs::gui {
         HRESULT saveFileNative(PWSTR& strDirectory,
                                COMDLG_FILTERSPEC rgSpec[],
                                UINT cFileTypes,
-                               LPCWSTR defaultFileName) {
+                               LPCWSTR defaultFileName,
+                               LPCWSTR defaultFolder) {
 
             HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
             if (FAILED(hr)) {
@@ -106,6 +118,16 @@ namespace gs::gui {
                     // Set default file name if provided
                     if (defaultFileName != nullptr) {
                         pFileSave->SetFileName(defaultFileName);
+                    }
+
+                    // Set default folder if provided
+                    if (defaultFolder != nullptr) {
+                        IShellItem* pDefaultFolder = nullptr;
+                        hr = SHCreateItemFromParsingName(defaultFolder, NULL, IID_PPV_ARGS(&pDefaultFolder));
+                        if (SUCCEEDED(hr)) {
+                            pFileSave->SetFolder(pDefaultFolder);
+                            pDefaultFolder->Release();
+                        }
                     }
 
                     // Show the Save File dialog
@@ -198,7 +220,11 @@ namespace gs::gui {
                 {L"All Files", L"*.*"}
             };
 
-        if (SUCCEEDED(gs::gui::utils::saveFileNative(filePath, rgSpec, 2, L"optimization_config.json"))) {
+        // Get absolute path to parameter directory
+        auto param_dir = std::filesystem::absolute("parameter");
+        std::wstring param_dir_wstr = param_dir.wstring();
+
+        if (SUCCEEDED(gs::gui::utils::saveFileNative(filePath, rgSpec, 2, L"optimization_config.json", param_dir_wstr.c_str()))) {
             std::filesystem::path config_path(filePath);
             events::cmd::ExportConfig{.path = config_path}.emit();
             LOG_INFO("Exporting config to: {}", config_path.string());
@@ -214,7 +240,11 @@ namespace gs::gui {
                 {L"All Files", L"*.*"}
             };
 
-        if (SUCCEEDED(gs::gui::utils::selectFileNative(filePath, rgSpec, 2, false))) {
+        // Get absolute path to parameter directory
+        auto param_dir = std::filesystem::absolute("parameter");
+        std::wstring param_dir_wstr = param_dir.wstring();
+
+        if (SUCCEEDED(gs::gui::utils::selectFileNative(filePath, rgSpec, 2, false, param_dir_wstr.c_str()))) {
             std::filesystem::path config_path(filePath);
             events::cmd::ImportConfig{.path = config_path}.emit();
             LOG_INFO("Importing config from: {}", config_path.string());

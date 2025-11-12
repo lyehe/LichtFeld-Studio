@@ -95,7 +95,11 @@ namespace gs::gui {
             {L"All Files", L"*.*"}
         };
 
-        if (SUCCEEDED(gs::gui::utils::saveFileNative(filePath, rgSpec, 2, L"optimization_config.json"))) {
+        // Get absolute path to parameter directory
+        auto param_dir = std::filesystem::absolute("parameter");
+        std::wstring param_dir_wstr = param_dir.wstring();
+
+        if (SUCCEEDED(gs::gui::utils::saveFileNative(filePath, rgSpec, 2, L"optimization_config.json", param_dir_wstr.c_str()))) {
             std::filesystem::path config_path(filePath);
             callback(config_path.string());
         }
@@ -103,7 +107,8 @@ namespace gs::gui {
         // Use export dialog for Linux
         export_callback = callback;
         show_export_dialog = true;
-        std::string default_name = (std::filesystem::current_path() / "optimization_config.json").string();
+        auto param_dir = std::filesystem::absolute("parameter");
+        std::string default_name = (param_dir / "optimization_config.json").string();
         strncpy(export_path_buffer, default_name.c_str(), sizeof(export_path_buffer) - 1);
         export_path_buffer[sizeof(export_path_buffer) - 1] = '\0';
 #endif
@@ -118,7 +123,11 @@ namespace gs::gui {
             {L"All Files", L"*.*"}
         };
 
-        if (SUCCEEDED(gs::gui::utils::selectFileNative(filePath, rgSpec, 2, false))) {
+        // Get absolute path to parameter directory
+        auto param_dir = std::filesystem::absolute("parameter");
+        std::wstring param_dir_wstr = param_dir.wstring();
+
+        if (SUCCEEDED(gs::gui::utils::selectFileNative(filePath, rgSpec, 2, false, param_dir_wstr.c_str()))) {
             std::filesystem::path config_path(filePath);
             callback(config_path.string());
         }

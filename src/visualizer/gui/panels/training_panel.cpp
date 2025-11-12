@@ -926,17 +926,10 @@ namespace gs::gui::panels {
             ImGui::PopStyleColor(2);
 
             // Reset button
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.7f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.8f, 1.0f));
-            if (ImGui::Button("Reset Training", ImVec2(-1, 0))) {
-                trainer_manager->resetTraining();
-            }
-            ImGui::PopStyleColor(2);
-
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
-            if (ImGui::Button("Stop Permanently", ImVec2(-1, 0))) {
-                events::cmd::StopTraining{}.emit();
+            if (ImGui::Button("Reset Training", ImVec2(-1, 0))) {
+                trainer_manager->resetTraining();
             }
             ImGui::PopStyleColor(2);
             break;
@@ -1005,16 +998,6 @@ namespace gs::gui::panels {
                 ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Checkpoint saved!");
             } else {
                 state.save_in_progress = false;
-            }
-        }
-
-        // Import/Export config feedback
-        if (ctx.viewer->hasImportMessage()) {
-            auto status = ctx.viewer->getImportStatus();
-            if (status.is_success) {
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "%s", status.text.c_str());
-            } else {
-                ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "Error: %s", status.text.c_str());
             }
         }
 

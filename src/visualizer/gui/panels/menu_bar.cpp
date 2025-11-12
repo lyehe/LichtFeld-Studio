@@ -23,6 +23,24 @@ namespace gs::gui {
     }
 
     void MenuBar::render() {
+        // Check for keyboard shortcuts
+        ImGuiIO& io = ImGui::GetIO();
+        bool ctrl = io.KeyCtrl;
+
+        // Ctrl+E for Export Config
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
+            if (on_export_config_) {
+                on_export_config_();
+            }
+        }
+
+        // Ctrl+I for Import Config
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_I, false)) {
+            if (on_import_config_) {
+                on_import_config_();
+            }
+        }
+
         // Modern color scheme
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 8.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(12.0f, 6.0f));
@@ -77,14 +95,14 @@ namespace gs::gui {
 
                 ImGui::Separator();
 
-                if (ImGui::MenuItem("Export Config...")) {
+                if (ImGui::MenuItem("Export Config...", "Ctrl+E")) {
                     LOG_DEBUG("Export Config clicked");
                     if (on_export_config_) {
                         on_export_config_();
                     }
                 }
 
-                if (ImGui::MenuItem("Import Config...")) {
+                if (ImGui::MenuItem("Import Config...", "Ctrl+I")) {
                     LOG_DEBUG("Import Config clicked");
                     if (on_import_config_) {
                         on_import_config_();
@@ -567,6 +585,22 @@ namespace gs::gui {
                         WrappedTextColored(StateColor, "Ply selected in Ply panel");
                         ImGui::TableNextColumn();
                         WrappedTextColored(actionColor, "Rename ply file");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(keyColor, "Ctrl+E");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(StateColor, "Anytime");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(actionColor, "Export configuration to JSON file");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(keyColor, "Ctrl+I");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(StateColor, "Anytime");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(actionColor, "Import configuration from JSON file");
 
                         ImGui::EndTable();
                     }

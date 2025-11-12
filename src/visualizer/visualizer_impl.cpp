@@ -656,14 +656,8 @@ namespace gs::visualizer {
     }
 
     void VisualizerImpl::handleExportConfig(const events::cmd::ExportConfig& cmd) {
-        // Clear previous import status (we'll reuse for export feedback)
-        import_message_.clear();
-        import_error_.clear();
-        import_success_ = false;
-
         if (!project_) {
-            import_error_ = "No project loaded";
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup("No project loaded", true);
             LOG_ERROR("No project loaded to export configuration from");
             return;
         }
@@ -672,8 +666,7 @@ namespace gs::visualizer {
             // Check if parent directory exists and is writable
             auto parent_path = cmd.path.parent_path();
             if (!parent_path.empty() && !std::filesystem::exists(parent_path)) {
-                import_error_ = "Directory does not exist: " + parent_path.string();
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup("Directory does not exist: " + parent_path.string(), true);
                 LOG_ERROR("Parent directory does not exist: {}", parent_path.string());
                 return;
             }
@@ -687,8 +680,7 @@ namespace gs::visualizer {
             // Write to file with pretty printing
             std::ofstream file(cmd.path);
             if (!file.is_open()) {
-                import_error_ = "Failed to open file for writing: " + cmd.path.filename().string();
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup("Failed to open file for writing: " + cmd.path.filename().string(), true);
                 LOG_ERROR("Failed to open file for writing: {}", cmd.path.string());
                 return;
             }
@@ -698,8 +690,7 @@ namespace gs::visualizer {
 
             // Check if write was successful
             if (!file.good()) {
-                import_error_ = "Failed to write configuration (disk full?)";
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup("Failed to write configuration (disk full?)", true);
                 LOG_ERROR("Failed to write configuration to: {}", cmd.path.string());
                 file.close();
 
@@ -713,37 +704,26 @@ namespace gs::visualizer {
 
             // Verify file was actually created and has content
             if (!std::filesystem::exists(cmd.path) || std::filesystem::file_size(cmd.path) == 0) {
-                import_error_ = "File verification failed (file missing or empty)";
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup("File verification failed (file missing or empty)", true);
                 LOG_ERROR("File verification failed: {}", cmd.path.string());
                 return;
             }
 
-            // Set success message
-            import_success_ = true;
-            import_message_ = std::format("Config exported: {} iterations, {} strategy",
-                                         opt_params.iterations,
-                                         opt_params.strategy.empty() ? "default" : opt_params.strategy);
-            import_timestamp_ = std::chrono::steady_clock::now();
+            // Show success notification
+            std::string success_msg = std::format("Configuration exported successfully to:\n{}", cmd.path.filename().string());
+            gui_manager_->showNotificationPopup(success_msg, false);
 
             LOG_INFO("Configuration exported successfully to: {}", cmd.path.string());
 
         } catch (const std::exception& e) {
-            import_error_ = std::format("Export failed: {}", e.what());
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup(std::format("Export failed: {}", e.what()), true);
             LOG_ERROR("Failed to export configuration: {}", e.what());
         }
     }
 
     void VisualizerImpl::handleImportConfig(const events::cmd::ImportConfig& cmd) {
-        // Clear previous import status
-        import_message_.clear();
-        import_error_.clear();
-        import_success_ = false;
-
         if (!project_) {
-            import_error_ = "No project loaded";
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup("No project loaded", true);
             LOG_ERROR("No project loaded to import configuration into");
             return;
         }
@@ -754,8 +734,7 @@ namespace gs::visualizer {
             {
                 std::ifstream file(cmd.path);
                 if (!file.is_open()) {
-                    import_error_ = "Failed to open file: " + cmd.path.filename().string();
-                    import_timestamp_ = std::chrono::steady_clock::now();
+                    gui_manager_->showNotificationPopup("Failed to open file: " + cmd.path.filename().string(), true);
                     LOG_ERROR("Failed to open config file: {}", cmd.path.string());
                     return;
                 }
@@ -767,29 +746,25 @@ namespace gs::visualizer {
 
             // Validate critical parameters
             if (opt_params.iterations == 0 || opt_params.iterations > 1000000) {
-                import_error_ = std::format("Invalid iterations: {} (must be 1-1,000,000)", opt_params.iterations);
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup(std::format("Invalid iterations: {} (must be 1-1,000,000)", opt_params.iterations), true);
                 LOG_ERROR("Invalid iterations value: {}", opt_params.iterations);
                 return;
             }
 
             if (opt_params.means_lr <= 0 || opt_params.means_lr > 1.0) {
-                import_error_ = std::format("Invalid position learning rate: {:.6f} (must be > 0 and <= 1.0)", opt_params.means_lr);
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup(std::format("Invalid position learning rate: {:.6f}\n(must be > 0 and <= 1.0)", opt_params.means_lr), true);
                 LOG_ERROR("Invalid means_lr value: {}", opt_params.means_lr);
                 return;
             }
 
             if (opt_params.shs_lr <= 0 || opt_params.shs_lr > 1.0) {
-                import_error_ = std::format("Invalid SH learning rate: {:.6f} (must be > 0 and <= 1.0)", opt_params.shs_lr);
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup(std::format("Invalid SH learning rate: {:.6f}\n(must be > 0 and <= 1.0)", opt_params.shs_lr), true);
                 LOG_ERROR("Invalid shs_lr value: {}", opt_params.shs_lr);
                 return;
             }
 
             if (opt_params.sh_degree < 0 || opt_params.sh_degree > 3) {
-                import_error_ = std::format("Invalid SH degree: {} (must be 0-3)", opt_params.sh_degree);
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup(std::format("Invalid SH degree: {} (must be 0-3)", opt_params.sh_degree), true);
                 LOG_ERROR("Invalid sh_degree value: {}", opt_params.sh_degree);
                 return;
             }
@@ -798,9 +773,7 @@ namespace gs::visualizer {
             if (opt_params.gpu_id >= 0) {
                 int device_count = torch::cuda::is_available() ? torch::cuda::device_count() : 0;
                 if (opt_params.gpu_id >= device_count) {
-                    import_error_ = std::format("Invalid GPU ID: {} (only {} GPU(s) available)",
-                                              opt_params.gpu_id, device_count);
-                    import_timestamp_ = std::chrono::steady_clock::now();
+                    gui_manager_->showNotificationPopup(std::format("Invalid GPU ID: {}\n(only {} GPU(s) available)", opt_params.gpu_id, device_count), true);
                     LOG_ERROR("Invalid gpu_id: {} (max: {})", opt_params.gpu_id, device_count - 1);
                     return;
                 }
@@ -808,8 +781,7 @@ namespace gs::visualizer {
 
             // Validate strategy
             if (opt_params.strategy != "mcmc" && opt_params.strategy != "default" && !opt_params.strategy.empty()) {
-                import_error_ = std::format("Invalid strategy: '{}' (must be 'mcmc' or 'default')", opt_params.strategy);
-                import_timestamp_ = std::chrono::steady_clock::now();
+                gui_manager_->showNotificationPopup(std::format("Invalid strategy: '{}'\n(must be 'mcmc' or 'default')", opt_params.strategy), true);
                 LOG_ERROR("Invalid strategy: {}", opt_params.strategy);
                 return;
             }
@@ -817,27 +789,23 @@ namespace gs::visualizer {
             // Update project with validated parameters
             project_->setOptimizationParams(opt_params);
 
-            // Set success message
-            import_success_ = true;
-            import_message_ = std::format("Config imported: {} iterations, {} strategy",
+            // Show success notification
+            std::string success_msg = std::format("Configuration imported successfully!\n{} iterations, {} strategy",
                                          opt_params.iterations,
                                          opt_params.strategy.empty() ? "default" : opt_params.strategy);
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup(success_msg, false);
 
             LOG_INFO("Configuration imported successfully from: {}", cmd.path.string());
             LOG_INFO("Imported {} iterations, strategy: {}", opt_params.iterations, opt_params.strategy);
 
         } catch (const nlohmann::json::parse_error& e) {
-            import_error_ = std::format("Invalid JSON format: {}", e.what());
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup(std::format("Invalid JSON format:\n{}", e.what()), true);
             LOG_ERROR("JSON parse error: {}", e.what());
         } catch (const nlohmann::json::type_error& e) {
-            import_error_ = std::format("JSON type error: {}", e.what());
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup(std::format("JSON type error:\n{}", e.what()), true);
             LOG_ERROR("JSON type error: {}", e.what());
         } catch (const std::exception& e) {
-            import_error_ = std::format("Import failed: {}", e.what());
-            import_timestamp_ = std::chrono::steady_clock::now();
+            gui_manager_->showNotificationPopup(std::format("Import failed:\n{}", e.what()), true);
             LOG_ERROR("Failed to import configuration: {}", e.what());
         }
     }
