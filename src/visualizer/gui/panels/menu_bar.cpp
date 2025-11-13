@@ -26,6 +26,28 @@ namespace gs::gui {
         // Check for keyboard shortcuts
         ImGuiIO& io = ImGui::GetIO();
         bool ctrl = io.KeyCtrl;
+        bool alt = io.KeyAlt;
+
+        // Ctrl+O for Open Project
+        if (ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
+            if (on_open_project_) {
+                on_open_project_();
+            }
+        }
+
+        // Ctrl+S for Save Project
+        if (ctrl && !alt && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+            if (on_save_project_ && !is_project_temp_) {
+                on_save_project_();
+            }
+        }
+
+        // Ctrl+Alt+S for Save Project As
+        if (ctrl && alt && ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+            if (on_save_project_as_) {
+                on_save_project_as_();
+            }
+        }
 
         // Ctrl+E for Export Config
         if (ctrl && ImGui::IsKeyPressed(ImGuiKey_E, false)) {
@@ -55,7 +77,7 @@ namespace gs::gui {
         if (ImGui::BeginMainMenuBar()) {
             // File menu
             if (ImGui::BeginMenu("File")) {
-                if (ImGui::MenuItem("Open Project")) {
+                if (ImGui::MenuItem("Open Project", "Ctrl+O")) {
                     LOG_DEBUG("Open Project clicked");
                     if (on_open_project_) {
                         on_open_project_();
@@ -78,7 +100,7 @@ namespace gs::gui {
 
                 ImGui::Separator();
 
-                if (ImGui::MenuItem("Save Project As...")) {
+                if (ImGui::MenuItem("Save Project As...", "Ctrl+Alt+S")) {
                     LOG_DEBUG("Save Project As clicked");
                     if (on_save_project_as_) {
                         on_save_project_as_();
@@ -86,7 +108,7 @@ namespace gs::gui {
                 }
 
                 // Disable "Save Project" if project is temporary
-                if (ImGui::MenuItem("Save Project", nullptr, false, !is_project_temp_)) {
+                if (ImGui::MenuItem("Save Project", "Ctrl+S", false, !is_project_temp_)) {
                     LOG_DEBUG("Save Project clicked");
                     if (on_save_project_) {
                         on_save_project_();
@@ -585,6 +607,30 @@ namespace gs::gui {
                         WrappedTextColored(StateColor, "Ply selected in Ply panel");
                         ImGui::TableNextColumn();
                         WrappedTextColored(actionColor, "Rename ply file");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(keyColor, "Ctrl+O");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(StateColor, "Anytime");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(actionColor, "Open project");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(keyColor, "Ctrl+S");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(StateColor, "Project loaded (not temporary)");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(actionColor, "Save project");
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(keyColor, "Ctrl+Alt+S");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(StateColor, "Anytime");
+                        ImGui::TableNextColumn();
+                        WrappedTextColored(actionColor, "Save project as...");
 
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
