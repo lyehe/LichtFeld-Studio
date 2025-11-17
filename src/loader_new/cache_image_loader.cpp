@@ -230,7 +230,7 @@ namespace lfs::loader {
 
     void CacheLoader::evict_until_satisfied() {
 
-        while (!cpu_cache_.empty()) {
+        while (true) {
             std::size_t available = get_available_physical_memory();
             std::size_t total = get_total_physical_memory();
             std::size_t min_free_bytes = std::max(
@@ -240,8 +240,15 @@ namespace lfs::loader {
             if (available > min_free_bytes) {
                 break;
             }
+
             {
                 std::lock_guard<std::mutex> lock(cpu_cache_mutex_);
+
+                // Check empty while holding lock to avoid race condition
+                if (cpu_cache_.empty()) {
+                    break;
+                }
+
                 auto oldest = std::min_element(cpu_cache_.begin(), cpu_cache_.end(),
                                                [](const auto& a, const auto& b) {
                                                    return a.second.last_access < b.second.last_access;
@@ -255,6 +262,7 @@ namespace lfs::loader {
 
     void CacheLoader::evict_if_needed(std::size_t required_bytes) {
         // LRU eviction: remove least recently accessed images until we have space
+        // This function is called while holding cpu_cache_mutex_, so no additional locking needed
         while (!cpu_cache_.empty() && !has_sufficient_memory(required_bytes)) {
             auto oldest = std::min_element(cpu_cache_.begin(), cpu_cache_.end(),
                                            [](const auto& a, const auto& b) {
