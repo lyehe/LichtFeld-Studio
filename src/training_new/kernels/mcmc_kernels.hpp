@@ -238,4 +238,96 @@ namespace lfs::training::mcmc {
         size_t N,
         void* stream = nullptr);
 
+    /**
+     * Fused kernel: Compute raw opacity and scaling values (ZERO intermediate allocations)
+     *
+     * Performs: clamp(opacity) -> inverse_sigmoid -> log -> optional unsqueeze
+     *           log(scales)
+     *
+     * Replaces multiple tensor operations with a single fused kernel.
+     *
+     * @param opacities [n] - Input opacity values (post-relocation)
+     * @param scales [n, 3] - Input scale values (post-relocation)
+     * @param opacity_raw [n] or [n, 1] - Output raw opacity (inverse sigmoid + log)
+     * @param scaling_raw [n, 3] - Output raw scaling (log)
+     * @param n - Number of values
+     * @param min_opacity - Minimum opacity for clamping
+     * @param opacity_dim - Output opacity dimension (1 for [n,1], 0 for [n])
+     * @param stream - CUDA stream
+     */
+    void launch_compute_raw_values(
+        const float* opacities,
+        const float* scales,
+        float* opacity_raw,
+        float* scaling_raw,
+        size_t n,
+        float min_opacity,
+        int opacity_dim,
+        void* stream = nullptr);
+
+    /**
+     * Fused multinomial sampling + gather kernel (ZERO intermediate allocations)
+     *
+     * Performs multinomial sampling from opacities[alive_indices] and directly gathers
+     * the sampled opacities and scales, all in a single kernel launch with no intermediate
+     * allocations.
+     *
+     * Algorithm:
+     * 1. Thread block cooperatively computes cumulative sum of probabilities
+     * 2. Each thread generates random samples and performs binary search
+     * 3. Maps local indices → global indices (alive_indices[local_idx])
+     * 4. Directly gathers opacities and scales at sampled indices
+     *
+     * @param opacities [N] - Source opacities (full array)
+     * @param scales [N, 3] - Source scales (full array)
+     * @param alive_indices [n_alive] - Indices of alive Gaussians
+     * @param n_alive - Number of alive Gaussians
+     * @param n_samples - Number of samples to draw
+     * @param seed - Random seed for sampling
+     * @param sampled_global_indices [n_samples] - Output: sampled global indices
+     * @param sampled_opacities [n_samples] - Output: gathered opacities
+     * @param sampled_scales [n_samples, 3] - Output: gathered scales
+     * @param N - Total number of Gaussians (for bounds checking)
+     * @param stream - CUDA stream
+     */
+    void launch_multinomial_sample_and_gather(
+        const float* opacities,
+        const float* scales,
+        const int64_t* alive_indices,
+        size_t n_alive,
+        size_t n_samples,
+        uint64_t seed,
+        int64_t* sampled_global_indices,
+        float* sampled_opacities,
+        float* sampled_scales,
+        size_t N,
+        void* stream = nullptr);
+
+    /**
+     * Fused multinomial sampling from ALL opacities (ZERO intermediate allocations)
+     *
+     * Variant that samples from all N opacities (not just a subset).
+     * Used in add_new_gs() where we sample from the full population.
+     *
+     * @param opacities [N] - Source opacities (full array)
+     * @param scales [N, 3] - Source scales (full array)
+     * @param N - Number of Gaussians
+     * @param n_samples - Number of samples to draw
+     * @param seed - Random seed for sampling
+     * @param sampled_indices [n_samples] - Output: sampled indices
+     * @param sampled_opacities [n_samples] - Output: gathered opacities
+     * @param sampled_scales [n_samples, 3] - Output: gathered scales
+     * @param stream - CUDA stream
+     */
+    void launch_multinomial_sample_all(
+        const float* opacities,
+        const float* scales,
+        size_t N,
+        size_t n_samples,
+        uint64_t seed,
+        int64_t* sampled_indices,
+        float* sampled_opacities,
+        float* sampled_scales,
+        void* stream = nullptr);
+
 } // namespace lfs::training::mcmc

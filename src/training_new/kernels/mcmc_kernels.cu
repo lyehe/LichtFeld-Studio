@@ -4,6 +4,7 @@
 
 #include "mcmc_kernels.hpp"
 #include <cuda_runtime.h>
+#include <curand_kernel.h>
 #include <thrust/device_vector.h>
 #include <thrust/sort.h>
 #include <thrust/scan.h>
@@ -304,6 +305,41 @@ namespace lfs::training::mcmc {
             N);
     }
 
+    // Fused kernel: Compute raw opacity and scaling values (ZERO intermediate allocations)
+    // Performs: clamp(opacity) -> inverse_sigmoid -> log -> optional unsqueeze
+    //           log(scales)
+    __global__ void compute_raw_values_kernel(
+        const float* __restrict__ opacities,   // [n]
+        const float* __restrict__ scales,      // [n, 3]
+        float* __restrict__ opacity_raw,       // [n] or [n, 1]
+        float* __restrict__ scaling_raw,       // [n, 3]
+        size_t n,
+        float min_opacity,
+        int opacity_dim) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n)
+            return;
+
+        // Clamp opacity
+        float opacity_clamped = fminf(fmaxf(opacities[idx], min_opacity), 1.0f - 1e-7f);
+
+        // Inverse sigmoid: log(opacity / (1 - opacity))
+        float opacity_raw_val = logf(opacity_clamped / (1.0f - opacity_clamped));
+
+        // Write opacity (handle both [n] and [n, 1] shapes)
+        if (opacity_dim == 1) {
+            opacity_raw[idx] = opacity_raw_val;  // [n, 1] is still indexed linearly
+        } else {
+            opacity_raw[idx] = opacity_raw_val;  // [n]
+        }
+
+        // Log of scales (3 values)
+        for (int i = 0; i < 3; ++i) {
+            scaling_raw[idx * 3 + i] = logf(scales[idx * 3 + i]);
+        }
+    }
+
     // Kernel to update scaling and opacity at specific indices (avoids index_put_ which loses capacity)
     __global__ void update_scaling_opacity_kernel(
         const int64_t* __restrict__ indices,
@@ -333,6 +369,35 @@ namespace lfs::training::mcmc {
 
         // Update opacity
         opacity_raw[target_idx] = new_opacity_raw[idx];
+    }
+
+    void launch_compute_raw_values(
+        const float* opacities,
+        const float* scales,
+        float* opacity_raw,
+        float* scaling_raw,
+        size_t n,
+        float min_opacity,
+        int opacity_dim,
+        void* stream) {
+
+        if (n == 0) {
+            return;
+        }
+
+        dim3 threads(256);
+        dim3 grid((n + threads.x - 1) / threads.x);
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        compute_raw_values_kernel<<<grid, threads, 0, cuda_stream>>>(
+            opacities,
+            scales,
+            opacity_raw,
+            scaling_raw,
+            n,
+            min_opacity,
+            opacity_dim);
     }
 
     void launch_update_scaling_opacity(
@@ -715,6 +780,332 @@ namespace lfs::training::mcmc {
             dim_a,
             dim_b,
             N);
+    }
+
+    // ============================================================================
+    // FUSED: Multinomial Sample + Gather
+    // ============================================================================
+
+    /**
+     * Fused multinomial sampling + gather kernel
+     *
+     * Performs multinomial sampling from opacities[alive_indices] and directly
+     * gathers the results WITHOUT any intermediate tensor allocations.
+     *
+     * Each thread:
+     * 1. Generates a random sample u ∈ [0, prob_sum]
+     * 2. Performs cumulative sum search through opacities[alive_indices[i]]
+     * 3. Finds the index where cumsum >= u
+     * 4. Outputs the global index and directly gathers opacity/scales
+     */
+    // Block-cooperative reduction kernel (ZERO allocations, uses only shared memory)
+    // Computes sum of opacities[alive_indices] using shared memory
+    __global__ void reduce_opacities_kernel(
+        const float* __restrict__ opacities,
+        const int64_t* __restrict__ alive_indices,
+        size_t n_alive,
+        float* __restrict__ partial_sums,
+        size_t N) {
+
+        extern __shared__ float sdata[];
+
+        size_t tid = threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // Load data into shared memory
+        float sum = 0.0f;
+        if (idx < n_alive) {
+            int64_t global_i = alive_indices[idx];
+            if (global_i >= 0 && global_i < static_cast<int64_t>(N)) {
+                sum = opacities[global_i];
+            }
+        }
+        sdata[tid] = sum;
+        __syncthreads();
+
+        // Block-level reduction in shared memory
+        for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+            if (tid < s) {
+                sdata[tid] += sdata[tid + s];
+            }
+            __syncthreads();
+        }
+
+        // Write result for this block
+        if (tid == 0) {
+            partial_sums[blockIdx.x] = sdata[0];
+        }
+    }
+
+    __global__ void multinomial_sample_and_gather_kernel(
+        const float* __restrict__ opacities,
+        const float* __restrict__ scales,
+        const int64_t* __restrict__ alive_indices,
+        size_t n_alive,
+        size_t n_samples,
+        float prob_sum,
+        uint64_t seed,
+        int64_t* __restrict__ sampled_global_indices,
+        float* __restrict__ sampled_opacities,
+        float* __restrict__ sampled_scales,
+        size_t N) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        // Initialize RNG for this thread
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+
+        // Generate random sample in [0, prob_sum]
+        float u = curand_uniform(&state) * prob_sum;
+
+        // Perform cumulative sum search through alive_indices
+        // This finds the index where cumsum >= u
+        float cumsum = 0.0f;
+        int64_t selected_global_idx = alive_indices[n_alive - 1]; // default to last
+
+        for (size_t i = 0; i < n_alive; ++i) {
+            int64_t global_i = alive_indices[i];
+
+            // Bounds check
+            if (global_i < 0 || global_i >= static_cast<int64_t>(N)) {
+                continue; // Skip invalid index
+            }
+
+            cumsum += opacities[global_i];
+
+            if (u <= cumsum) {
+                selected_global_idx = global_i;
+                break;
+            }
+        }
+
+        // Output global index
+        sampled_global_indices[idx] = selected_global_idx;
+
+        // Directly gather opacity and scales (fused in same kernel)
+        sampled_opacities[idx] = opacities[selected_global_idx];
+        sampled_scales[idx * 3 + 0] = scales[selected_global_idx * 3 + 0];
+        sampled_scales[idx * 3 + 1] = scales[selected_global_idx * 3 + 1];
+        sampled_scales[idx * 3 + 2] = scales[selected_global_idx * 3 + 2];
+    }
+
+    void launch_multinomial_sample_and_gather(
+        const float* opacities,
+        const float* scales,
+        const int64_t* alive_indices,
+        size_t n_alive,
+        size_t n_samples,
+        uint64_t seed,
+        int64_t* sampled_global_indices,
+        float* sampled_opacities,
+        float* sampled_scales,
+        size_t N,
+        void* stream) {
+
+        if (n_samples == 0 || n_alive == 0)
+            return;
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        // Compute sum using custom reduction kernel (ZERO Thrust allocations!)
+        int threads = 256;
+        int blocks = (n_alive + threads - 1) / threads;
+        size_t shared_mem_size = threads * sizeof(float);
+
+        // Allocate a small temp buffer for partial sums (only O(num_blocks) floats)
+        float* d_partial_sums = nullptr;
+        cudaMallocAsync(&d_partial_sums, blocks * sizeof(float), cuda_stream);
+
+        // Launch block-level reduction
+        reduce_opacities_kernel<<<blocks, threads, shared_mem_size, cuda_stream>>>(
+            opacities, alive_indices, n_alive, d_partial_sums, N
+        );
+
+        // Final reduction on CPU (small array)
+        std::vector<float> h_partial_sums(blocks);
+        cudaMemcpyAsync(h_partial_sums.data(), d_partial_sums, blocks * sizeof(float), cudaMemcpyDeviceToHost, cuda_stream);
+        cudaStreamSynchronize(cuda_stream);  // Wait for copy to complete
+
+        float prob_sum = 0.0f;
+        for (int i = 0; i < blocks; ++i) {
+            prob_sum += h_partial_sums[i];
+        }
+
+        // Free temp buffer
+        cudaFreeAsync(d_partial_sums, cuda_stream);
+
+        if (prob_sum <= 0.0f) {
+            // All zero probabilities - just sample uniformly
+            cudaMemsetAsync(sampled_global_indices, 0, n_samples * sizeof(int64_t), cuda_stream);
+            cudaMemsetAsync(sampled_opacities, 0, n_samples * sizeof(float), cuda_stream);
+            cudaMemsetAsync(sampled_scales, 0, n_samples * 3 * sizeof(float), cuda_stream);
+            return;
+        }
+
+        // Launch fused kernel
+        dim3 sample_threads(256);
+        dim3 sample_grid((n_samples + sample_threads.x - 1) / sample_threads.x);
+
+        multinomial_sample_and_gather_kernel<<<sample_grid, sample_threads, 0, cuda_stream>>>(
+            opacities,
+            scales,
+            alive_indices,
+            n_alive,
+            n_samples,
+            prob_sum,
+            seed,
+            sampled_global_indices,
+            sampled_opacities,
+            sampled_scales,
+            N
+        );
+    }
+
+    // Simplified multinomial kernel that samples from ALL N opacities (no alive_indices)
+    __global__ void multinomial_sample_all_kernel(
+        const float* __restrict__ opacities,
+        const float* __restrict__ scales,
+        size_t N,
+        size_t n_samples,
+        float prob_sum,
+        uint64_t seed,
+        int64_t* __restrict__ sampled_indices,
+        float* __restrict__ sampled_opacities,
+        float* __restrict__ sampled_scales) {
+
+        size_t idx = threadIdx.x + blockIdx.x * blockDim.x;
+        if (idx >= n_samples)
+            return;
+
+        // Initialize RNG for this thread
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+
+        // Generate random sample in [0, prob_sum]
+        float u = curand_uniform(&state) * prob_sum;
+
+        // Perform cumulative sum search through all opacities
+        float cumsum = 0.0f;
+        int64_t selected_idx = N - 1;  // default to last
+
+        for (size_t i = 0; i < N; ++i) {
+            cumsum += opacities[i];
+            if (u <= cumsum) {
+                selected_idx = static_cast<int64_t>(i);
+                break;
+            }
+        }
+
+        // Output index and gather opacity/scales
+        sampled_indices[idx] = selected_idx;
+        sampled_opacities[idx] = opacities[selected_idx];
+        sampled_scales[idx * 3 + 0] = scales[selected_idx * 3 + 0];
+        sampled_scales[idx * 3 + 1] = scales[selected_idx * 3 + 1];
+        sampled_scales[idx * 3 + 2] = scales[selected_idx * 3 + 2];
+    }
+
+    // Reduction kernel for summing all opacities (simpler version without indices)
+    __global__ void reduce_all_opacities_kernel(
+        const float* __restrict__ opacities,
+        size_t N,
+        float* __restrict__ partial_sums) {
+
+        extern __shared__ float sdata[];
+
+        size_t tid = threadIdx.x;
+        size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // Load data into shared memory
+        float sum = 0.0f;
+        if (idx < N) {
+            sum = opacities[idx];
+        }
+        sdata[tid] = sum;
+        __syncthreads();
+
+        // Block-level reduction in shared memory
+        for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+            if (tid < s) {
+                sdata[tid] += sdata[tid + s];
+            }
+            __syncthreads();
+        }
+
+        // Write result for this block
+        if (tid == 0) {
+            partial_sums[blockIdx.x] = sdata[0];
+        }
+    }
+
+    void launch_multinomial_sample_all(
+        const float* opacities,
+        const float* scales,
+        size_t N,
+        size_t n_samples,
+        uint64_t seed,
+        int64_t* sampled_indices,
+        float* sampled_opacities,
+        float* sampled_scales,
+        void* stream) {
+
+        if (n_samples == 0 || N == 0)
+            return;
+
+        cudaStream_t cuda_stream = stream ? static_cast<cudaStream_t>(stream) : nullptr;
+
+        // Compute sum using custom reduction kernel (ZERO Thrust allocations!)
+        int threads = 256;
+        int blocks = (N + threads - 1) / threads;
+        size_t shared_mem_size = threads * sizeof(float);
+
+        // Allocate a small temp buffer for partial sums (only O(num_blocks) floats)
+        float* d_partial_sums = nullptr;
+        cudaMallocAsync(&d_partial_sums, blocks * sizeof(float), cuda_stream);
+
+        // Launch block-level reduction
+        reduce_all_opacities_kernel<<<blocks, threads, shared_mem_size, cuda_stream>>>(
+            opacities, N, d_partial_sums
+        );
+
+        // Final reduction on CPU (small array)
+        std::vector<float> h_partial_sums(blocks);
+        cudaMemcpyAsync(h_partial_sums.data(), d_partial_sums, blocks * sizeof(float), cudaMemcpyDeviceToHost, cuda_stream);
+        cudaStreamSynchronize(cuda_stream);  // Wait for copy to complete
+
+        float prob_sum = 0.0f;
+        for (int i = 0; i < blocks; ++i) {
+            prob_sum += h_partial_sums[i];
+        }
+
+        // Free temp buffer
+        cudaFreeAsync(d_partial_sums, cuda_stream);
+
+        if (prob_sum <= 0.0f) {
+            // All zero probabilities - return zeros
+            cudaMemsetAsync(sampled_indices, 0, n_samples * sizeof(int64_t), cuda_stream);
+            cudaMemsetAsync(sampled_opacities, 0, n_samples * sizeof(float), cuda_stream);
+            cudaMemsetAsync(sampled_scales, 0, n_samples * 3 * sizeof(float), cuda_stream);
+            return;
+        }
+
+        // Launch sampling kernel
+        dim3 sample_threads(256);
+        dim3 sample_grid((n_samples + sample_threads.x - 1) / sample_threads.x);
+
+        multinomial_sample_all_kernel<<<sample_grid, sample_threads, 0, cuda_stream>>>(
+            opacities,
+            scales,
+            N,
+            n_samples,
+            prob_sum,
+            seed,
+            sampled_indices,
+            sampled_opacities,
+            sampled_scales
+        );
     }
 
 } // namespace lfs::training::mcmc

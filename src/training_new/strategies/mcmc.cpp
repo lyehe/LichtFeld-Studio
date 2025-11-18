@@ -8,6 +8,7 @@
 #include "core_new/logger.hpp"
 #include "core_new/tensor/internal/memory_pool.hpp"
 #include <cmath>
+#include <chrono>
 
 namespace lfs::training {
 
@@ -73,41 +74,35 @@ namespace lfs::training {
         if (alive_indices.numel() == 0)
             return 0;
 
-        // Sample from alive Gaussians based on opacity
-        Tensor sampled_idxs;
+        Tensor sampled_idxs, sampled_opacities, sampled_scales;
         {
-            LOG_TIMER("relocate_multinomial_sample");
-            Tensor probs = opacities.index_select(0, alive_indices);
-            Tensor sampled_idxs_local = multinomial_sample(probs, n_dead, true);
-            sampled_idxs = alive_indices.index_select(0, sampled_idxs_local);
-        }
-
-        // Get parameters for sampled Gaussians
-        Tensor sampled_opacities, sampled_scales;
-        {
-            LOG_TIMER("relocate_get_sampled_params");
-            // Use fused gather kernel - CRITICAL: ensure tensors are contiguous!
-            const size_t n_samples = sampled_idxs.numel();
+            LOG_TIMER("relocate_multinomial_sample_and_gather_FUSED");
             const size_t N = opacities.numel();
 
-            // Get source tensors and ensure they're contiguous
+            // Get source tensors (contiguous)
             Tensor opacities_contig = opacities.contiguous();
             Tensor scales = _splat_data.get_scaling().contiguous();
 
             // Allocate outputs
-            sampled_opacities = Tensor::empty({n_samples}, Device::CUDA, DataType::Float32);
-            sampled_scales = Tensor::empty({n_samples, 3}, Device::CUDA, DataType::Float32);
+            sampled_idxs = Tensor::empty({n_dead}, Device::CUDA, DataType::Int64);
+            sampled_opacities = Tensor::empty({n_dead}, Device::CUDA, DataType::Float32);
+            sampled_scales = Tensor::empty({n_dead, 3}, Device::CUDA, DataType::Float32);
 
-            // Launch fused kernel
-            mcmc::launch_gather_2tensors(
-                sampled_idxs.ptr<int64_t>(),
+            // Generate random seed
+            static uint64_t seed_counter = 0;
+            uint64_t seed = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()) + seed_counter++;
+
+            // does multinomial sampling + gathering in one pass
+            mcmc::launch_multinomial_sample_and_gather(
                 opacities_contig.ptr<float>(),
                 scales.ptr<float>(),
+                alive_indices.ptr<int64_t>(),
+                alive_indices.numel(),
+                n_dead,
+                seed,
+                sampled_idxs.ptr<int64_t>(),
                 sampled_opacities.ptr<float>(),
                 sampled_scales.ptr<float>(),
-                n_samples,
-                1,  // dim_a: opacities are [N]
-                3,  // dim_b: scales are [N, 3]
                 N
             );
         }
@@ -237,18 +232,36 @@ namespace lfs::training {
         }
 
         Tensor sampled_idxs;
+        Tensor sampled_opacities;
+        Tensor sampled_scales;
         {
-            LOG_TIMER("add_new_multinomial_sample");
-            auto probs = opacities.flatten();
-            sampled_idxs = multinomial_sample(probs, n_new, true);
-        }
+            LOG_TIMER("add_new_multinomial_sample_and_gather");
 
-        // Get parameters for sampled Gaussians
-        Tensor sampled_opacities, sampled_scales;
-        {
-            LOG_TIMER("add_new_get_sampled_params");
-            sampled_opacities = opacities.index_select(0, sampled_idxs);
-            sampled_scales = _splat_data.get_scaling().index_select(0, sampled_idxs);
+            const size_t N = opacities.numel();
+
+            // Get scales and ensure contiguity
+            auto scales = _splat_data.get_scaling().contiguous();
+            auto opacities_contig = opacities.contiguous();
+
+            // Allocate output tensors
+            sampled_idxs = Tensor::empty({n_new}, Device::CUDA, DataType::Int64);
+            sampled_opacities = Tensor::empty({n_new}, Device::CUDA, DataType::Float32);
+            sampled_scales = Tensor::empty({n_new, 3}, Device::CUDA, DataType::Float32);
+
+            // Generate random seed
+            auto seed = static_cast<uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+
+            // Call fused CUDA kernel
+            mcmc::launch_multinomial_sample_all(
+                opacities_contig.ptr<float>(),
+                scales.ptr<float>(),
+                N,
+                n_new,
+                seed,
+                sampled_idxs.ptr<int64_t>(),
+                sampled_opacities.ptr<float>(),
+                sampled_scales.ptr<float>()
+            );
         }
 
         // Count occurrences (ratio starts at 0, add 1 for each occurrence, then add 1 more)
