@@ -51,7 +51,7 @@ namespace lfs::training {
 
         // Find dead Gaussians: opacity <= min_opacity OR rotation magnitude near zero
         Tensor dead_mask, dead_indices;
-        int n_dead;
+        size_t n_dead;
         {
             LOG_TIMER("relocate_find_dead");
             Tensor rotation_raw = _splat_data.rotation_raw();
@@ -216,7 +216,7 @@ namespace lfs::training {
 
         const int current_n = _splat_data.size();
         const int n_target = std::min(_params->max_cap, static_cast<int>(1.05f * current_n));
-        const int n_new = std::max(0, n_target - current_n);
+        const size_t n_new = std::max(0, n_target - current_n);
 
         if (n_new == 0)
             return 0;
