@@ -946,15 +946,26 @@ namespace lfs::rendering {
         std::lock_guard<std::mutex> lock(init_mutex_);
 
         if (!arena_) {
+            // Query total GPU memory
+            size_t free_mem, total_mem;
+            cudaMemGetInfo(&free_mem, &total_mem);
+
+            // Use 90% of total GPU memory as max (leave 10% headroom)
+            size_t max_physical = static_cast<size_t>(total_mem * 0.9);
+
             // Create with VMM-optimized settings
             RasterizerMemoryArena::Config config;
-            config.virtual_size = 32ULL << 30; // 32GB virtual (costs nothing!)
-            config.initial_commit = 512 << 20; // 512MB initial physical (was 256MB)
-            config.max_physical = 8ULL << 30;  // 8GB max physical
-            config.granularity = 2 << 20;      // 2MB chunks
+            config.virtual_size = 128ULL << 30; // 128GB virtual (costs nothing!)
+            config.initial_commit = 512 << 20;  // 512MB initial physical
+            config.max_physical = max_physical; // Use 90% of device VRAM
+            config.granularity = 2 << 20;       // 2MB chunks
             config.alignment = 256;
             config.enable_profiling = false;
             config.log_interval = 1000;
+
+            std::cout << "[GlobalArenaManager] Detected GPU VRAM: " << (total_mem >> 30)
+                      << " GB, setting max_physical to " << (max_physical >> 30)
+                      << " GB (90% of total)\n";
 
             arena_ = std::make_unique<RasterizerMemoryArena>(config);
         }
