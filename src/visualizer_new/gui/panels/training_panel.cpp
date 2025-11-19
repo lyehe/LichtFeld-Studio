@@ -110,15 +110,8 @@ namespace lfs::vis::gui::panels {
 
             // Convert DataSetInfo to DatasetConfig
             const auto& old_dataset = project->getProjectData().data_set_info;
-            dataset_params.data_path = old_dataset.data_path;
-            dataset_params.output_path = old_dataset.output_path;
-            dataset_params.project_path = old_dataset.project_path;
-            dataset_params.images = old_dataset.images;
-            dataset_params.resize_factor = old_dataset.resize_factor;
-            dataset_params.test_every = old_dataset.test_every;
-            dataset_params.timelapse_images = old_dataset.timelapse_images;
-            dataset_params.timelapse_every = old_dataset.timelapse_every;
-            dataset_params.max_width = old_dataset.max_width;
+            dataset_params = static_cast<lfs::core::param::DatasetConfig>(old_dataset);
+
         } else {
             // During/after training - get from trainer (read-only)
             const auto* trainer = trainer_manager->getTrainer();

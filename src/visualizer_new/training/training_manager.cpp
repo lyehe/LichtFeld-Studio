@@ -112,16 +112,8 @@ namespace lfs::vis {
 
         // Convert lfs::project::DataSetInfo to lfs::core::param::DatasetConfig
         // DataSetInfo inherits from DatasetConfig, so we can slice-copy the base
-        const auto& old_dataset = project_->getProjectData().data_set_info;
-        params.dataset.data_path = old_dataset.data_path;
-        params.dataset.output_path = project_->getProjectOutputFolder();
-        params.dataset.project_path = old_dataset.project_path;
-        params.dataset.images = old_dataset.images;
-        params.dataset.resize_factor = old_dataset.resize_factor;
-        params.dataset.test_every = old_dataset.test_every;
-        params.dataset.timelapse_images = old_dataset.timelapse_images;
-        params.dataset.timelapse_every = old_dataset.timelapse_every;
-        params.dataset.max_width = old_dataset.max_width;
+        const auto& updated_dataset = project_->getProjectData().data_set_info;
+        params.dataset = static_cast<lfs::core::param::DatasetConfig>(updated_dataset);
 
         // Project now returns lfs::core::param::OptimizationParameters directly (no conversion needed)
         params.optimization = project_->getOptimizationParams();
