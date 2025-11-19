@@ -537,6 +537,9 @@ namespace gs::gui {
                 0.0f, 0, 1.0f);
         }
 
+        // Render dataset error popup if needed
+        renderDatasetErrorPopup();
+
         // End frame
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -843,6 +846,41 @@ namespace gs::gui {
         notification_duration_ = std::chrono::milliseconds(duration_ms);
     }
 
+    void GuiManager::renderDatasetErrorPopup() {
+        if (dataset_error_popup_pending_) {
+            ImGui::OpenPopup("Dataset load error");
+            dataset_error_popup_pending_ = false;
+        }
+
+        bool open = true;
+        if (ImGui::BeginPopupModal("Dataset load error", &open,
+                                   ImGuiWindowFlags_AlwaysAutoResize |
+                                       ImGuiWindowFlags_NoSavedSettings)) {
+
+            ImGui::TextWrapped("%s", dataset_error_message_.c_str());
+            ImGui::Separator();
+
+            if (ImGui::Button("OK", ImVec2(120.0f, 0.0f))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SetItemDefaultFocus();
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Copy details", ImVec2(120.0f, 0.0f))) {
+                ImGui::SetClipboardText(dataset_error_message_.c_str());
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void GuiManager::showDatasetErrorPopup(const std::string& message) {
+        dataset_error_message_ = message;
+        dataset_error_popup_pending_ = true;
+    }
+
+
     void GuiManager::setupEventHandlers() {
         using namespace events;
 
@@ -855,6 +893,20 @@ namespace gs::gui {
         ui::SpeedChanged::when([this](const auto& e) {
             showSpeedOverlay(e.current_speed, e.max_speed);
         });
+
+        // Handle dataset load completion for GUI feedback
+        state::DatasetLoadCompleted::when([this](const auto& e) {
+            if (!e.success) {
+                std::string message;
+                if (e.error.has_value()) {
+                    message = e.error.value();
+                } else {
+                    message = "Dataset loading failed. Unsupported dataset format or invalid dataset path.";
+                }
+                showDatasetErrorPopup(message);
+            }
+        });
+
     }
 
     void GuiManager::applyDefaultStyle() {
