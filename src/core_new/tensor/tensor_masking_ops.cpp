@@ -1713,8 +1713,8 @@ namespace lfs::core {
 
             // Use index_select kernel to gather into the output location
             if (dtype_ == DataType::Float32) {
-                LOG_DEBUG("  Calling index_select: src_shape[0]={}, idx[0]={}, n_gather={}, row_size={}",
-                          shape_[0], idx_ptr[0], n_gather, row_size);
+                LOG_DEBUG("  Calling index_select: src_shape[0]={}, n_gather={}, row_size={}",
+                          shape_[0], n_gather, row_size);
 
                 tensor_ops::launch_index_select(ptr<float>(), idx_ptr,
                                                 output_ptr, input_shape,
