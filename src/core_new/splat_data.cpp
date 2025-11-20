@@ -1186,7 +1186,12 @@ namespace lfs::core {
                 }
 
                 sh0_cpu = shs_cpu_tensor.slice(1, 0, 1).contiguous();
-                shN_cpu = shs_cpu_tensor.slice(1, 1, feature_shape).contiguous();
+                if (feature_shape > 1) {
+                    shN_cpu = shs_cpu_tensor.slice(1, 1, feature_shape).contiguous();
+                } else {
+                    // sh-degree 0: create empty shN tensor [N, 0, 3]
+                    shN_cpu = Tensor::zeros({shs_cpu_tensor.size(0), 0, 3}, Device::CPU);
+                }
                 LOG_DEBUG("  sh0_cpu: is_valid={}, ptr={}, shape={}, numel={}",
                           sh0_cpu.is_valid(), static_cast<const void*>(sh0_cpu.ptr<float>()),
                           sh0_cpu.shape().str(), sh0_cpu.numel());
@@ -1345,7 +1350,13 @@ namespace lfs::core {
 
                 shs = shs_cpu_tmp.cuda();
                 auto sh0_temp = shs.slice(1, 0, 1).contiguous();
-                auto shN_temp = shs.slice(1, 1, feature_shape).contiguous();
+                Tensor shN_temp;
+                if (feature_shape > 1) {
+                    shN_temp = shs.slice(1, 1, feature_shape).contiguous();
+                } else {
+                    // sh-degree 0: create empty shN tensor [N, 0, 3]
+                    shN_temp = Tensor::zeros({shs.size(0), 0, 3}, Device::CUDA);
+                }
 
                 means_ = means_temp;
                 scaling_ = scaling_temp;

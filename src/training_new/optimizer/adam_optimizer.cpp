@@ -471,7 +471,17 @@ namespace lfs::training {
         auto& grad = get_grad(type);
 
         if (!param.is_valid()) {
+            if (type == ParamType::ShN) {
+                LOG_DEBUG("add_new_params_gather: parameter {} not initialized (likely sh-degree 0), skipping", param_name(type));
+                return;
+            }
             LOG_ERROR("add_new_params_gather: parameter {} not initialized", param_name(type));
+            return;
+        }
+
+        // Skip parameters with empty feature dimension (e.g., shN when sh-degree is 0)
+        if (param.ndim() >= 2 && param.shape()[1] == 0) {
+            LOG_DEBUG("add_new_params_gather: parameter {} has empty feature dimension (size 0), skipping", param_name(type));
             return;
         }
 

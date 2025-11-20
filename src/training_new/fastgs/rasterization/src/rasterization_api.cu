@@ -48,7 +48,9 @@ ForwardContext forward_raw(
     CHECK_CUDA_PTR(rotations_raw_ptr, "rotations_raw_ptr");
     CHECK_CUDA_PTR(opacities_raw_ptr, "opacities_raw_ptr");
     CHECK_CUDA_PTR(sh_coefficients_0_ptr, "sh_coefficients_0_ptr");
-    CHECK_CUDA_PTR(sh_coefficients_rest_ptr, "sh_coefficients_rest_ptr");
+    if (total_bases_sh_rest > 0) {
+        CHECK_CUDA_PTR(sh_coefficients_rest_ptr, "sh_coefficients_rest_ptr");
+    }
     CHECK_CUDA_PTR(w2c_ptr, "w2c_ptr");
     CHECK_CUDA_PTR(cam_position_ptr, "cam_position_ptr");
     CHECK_CUDA_PTR(image_ptr, "image_ptr");
@@ -268,7 +270,9 @@ BackwardOutputs backward_raw(
     CHECK_CUDA_PTR(means_ptr, "means_ptr");
     CHECK_CUDA_PTR(scales_raw_ptr, "scales_raw_ptr");
     CHECK_CUDA_PTR(rotations_raw_ptr, "rotations_raw_ptr");
-    CHECK_CUDA_PTR(sh_coefficients_rest_ptr, "sh_coefficients_rest_ptr");
+    if (total_bases_sh_rest > 0) {
+        CHECK_CUDA_PTR(sh_coefficients_rest_ptr, "sh_coefficients_rest_ptr");
+    }
     CHECK_CUDA_PTR(w2c_ptr, "w2c_ptr");
     CHECK_CUDA_PTR(cam_position_ptr, "cam_position_ptr");
 
@@ -278,8 +282,10 @@ BackwardOutputs backward_raw(
     CHECK_CUDA_PTR(grad_rotations_raw_ptr, "grad_rotations_raw_ptr");
     CHECK_CUDA_PTR(grad_opacities_raw_ptr, "grad_opacities_raw_ptr");
     CHECK_CUDA_PTR(grad_sh_coefficients_0_ptr, "grad_sh_coefficients_0_ptr");
-    CHECK_CUDA_PTR(grad_sh_coefficients_rest_ptr, "grad_sh_coefficients_rest_ptr");
-    
+    if (total_bases_sh_rest > 0) {
+        CHECK_CUDA_PTR(grad_sh_coefficients_rest_ptr, "grad_sh_coefficients_rest_ptr");
+    }
+
     // Optional pointer
     CHECK_CUDA_PTR_OPTIONAL(densification_info_ptr, "densification_info_ptr");
     CHECK_CUDA_PTR_OPTIONAL(grad_w2c_ptr, "grad_w2c_ptr");
