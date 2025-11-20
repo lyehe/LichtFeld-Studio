@@ -201,7 +201,7 @@ write_basic_package_version_file(
 #   * TARGETS_EXPORT_NAME
 #   * PROJECT_NAME
 configure_package_config_file(
-    "${CMAKE_SOURCE_DIR}/cmake/template/Config.cmake.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/template/Config.cmake.in"
     "${project_config}"
     INSTALL_DESTINATION "${config_install_dir}"
 )

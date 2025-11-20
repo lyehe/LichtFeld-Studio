@@ -18,11 +18,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/nvImageCodec/CMakeLists.txt")
     set(WITH_DYNAMIC_NVJPEG OFF CACHE BOOL "Statically link nvJPEG instead of runtime dlopen" FORCE)
     set(WITH_DYNAMIC_NVJPEG2K OFF CACHE BOOL "Statically link nvJPEG2K instead of runtime dlopen" FORCE)
 
-    # Create missing cmake template directory to avoid config error
-    file(MAKE_DIRECTORY "${CMAKE_SOURCE_DIR}/cmake/template")
-    # Create a minimal Config.cmake.in to satisfy nvImageCodec build
-    file(WRITE "${CMAKE_SOURCE_DIR}/cmake/template/Config.cmake.in" "# Placeholder for nvImageCodec\n")
-
     add_subdirectory(nvImageCodec)
 else()
     message(WARNING "nvImageCodec not found at external/nvImageCodec - GPU image loading will not be available")
