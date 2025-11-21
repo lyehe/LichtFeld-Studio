@@ -279,17 +279,14 @@ namespace lfs::vis {
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 drag_mode_ = DragMode::Pan;
-                onCameraMovementStart();
                 LOG_TRACE("Started camera pan");
             } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
                 drag_mode_ = DragMode::Rotate;
-                onCameraMovementStart();
                 LOG_TRACE("Started camera rotate");
             } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
                 drag_mode_ = DragMode::Orbit;
                 float current_time = static_cast<float>(glfwGetTime());
                 viewport_.camera.startRotateAroundCenter(glm::vec2(x, y), current_time);
-                onCameraMovementStart();
                 LOG_TRACE("Started camera orbit");
             }
         } else if (action == GLFW_RELEASE) {
@@ -889,11 +886,11 @@ namespace lfs::vis {
             camera_is_moving_ = true;
             last_camera_movement_time_ = std::chrono::steady_clock::now();
 
-            // Pause training if it's running
+            // Pause training f it's running
             if (training_manager_ && training_manager_->isRunning()) {
-                training_manager_->pauseTraining();
+                training_manager_->pauseTrainingTemporary();
                 training_was_paused_by_camera_ = true;
-                LOG_INFO("Camera movement detected - pausing training");
+                LOG_INFO("Camera movement detected - pausing training temporarily");
             }
         } else {
             // Update movement time
@@ -916,10 +913,10 @@ namespace lfs::vis {
             camera_is_moving_ = false;
 
             // Resume training if we paused it
-            if (training_was_paused_by_camera_ && training_manager_ && training_manager_->isPaused()) {
-                training_manager_->resumeTraining();
+            if (training_was_paused_by_camera_ && training_manager_ && training_manager_->isRunning()) {
+                training_manager_->resumeTrainingTemporary();
                 training_was_paused_by_camera_ = false;
-                LOG_INFO("Camera movement stopped - resuming training");
+                LOG_INFO("Camera movement stopped - resuming training temporarily");
             }
         }
     }

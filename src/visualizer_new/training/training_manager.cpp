@@ -210,6 +210,30 @@ namespace lfs::vis {
         }
     }
 
+    void TrainerManager::pauseTrainingTemporary() {
+        // Temporary pause for camera movement - doesn't change state
+        if (state_ != State::Running) {
+            return;
+        }
+
+        if (trainer_) {
+            trainer_->request_pause();
+            LOG_TRACE("Training temporarily paused at iteration {} (state remains Running)", getCurrentIteration());
+        }
+    }
+
+    void TrainerManager::resumeTrainingTemporary() {
+        // Resume from temporary pause - only if still in Running state
+        if (state_ != State::Running) {
+            return;
+        }
+
+        if (trainer_) {
+            trainer_->request_resume();
+            LOG_TRACE("Training resumed from temporary pause at iteration {} (state remains Running)", getCurrentIteration());
+        }
+    }
+
     void TrainerManager::stopTraining() {
         if (!isTrainingActive()) {
             LOG_TRACE("Training not active, nothing to stop");

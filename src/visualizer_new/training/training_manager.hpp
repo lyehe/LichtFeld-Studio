@@ -57,6 +57,10 @@ namespace lfs::vis {
         void requestSaveCheckpoint();
         bool resetTraining();
 
+        // Temporary pause (for camera movement - doesn't change UI state)
+        void pauseTrainingTemporary();
+        void resumeTrainingTemporary();
+
         // State queries
         State getState() const { return state_.load(); }
         bool isRunning() const { return state_ == State::Running; }
