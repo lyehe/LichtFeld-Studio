@@ -32,8 +32,6 @@ namespace lfs::vis {
         void pollEvents();
         bool shouldClose() const;
         void cancelClose();
-        void setVSync(bool enabled);
-        [[nodiscard]] bool getVSync() const { return vsync_enabled_; }
         void requestRedraw();
         bool needsRedraw() const;
 
@@ -53,7 +51,6 @@ namespace lfs::vis {
 
         // Static callback handler pointer
         static void* callback_handler_;
-        bool vsync_enabled_ = true;                     // Track VSync state
         mutable std::atomic<bool> needs_redraw_{false}; // Redraw flag
 
         // Static GLFW callbacks

@@ -29,8 +29,6 @@ namespace lfs::vis {
         : title_(title),
           window_size_(width, height),
           framebuffer_size_(width, height) {
-
-        setVSync(true);
     }
 
     WindowManager::~WindowManager() {
@@ -77,8 +75,8 @@ namespace lfs::vis {
         // Set window focus callback
         glfwSetWindowFocusCallback(window_, window_focus_callback);
 
-        // Enable vsync by default
-        glfwSwapInterval(1);
+        // Disable vsync for maximum performance
+        glfwSwapInterval(0);
 
         // Set up OpenGL state
         glEnable(GL_LINE_SMOOTH);
@@ -114,11 +112,6 @@ namespace lfs::vis {
 
     void WindowManager::cancelClose() {
         glfwSetWindowShouldClose(window_, false);
-    }
-
-    void WindowManager::setVSync(bool enabled) {
-        glfwSwapInterval(enabled ? 1 : 0);
-        vsync_enabled_ = enabled;
     }
 
     void WindowManager::requestRedraw() {

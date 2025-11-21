@@ -73,17 +73,6 @@ namespace lfs::vis {
             return rendering_manager_ ? rendering_manager_->getAverageFPS() : 0.0f;
         }
 
-        // VSync control
-        void setVSync(bool enabled) {
-            if (window_manager_) {
-                window_manager_->setVSync(enabled);
-            }
-        }
-
-        [[nodiscard]] bool getVSyncEnabled() const {
-            return window_manager_ ? window_manager_->getVSync() : true;
-        }
-
         // Antialiasing state
         bool isAntiAliasingEnabled() const {
             return rendering_manager_ ? rendering_manager_->getSettings().antialiasing : false;
