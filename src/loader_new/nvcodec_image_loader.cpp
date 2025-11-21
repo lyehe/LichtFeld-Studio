@@ -73,15 +73,18 @@ namespace lfs::loader {
         impl_->fallback_enabled = options.enable_fallback;
 
         // Create nvImageCodec instance
-        nvimgcodecInstanceCreateInfo_t create_info{NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, sizeof(nvimgcodecInstanceCreateInfo_t), nullptr};
-        create_info.load_builtin_modules = 1;
-        create_info.load_extension_modules = 1;
-        // Colon-separated paths to extension modules (nvjpeg for hardware JPEG decode, libjpeg_turbo for CPU fallback)
-        create_info.extension_modules_path =
-            "build/external/nvImageCodec/extensions/nvjpeg:"
-            "build/external/nvImageCodec/extensions/libjpeg_turbo:"
-            "build/external/nvImageCodec/extensions/nvjpeg2k:"
-            "build/external/nvImageCodec/extensions/nvbmp";
+        nvimgcodecInstanceCreateInfo_t create_info{
+            NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            sizeof(nvimgcodecInstanceCreateInfo_t),
+            nullptr,
+            1,  // load_builtin_modules
+            1,  // load_extension_modules
+            nullptr,  // extension_modules_path
+            0,  // create_debug_messenger
+            nullptr,  // debug_messenger_desc
+            0,  // message_severity
+            0   // message_category
+        };
 
         auto status = nvimgcodecInstanceCreate(&impl_->instance, &create_info);
         if (status != NVIMGCODEC_STATUS_SUCCESS) {
@@ -95,9 +98,20 @@ namespace lfs::loader {
         impl_->decoder_available.resize(pool_size, true);
 
         // Use default execution params (will use GPU backend if available via nvjpeg extension)
-        nvimgcodecExecutionParams_t exec_params{NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS, sizeof(nvimgcodecExecutionParams_t), nullptr};
-        exec_params.device_id = options.device_id;
-        exec_params.max_num_cpu_threads = options.max_num_cpu_threads;
+        nvimgcodecExecutionParams_t exec_params{
+            NVIMGCODEC_STRUCTURE_TYPE_EXECUTION_PARAMS,
+            sizeof(nvimgcodecExecutionParams_t),
+            nullptr,
+            nullptr,  // device_allocator
+            nullptr,  // pinned_allocator
+            options.max_num_cpu_threads,  // max_num_cpu_threads
+            nullptr,  // executor
+            options.device_id,  // device_id
+            0,  // pre_init
+            0,  // skip_pre_sync
+            0,  // num_backends
+            nullptr  // backends
+        };
 
         for (size_t i = 0; i < pool_size; ++i) {
             status = nvimgcodecDecoderCreate(impl_->instance, &impl_->decoder_pool[i], &exec_params, nullptr);
@@ -121,9 +135,18 @@ namespace lfs::loader {
 
         // Try to create a minimal instance
         nvimgcodecInstance_t test_instance = nullptr;
-        nvimgcodecInstanceCreateInfo_t create_info{NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, sizeof(nvimgcodecInstanceCreateInfo_t), nullptr};
-        create_info.load_builtin_modules = 1;
-        create_info.load_extension_modules = 0;
+        nvimgcodecInstanceCreateInfo_t create_info{
+            NVIMGCODEC_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            sizeof(nvimgcodecInstanceCreateInfo_t),
+            nullptr,
+            1,  // load_builtin_modules
+            0,  // load_extension_modules
+            nullptr,  // extension_modules_path
+            0,  // create_debug_messenger
+            nullptr,  // debug_messenger_desc
+            0,  // message_severity
+            0   // message_category
+        };
 
         auto status = nvimgcodecInstanceCreate(&test_instance, &create_info);
         if (status == NVIMGCODEC_STATUS_SUCCESS && test_instance) {
@@ -175,7 +198,7 @@ namespace lfs::loader {
     lfs::core::Tensor NvCodecImageLoader::load_image_from_memory_gpu(
         const std::vector<uint8_t>& jpeg_data,
         int resize_factor,
-        int max_width,
+        [[maybe_unused]] int max_width,
         void* cuda_stream) {
 
         // Decode at full resolution, then resize with Lanczos if needed
@@ -200,7 +223,11 @@ namespace lfs::loader {
         }
 
         // Get image info (dimensions, format)
-        nvimgcodecImageInfo_t image_info{NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO, sizeof(nvimgcodecImageInfo_t), nullptr};
+        nvimgcodecImageInfo_t image_info{};
+        image_info.struct_type = NVIMGCODEC_STRUCTURE_TYPE_IMAGE_INFO;
+        image_info.struct_size = sizeof(nvimgcodecImageInfo_t);
+        image_info.struct_next = nullptr;
+
         status = nvimgcodecCodeStreamGetImageInfo(code_stream, &image_info);
         if (status != NVIMGCODEC_STATUS_SUCCESS) {
             nvimgcodecCodeStreamDestroy(code_stream);
@@ -221,7 +248,6 @@ namespace lfs::loader {
 
         int src_width = image_info.plane_info[0].width;
         int src_height = image_info.plane_info[0].height;
-        int channels = image_info.num_planes; // RGB = 3 planes
 
         // Calculate target dimensions based on resize_factor
         int target_width = src_width;
