@@ -176,7 +176,7 @@ namespace lfs::vis {
 
     void TrainerManager::pauseTraining() {
         if (!canPause()) {
-            LOG_TRACE("Cannot pause training in current state");
+            LOG_TRACE("Cannot pause training in current state: {}", static_cast<int>(state_.load()));
             return;
         }
 
@@ -188,13 +188,13 @@ namespace lfs::vis {
                 .iteration = getCurrentIteration()}
                 .emit();
 
-            LOG_INFO("Training paused at iteration {}", getCurrentIteration());
+            LOG_INFO("Training paused at iteration {} (state: Paused)", getCurrentIteration());
         }
     }
 
     void TrainerManager::resumeTraining() {
         if (!canResume()) {
-            LOG_TRACE("Cannot resume training in current state");
+            LOG_TRACE("Cannot resume training in current state: {}", static_cast<int>(state_.load()));
             return;
         }
 
@@ -206,7 +206,7 @@ namespace lfs::vis {
                 .iteration = getCurrentIteration()}
                 .emit();
 
-            LOG_INFO("Training resumed from iteration {}", getCurrentIteration());
+            LOG_INFO("Training resumed from iteration {} (state: Running)", getCurrentIteration());
         }
     }
 

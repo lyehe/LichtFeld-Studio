@@ -645,21 +645,38 @@ namespace lfs::vis {
         // Determine if we should do a full render
         bool should_render = false;
         bool needs_render_now = needs_render_.load();
+        bool training_update_triggered = false;
 
-        // Always render if we need to update the display
-        if (!cached_result_.image || needs_render_now || split_view_active) {
-            should_render = true;
-            needs_render_ = false;
-        } else if (context.has_focus) {
-            should_render = true;
-        } else if (scene_manager && scene_manager->hasDataset()) {
+        // FIRST: Check if training needs an update (independent of other conditions)
+        if (scene_manager && scene_manager->hasDataset()) {
             const auto* trainer_manager = scene_manager->getTrainerManager();
             if (trainer_manager && trainer_manager->isRunning()) {
-                auto now = std::chrono::steady_clock::now();
-                if (now - last_training_render_ > std::chrono::seconds(1)) {
+                const auto now = std::chrono::steady_clock::now();
+                // Render at 2 Hz during training (500ms interval)
+                if (now - last_training_render_ > std::chrono::milliseconds(500)) {
                     should_render = true;
+                    training_update_triggered = true;
                     last_training_render_ = now;
                 }
+            }
+        }
+
+        // THEN: Check other render triggers
+        if (!training_update_triggered) {
+            if (!cached_result_.image || needs_render_now || split_view_active) {
+                should_render = true;
+                needs_render_ = false;
+                if (!cached_result_.image) {
+                    LOG_INFO("Render triggered: no cached result");
+                } else if (needs_render_now) {
+                    // During interactive camera movement, this happens every frame - reduce noise
+                    LOG_TRACE("Render triggered: scene changed (marked dirty)");
+                } else if (split_view_active) {
+                    LOG_DEBUG("Render triggered: split view active");
+                }
+            } else if (context.has_focus) {
+                should_render = true;
+                LOG_TRACE("Render triggered: viewport has focus (interactive mode)");
             }
         }
 
@@ -1025,9 +1042,6 @@ namespace lfs::vis {
                 // Render frustums with world transform
                 LOG_TRACE("Rendering {} camera frustums with scale {}, highlighted index: {} (ID: {})",
                           cameras.size(), settings_.camera_frustum_scale, highlight_index, hovered_camera_id_);
-
-                // Apply world transform to camera frustums so they move with the gaussian splat
-                glm::mat4 world_transform = settings_.world_transform.toMat4();
 
                 auto frustum_result = engine_->renderCameraFrustumsWithHighlight(
                     cameras, viewport,

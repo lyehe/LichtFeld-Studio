@@ -282,14 +282,17 @@ namespace lfs::vis {
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 drag_mode_ = DragMode::Pan;
+                onCameraMovementStart();
                 LOG_TRACE("Started camera pan");
             } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
                 drag_mode_ = DragMode::Rotate;
+                onCameraMovementStart();
                 LOG_TRACE("Started camera rotate");
             } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
                 drag_mode_ = DragMode::Orbit;
                 float current_time = static_cast<float>(glfwGetTime());
                 viewport_.camera.startRotateAroundCenter(glm::vec2(x, y), current_time);
+                onCameraMovementStart();
                 LOG_TRACE("Started camera orbit");
             }
         } else if (action == GLFW_RELEASE) {
@@ -316,6 +319,7 @@ namespace lfs::vis {
                     .rotation = viewport_.getRotationMatrix(),
                     .translation = viewport_.getTranslation()}
                     .emit();
+                onCameraMovementEnd();
             }
         }
     }
@@ -450,6 +454,8 @@ namespace lfs::vis {
             default:
                 break;
             }
+            // Signal continuous camera movement
+            onCameraMovementStart();
             publishCameraMove();
         }
     }
@@ -475,6 +481,7 @@ namespace lfs::vis {
             LOG_TRACE("Camera zoom: {}", delta);
         }
 
+        onCameraMovementStart();
         publishCameraMove();
     }
 
@@ -656,8 +663,12 @@ namespace lfs::vis {
         // Publish if moving (removed inertia check)
         bool moving = keys_wasd_[0] || keys_wasd_[1] || keys_wasd_[2] || keys_wasd_[3] || keys_wasd_[4] || keys_wasd_[5];
         if (moving) {
+            onCameraMovementStart();
             publishCameraMove();
         }
+
+        // Check if camera movement has timed out and should resume training
+        checkCameraMovementTimeout();
     }
 
     void InputController::handleFileDrop(const std::vector<std::string>& paths) {
@@ -856,6 +867,46 @@ namespace lfs::vis {
                 .translation = viewport_.getTranslation()}
                 .emit();
             last_camera_publish_ = now;
+        }
+    }
+
+    void InputController::onCameraMovementStart() {
+        if (!camera_is_moving_) {
+            camera_is_moving_ = true;
+            last_camera_movement_time_ = std::chrono::steady_clock::now();
+
+            // Pause training if it's running
+            if (training_manager_ && training_manager_->isRunning()) {
+                training_manager_->pauseTraining();
+                training_was_paused_by_camera_ = true;
+                LOG_INFO("Camera movement detected - pausing training");
+            }
+        } else {
+            // Update movement time
+            last_camera_movement_time_ = std::chrono::steady_clock::now();
+        }
+    }
+
+    void InputController::onCameraMovementEnd() {
+        // Don't immediately resume - let the timeout handle it
+        last_camera_movement_time_ = std::chrono::steady_clock::now();
+    }
+
+    void InputController::checkCameraMovementTimeout() {
+        if (!camera_is_moving_) {
+            return;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_camera_movement_time_ >= camera_movement_timeout_) {
+            camera_is_moving_ = false;
+
+            // Resume training if we paused it
+            if (training_was_paused_by_camera_ && training_manager_ && training_manager_->isPaused()) {
+                training_manager_->resumeTraining();
+                training_was_paused_by_camera_ = false;
+                LOG_INFO("Camera movement stopped - resuming training");
+            }
         }
     }
 } // namespace lfs::vis

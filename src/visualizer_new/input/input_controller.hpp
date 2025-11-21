@@ -31,7 +31,7 @@ namespace lfs::vis {
         void initialize();
 
         // Set training manager for camera view commands
-        void setTrainingManager(std::shared_ptr<const TrainerManager> tm) {
+        void setTrainingManager(std::shared_ptr<TrainerManager> tm) {
             training_manager_ = tm;
         }
 
@@ -100,10 +100,15 @@ namespace lfs::vis {
         void publishCameraMove();
         bool isNearSplitter(double x) const;
 
+        // Training pause/resume helpers
+        void onCameraMovementStart();
+        void onCameraMovementEnd();
+        void checkCameraMovementTimeout();
+
         // Core state
         GLFWwindow* window_;
         Viewport& viewport_;
-        std::shared_ptr<const TrainerManager> training_manager_;
+        std::shared_ptr<TrainerManager> training_manager_;
         RenderingManager* rendering_manager_ = nullptr;
 
         // Tool support
@@ -141,6 +146,12 @@ namespace lfs::vis {
         // Throttling for camera events
         std::chrono::steady_clock::time_point last_camera_publish_;
         static constexpr auto camera_publish_interval_ = std::chrono::milliseconds(100);
+
+        // Camera movement tracking for training pause/resume
+        bool camera_is_moving_ = false;
+        bool training_was_paused_by_camera_ = false;
+        std::chrono::steady_clock::time_point last_camera_movement_time_;
+        static constexpr auto camera_movement_timeout_ = std::chrono::milliseconds(500); // Resume training 500ms after camera stops
 
         // Frame timing for WASD movement
         std::chrono::high_resolution_clock::time_point last_frame_time_;
