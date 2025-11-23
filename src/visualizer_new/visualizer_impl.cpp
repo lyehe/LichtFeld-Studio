@@ -193,6 +193,15 @@ namespace lfs::vis {
             handleLoadProjectCommand(cmd);
         });
 
+        // Listen to TrainingStarted - switch to splat rendering
+        state::TrainingStarted::when([this](const auto&) {
+            ui::PointCloudModeChanged{
+                .enabled = false,
+                .voxel_size = 0.0f}
+                .emit();
+            LOG_INFO("Switched to splat rendering mode (training started)");
+        });
+
         // Listen to TrainingCompleted
         state::TrainingCompleted::when([this](const auto& event) {
             handleTrainingCompleted(event);
