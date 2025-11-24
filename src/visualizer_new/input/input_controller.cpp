@@ -460,6 +460,11 @@ namespace lfs::vis {
             return;
         }
 
+        // Block scroll when hovering over GUI windows (panels)
+        if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+            return;
+        }
+
         if (!shouldCameraHandleInput())
             return;
 
