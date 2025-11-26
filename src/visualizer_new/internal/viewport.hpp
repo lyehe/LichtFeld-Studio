@@ -167,13 +167,15 @@ class Viewport {
         }
 
         void advance_up(float deltaTime) {
-            const glm::vec3 movement = glm::vec3(0.0f, -deltaTime * wasdSpeed, 0.0f);
+            const glm::vec3 up = glm::normalize(R * glm::vec3(0, 1, 0));
+            const glm::vec3 movement = -up * deltaTime * wasdSpeed;
             t += movement;
             pivot += movement;
         }
 
         void advance_down(float deltaTime) {
-            const glm::vec3 movement = glm::vec3(0.0f, deltaTime * wasdSpeed, 0.0f);
+            const glm::vec3 up = glm::normalize(R * glm::vec3(0, 1, 0));
+            const glm::vec3 movement = up * deltaTime * wasdSpeed;
             t += movement;
             pivot += movement;
         }
