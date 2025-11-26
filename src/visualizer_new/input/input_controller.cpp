@@ -288,14 +288,18 @@ namespace lfs::vis {
             viewport_.camera.initScreenPos(glm::vec2(x, y));
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
-                // Double-click sets pivot from depth
+                // Double-click: set pivot and center camera on it
                 const auto now = std::chrono::steady_clock::now();
                 const double time_since_last = std::chrono::duration<double>(now - last_pivot_click_time_).count();
                 const double dist = glm::length(glm::dvec2(x, y) - last_pivot_click_pos_);
 
                 if (time_since_last < DOUBLE_CLICK_TIME && dist < DOUBLE_CLICK_DISTANCE) {
-                    const glm::vec3 pivot = unprojectScreenPoint(x, y);
-                    viewport_.camera.setPivot(pivot);
+                    const glm::vec3 new_pivot = unprojectScreenPoint(x, y);
+                    const float current_distance = glm::length(viewport_.camera.getPivot() - viewport_.camera.t);
+                    const glm::vec3 forward = glm::normalize(viewport_.camera.R * glm::vec3(0, 0, 1));
+                    viewport_.camera.t = new_pivot - forward * current_distance;
+                    viewport_.camera.setPivot(new_pivot);
+                    publishCameraMove();
                 }
 
                 last_pivot_click_time_ = now;
