@@ -298,23 +298,31 @@ namespace lfs::core {
     bool compute_bounds(const SplatData& splat_data,
                         glm::vec3& min_bounds,
                         glm::vec3& max_bounds,
-                        const float padding) {
+                        const float padding,
+                        const bool use_percentile) {
         const auto& means = splat_data.means();
         if (!means.is_valid() || means.size(0) == 0) {
             return false;
         }
 
         const int64_t n = means.size(0);
-        const int64_t lo = n / 100;      // 1st percentile
-        const int64_t hi = n - 1 - lo;   // 99th percentile
 
-        // TODO: use kthvalue/partial_sort instead of full sort
-        for (int i = 0; i < 3; ++i) {
-            const auto sorted = means.slice(1, i, i + 1).squeeze(1).sort(0, false).first;
-            const float min_val = sorted[lo].item();
-            const float max_val = sorted[hi].item();
-            min_bounds[i] = min_val - padding;
-            max_bounds[i] = max_val + padding;
+        if (use_percentile && n > 100) {
+            // Exclude 2% outliers (1% each end)
+            // TODO: use kthvalue/partial_sort instead of full sort
+            const int64_t lo = n / 100;
+            const int64_t hi = n - 1 - lo;
+            for (int i = 0; i < 3; ++i) {
+                const auto sorted = means.slice(1, i, i + 1).squeeze(1).sort(0, false).first;
+                min_bounds[i] = sorted[lo].item() - padding;
+                max_bounds[i] = sorted[hi].item() + padding;
+            }
+        } else {
+            for (int i = 0; i < 3; ++i) {
+                const auto col = means.slice(1, i, i + 1).squeeze(1);
+                min_bounds[i] = col.min().item() - padding;
+                max_bounds[i] = col.max().item() + padding;
+            }
         }
 
         return true;

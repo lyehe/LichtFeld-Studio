@@ -149,7 +149,7 @@ namespace lfs::vis {
         void emitSceneChanged();
         void handleCropActivePly(const lfs::geometry::BoundingBox& crop_box);
         void handleRenamePly(const lfs::core::events::cmd::RenamePLY& event);
-        void updateCropBoxToFitScene();
+        void updateCropBoxToFitScene(bool use_percentile);
 
         Scene scene_;
         mutable std::mutex state_mutex_;

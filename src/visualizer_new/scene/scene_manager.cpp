@@ -175,7 +175,7 @@ namespace lfs::vis {
                 .emit();
 
             emitSceneChanged();
-            updateCropBoxToFitScene();
+            updateCropBoxToFitScene(true);
             selectNode(name);
             tools::SetToolbarTool{.tool_mode = static_cast<int>(gui::panels::ToolMode::CropBox)}.emit();
 
@@ -251,7 +251,7 @@ namespace lfs::vis {
                 .emit();
 
             emitSceneChanged();
-            updateCropBoxToFitScene();
+            updateCropBoxToFitScene(true);
 
             LOG_INFO("Added '{}' ({} gaussians)", name, gaussian_count);
 
@@ -665,6 +665,7 @@ namespace lfs::vis {
         }
 
         emitSceneChanged();
+        updateCropBoxToFitScene(false);
         LOG_INFO("Crop operation completed");
     }
 
@@ -725,7 +726,7 @@ namespace lfs::vis {
         renamePLY(event.old_name, event.new_name);
     }
 
-    void SceneManager::updateCropBoxToFitScene() {
+    void SceneManager::updateCropBoxToFitScene(const bool use_percentile) {
         if (!rendering_manager_) {
             return;
         }
@@ -736,7 +737,7 @@ namespace lfs::vis {
         }
 
         glm::vec3 min_bounds, max_bounds;
-        if (!lfs::core::compute_bounds(*combined_model, min_bounds, max_bounds)) {
+        if (!lfs::core::compute_bounds(*combined_model, min_bounds, max_bounds, 0.0f, use_percentile)) {
             return;
         }
 
