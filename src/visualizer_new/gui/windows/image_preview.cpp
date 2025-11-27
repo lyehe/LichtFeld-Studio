@@ -79,6 +79,7 @@ namespace lfs::vis::gui {
         is_open_ = false;
         image_paths_.clear();
         current_texture_.reset();
+        previous_texture_.reset();
         prev_texture_.reset();
         next_texture_.reset();
 
@@ -269,8 +270,9 @@ namespace lfs::vis::gui {
             // Load image data with RAII
             auto image_data = loadImageData(path);
 
-            // Create texture from data
-            current_texture_ = createTexture(std::move(*image_data), path);
+            // Create new texture first, then swap (keeps old texture visible during load)
+            auto new_texture = createTexture(std::move(*image_data), path);
+            current_texture_ = std::move(new_texture);
 
             is_loading_ = false;
             return true;
@@ -438,28 +440,18 @@ namespace lfs::vis::gui {
         if (image_paths_.empty() || current_index_ + 1 >= image_paths_.size()) {
             return;
         }
-
-        current_index_++;
-
-        // Always reset view when changing images
-        zoom_ = 1.0f;
-        pan_x_ = 0.0f;
-        pan_y_ = 0.0f;
-
-        LOG_DEBUG("Navigating to next image (index {})", current_index_);
-
-        // Use preloaded texture if available
-        if (next_texture_) {
-            current_texture_ = std::move(next_texture_);
-            LOG_TRACE("Using preloaded texture for next image");
-        } else {
-            LOG_WARN("No preloaded texture available, loading synchronously");
-            if (!loadImage(image_paths_[current_index_])) {
-                LOG_ERROR("Failed to load next image: {}", load_error_);
-                // Don't throw here, GUI will display error
-            }
+        if (!next_texture_ && is_loading_) {
+            return;  // Skip if no preload and currently loading
         }
 
+        current_index_++;
+        previous_texture_ = std::move(current_texture_);  // Keep old texture in GPU memory
+
+        if (next_texture_) {
+            current_texture_ = std::move(next_texture_);
+        } else {
+            loadImage(image_paths_[current_index_]);
+        }
         preloadAdjacentImages();
     }
 
@@ -467,28 +459,18 @@ namespace lfs::vis::gui {
         if (image_paths_.empty() || current_index_ == 0) {
             return;
         }
-
-        current_index_--;
-
-        // Always reset view when changing images
-        zoom_ = 1.0f;
-        pan_x_ = 0.0f;
-        pan_y_ = 0.0f;
-
-        LOG_DEBUG("Navigating to previous image (index {})", current_index_);
-
-        // Use preloaded texture if available
-        if (prev_texture_) {
-            current_texture_ = std::move(prev_texture_);
-            LOG_TRACE("Using preloaded texture for previous image");
-        } else {
-            LOG_WARN("No preloaded texture available, loading synchronously");
-            if (!loadImage(image_paths_[current_index_])) {
-                LOG_ERROR("Failed to load previous image: {}", load_error_);
-                // Don't throw here, GUI will display error
-            }
+        if (!prev_texture_ && is_loading_) {
+            return;  // Skip if no preload and currently loading
         }
 
+        current_index_--;
+        previous_texture_ = std::move(current_texture_);  // Keep old texture in GPU memory
+
+        if (prev_texture_) {
+            current_texture_ = std::move(prev_texture_);
+        } else {
+            loadImage(image_paths_[current_index_]);
+        }
         preloadAdjacentImages();
     }
 
@@ -498,19 +480,12 @@ namespace lfs::vis::gui {
         }
 
         current_index_ = index;
-
-        // Always reset view
         zoom_ = 1.0f;
         pan_x_ = 0.0f;
         pan_y_ = 0.0f;
 
-        LOG_DEBUG("Jumping to image index {}", index);
-
-        if (!loadImage(image_paths_[current_index_])) {
-            LOG_ERROR("Failed to load image at index {}: {}", index, load_error_);
-            // Don't throw here, GUI will display error
-        }
-
+        previous_texture_ = std::move(current_texture_);  // Keep old texture in GPU memory
+        loadImage(image_paths_[current_index_]);
         preloadAdjacentImages();
     }
 
@@ -548,9 +523,10 @@ namespace lfs::vis::gui {
                                         ImGuiWindowFlags_NoScrollWithMouse |
                                         ImGuiWindowFlags_MenuBar;
 
-        std::string title = "Image Preview";
+        // Use ### to keep stable window ID while changing display title
+        std::string title = "Image Preview###ImagePreview";
         if (!image_paths_.empty()) {
-            title = std::format("Image Preview - {}/{} - {}",
+            title = std::format("Image Preview - {}/{} - {}###ImagePreview",
                                 current_index_ + 1,
                                 image_paths_.size(),
                                 image_paths_[current_index_].filename().string());
@@ -600,23 +576,16 @@ namespace lfs::vis::gui {
             ImGui::EndMenuBar();
         }
 
-        ImVec2 content_size = ImGui::GetContentRegionAvail();
+        const ImVec2 content_size = ImGui::GetContentRegionAvail();
 
-        if (is_loading_) {
-            ImGui::SetCursorPos(ImVec2(content_size.x * 0.5f - 50, content_size.y * 0.5f));
-            ImGui::Text("Loading...");
-            ImGui::End();
-            return;
-        }
-
-        if (!load_error_.empty()) {
+        if (!load_error_.empty() && !current_texture_) {
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Error: %s", load_error_.c_str());
             ImGui::End();
             return;
         }
 
         if (!current_texture_ || !current_texture_->texture.valid()) {
-            ImGui::Text("No image loaded");
+            ImGui::Text(is_loading_ ? "Loading..." : "No image loaded");
             ImGui::End();
             return;
         }
@@ -625,13 +594,12 @@ namespace lfs::vis::gui {
             static_cast<int>(content_size.x),
             static_cast<int>(content_size.y));
 
-        float x_offset = (content_size.x - display_width) * 0.5f + pan_x_;
-        float y_offset = (content_size.y - display_height) * 0.5f + pan_y_;
+        const float x_offset = (content_size.x - display_width) * 0.5f + pan_x_;
+        const float y_offset = (content_size.y - display_height) * 0.5f + pan_y_;
 
         ImGui::SetCursorPos(ImVec2(x_offset, y_offset + ImGui::GetCursorPosY()));
-        ImGui::Image(
-            (ImTextureID)(uintptr_t)current_texture_->texture.id(),
-            ImVec2(display_width, display_height));
+        ImGui::Image(static_cast<ImTextureID>(current_texture_->texture.id()),
+                     ImVec2(display_width, display_height));
 
         if (ImGui::IsItemHovered()) {
             float wheel = ImGui::GetIO().MouseWheel;
@@ -656,10 +624,11 @@ namespace lfs::vis::gui {
         }
 
         if (ImGui::IsWindowFocused()) {
-            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+            // Disable key repeat for navigation (false = no repeat)
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false)) {
                 previousImage();
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow, false)) {
                 nextImage();
             }
             if (ImGui::IsKeyPressed(ImGuiKey_Home)) {

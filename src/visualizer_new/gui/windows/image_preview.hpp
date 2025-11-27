@@ -201,8 +201,8 @@ namespace lfs::vis::gui {
         std::vector<std::filesystem::path> image_paths_;
         size_t current_index_ = 0;
 
-        // Current image texture
         std::unique_ptr<ImageTexture> current_texture_;
+        std::unique_ptr<ImageTexture> previous_texture_;
 
         // Thread-safe preload results
         mutable std::mutex preload_mutex_;
