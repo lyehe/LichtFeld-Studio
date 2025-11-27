@@ -40,4 +40,17 @@ namespace lfs::core {
      */
     void random_choose(SplatData& splat_data, int num_required_splat, int seed = 0);
 
+    /**
+     * @brief Compute the axis-aligned bounding box of SplatData
+     * @param splat_data The splat data to compute bounds for
+     * @param[out] min_bounds Output minimum corner (x, y, z)
+     * @param[out] max_bounds Output maximum corner (x, y, z)
+     * @param padding Optional padding to add around the bounds (default: 0.0f)
+     * @return true if bounds were computed successfully, false if splat data is empty/invalid
+     */
+    bool compute_bounds(const SplatData& splat_data,
+                        glm::vec3& min_bounds,
+                        glm::vec3& max_bounds,
+                        float padding = 0.0f);
+
 } // namespace lfs::core

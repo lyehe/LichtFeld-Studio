@@ -6,10 +6,13 @@
 #include "core_new/logger.hpp"
 #include "core_new/splat_data_export.hpp"
 #include "core_new/splat_data_transform.hpp"
+#include "geometry_new/euclidean_transform.hpp"
+#include "gui/panels/gizmo_toolbar.hpp"
 #include "loader_new/loader.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "training/training_manager.hpp"
 #include "training_new/training_setup.hpp"
+#include <glm/gtc/quaternion.hpp>
 #include <stdexcept>
 
 namespace lfs::vis {
@@ -170,8 +173,11 @@ namespace lfs::vis {
                 .emit();
 
             emitSceneChanged();
+            updateCropBoxToFitScene();
+            selectNode(name);
+            tools::SetToolbarTool{.tool_mode = static_cast<int>(gui::panels::ToolMode::CropBox)}.emit();
 
-            LOG_INFO("Successfully loaded '{}' with {} gaussians", name, gaussian_count);
+            LOG_INFO("Loaded '{}' with {} gaussians", name, gaussian_count);
 
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to load splat file: {} (path: {})", e.what(), path.string());
@@ -243,9 +249,9 @@ namespace lfs::vis {
                 .emit();
 
             emitSceneChanged();
+            updateCropBoxToFitScene();
 
-            LOG_INFO("Added '{}' to scene ({} gaussians, visible: {})",
-                     name, gaussian_count, is_visible);
+            LOG_INFO("Added '{}' ({} gaussians)", name, gaussian_count);
 
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to add splat file: {} (path: {})", e.what(), path.string());
@@ -756,4 +762,37 @@ namespace lfs::vis {
     void SceneManager::handleRenamePly(const cmd::RenamePLY& event) {
         renamePLY(event.old_name, event.new_name);
     }
+
+    void SceneManager::updateCropBoxToFitScene() {
+        if (!rendering_manager_) {
+            return;
+        }
+
+        const auto* combined_model = scene_.getCombinedModel();
+        if (!combined_model || combined_model->size() == 0) {
+            return;
+        }
+
+        glm::vec3 min_bounds, max_bounds;
+        if (!lfs::core::compute_bounds(*combined_model, min_bounds, max_bounds)) {
+            return;
+        }
+
+        auto settings = rendering_manager_->getSettings();
+        const glm::vec3 center = (min_bounds + max_bounds) * 0.5f;
+        const glm::vec3 size = max_bounds - min_bounds;
+
+        settings.crop_min = -size * 0.5f;
+        settings.crop_max = size * 0.5f;
+        settings.crop_transform = lfs::geometry::EuclideanTransform(
+            glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+            center
+        );
+
+        rendering_manager_->updateSettings(settings);
+
+        LOG_INFO("Cropbox: center({:.2f}, {:.2f}, {:.2f}), size({:.2f}, {:.2f}, {:.2f})",
+                 center.x, center.y, center.z, size.x, size.y, size.z);
+    }
+
 } // namespace lfs::vis

@@ -11,12 +11,13 @@
 namespace lfs::vis::gui::panels {
 
     enum class ToolMode {
-        None,       // No tool active (splat selected but no gizmo)
+        None,
         Translate,
         Rotate,
         Scale,
         Brush,
-        Align       // 3-point alignment tool
+        Align,
+        CropBox
     };
 
     struct GizmoToolbarState {
@@ -28,15 +29,11 @@ namespace lfs::vis::gui::panels {
         unsigned int scaling_texture = 0;
         unsigned int brush_texture = 0;
         unsigned int align_texture = 0;
+        unsigned int cropbox_texture = 0;
     };
 
-    // Initialize toolbar textures (call once during startup)
     void InitGizmoToolbar(GizmoToolbarState& state);
-
-    // Cleanup toolbar textures
     void ShutdownGizmoToolbar(GizmoToolbarState& state);
-
-    // Draw the gizmo toolbar
     void DrawGizmoToolbar(const UIContext& ctx, GizmoToolbarState& state,
                           const ImVec2& viewport_pos, const ImVec2& viewport_size);
 

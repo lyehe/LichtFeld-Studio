@@ -24,7 +24,9 @@ namespace lfs::vis {
         search_paths.push_back(std::filesystem::path(VISUALIZER_SOURCE_ASSET_PATH) / asset_name);
 #endif
 
-        // Check gui/assets directory (where the font actually is!)
+#ifdef PROJECT_ROOT_PATH
+        search_paths.push_back(std::filesystem::path(PROJECT_ROOT_PATH) / "src/visualizer_new/gui/assets" / asset_name);
+#endif
 #ifdef PROJECT_ROOT_PATH
         search_paths.push_back(std::filesystem::path(PROJECT_ROOT_PATH) / "src/visualizer/gui/assets" / asset_name);
 #endif

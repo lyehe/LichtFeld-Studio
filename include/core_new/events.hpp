@@ -73,6 +73,7 @@ namespace lfs::core {
             EVENT(CropBoxSettingsChanged, bool show_box; bool use_box;);
             EVENT(AxesSettingsChanged, bool show_axes;);
             EVENT(TranslationGizmoSettingsChanged, bool enabled; float scale;);
+            EVENT(SetToolbarTool, int tool_mode;);
         } // namespace tools
 
         // ============================================================================

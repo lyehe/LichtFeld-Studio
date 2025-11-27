@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #pragma once
+#include "rendering_new/render_constants.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -16,7 +17,7 @@ class Viewport {
     public:
         glm::vec2 prePos;
         float zoomSpeed = 5.0f;
-        float maxZoomSpeed = 10.0f;
+        float maxZoomSpeed = 100.0f;
         float rotateSpeed = 0.001f;
         float rotateCenterSpeed = 0.002f;
         float rotateRollSpeed = 0.01f;
@@ -283,7 +284,9 @@ public:
         return view;
     }
 
-    glm::mat4 getProjectionMatrix(float fov_degrees = 60.0f, float near_plane = 0.1f, float far_plane = 1000.0f) const {
+    glm::mat4 getProjectionMatrix(float fov_degrees = lfs::rendering::DEFAULT_FOV,
+                                   float near_plane = lfs::rendering::DEFAULT_NEAR_PLANE,
+                                   float far_plane = lfs::rendering::DEFAULT_FAR_PLANE) const {
         // Create perspective projection matrix
         float aspect_ratio = static_cast<float>(windowSize.x) / static_cast<float>(windowSize.y);
         float fov_radians = glm::radians(fov_degrees);

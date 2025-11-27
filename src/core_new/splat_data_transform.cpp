@@ -300,4 +300,27 @@ namespace lfs::core {
                   num_required_splat, old_scene_scale, splat_data._scene_scale);
     }
 
+    bool compute_bounds(const SplatData& splat_data,
+                        glm::vec3& min_bounds,
+                        glm::vec3& max_bounds,
+                        const float padding) {
+        const auto& means = splat_data.means();
+        if (!means.is_valid() || means.size(0) == 0) {
+            return false;
+        }
+
+        const auto mins = means.min(0);
+        const auto maxs = means.max(0);
+
+        min_bounds.x = mins[0].item() - padding;
+        min_bounds.y = mins[1].item() - padding;
+        min_bounds.z = mins[2].item() - padding;
+
+        max_bounds.x = maxs[0].item() + padding;
+        max_bounds.y = maxs[1].item() + padding;
+        max_bounds.z = maxs[2].item() + padding;
+
+        return true;
+    }
+
 } // namespace lfs::core

@@ -399,9 +399,19 @@ namespace lfs::vis::gui {
             auto* align_tool = ctx.viewer->getAlignTool();
             const bool is_brush_mode = (current_tool == panels::ToolMode::Brush);
             const bool is_align_mode = (current_tool == panels::ToolMode::Align);
+            const bool is_cropbox_mode = (current_tool == panels::ToolMode::CropBox);
 
             if (brush_tool) brush_tool->setEnabled(is_brush_mode);
             if (align_tool) align_tool->setEnabled(is_align_mode);
+
+            // Toggle cropbox visibility with tool
+            if (auto* render_manager = ctx.viewer->getRenderingManager()) {
+                auto settings = render_manager->getSettings();
+                if (is_cropbox_mode != settings.show_crop_box) {
+                    settings.show_crop_box = is_cropbox_mode;
+                    render_manager->updateSettings(settings);
+                }
+            }
         } else {
             show_node_gizmo_ = false;
             auto* brush_tool = ctx.viewer->getBrushTool();
@@ -806,6 +816,13 @@ namespace lfs::vis::gui {
 
         ui::ZoomSpeedChanged::when([this](const auto& e) {
             showZoomSpeedOverlay(e.zoom_speed, e.max_zoom_speed);
+        });
+
+        lfs::core::events::tools::SetToolbarTool::when([this](const auto& e) {
+            gizmo_toolbar_state_.current_tool = static_cast<panels::ToolMode>(e.tool_mode);
+            if (gizmo_toolbar_state_.current_tool == panels::ToolMode::CropBox) {
+                gizmo_toolbar_state_.current_operation = ImGuizmo::SCALE;
+            }
         });
     }
 

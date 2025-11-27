@@ -6,6 +6,7 @@
 #include "core_new/logger.hpp"
 #include "framebuffer_factory.hpp"
 #include "geometry_new/bounding_box.hpp"
+#include "rendering_new/render_constants.hpp"
 
 namespace lfs::rendering {
 
@@ -493,7 +494,7 @@ namespace lfs::rendering {
     glm::mat4 RenderingEngineImpl::createProjectionMatrix(const ViewportData& viewport) const {
         float aspect = static_cast<float>(viewport.size.x) / viewport.size.y;
         float fov_rad = glm::radians(viewport.fov);
-        return glm::perspective(fov_rad, aspect, 0.1f, 1000.0f);
+        return glm::perspective(fov_rad, aspect, DEFAULT_NEAR_PLANE, DEFAULT_FAR_PLANE);
     }
 
     Result<std::shared_ptr<IBoundingBox>> RenderingEngineImpl::createBoundingBox() {
