@@ -132,6 +132,69 @@ namespace lfs::vis::gui {
         }
     }
 
+    namespace utils {
+        HRESULT saveFileNative(PWSTR& outPath,
+                               COMDLG_FILTERSPEC rgSpec[],
+                               UINT cFileTypes,
+                               const wchar_t* defaultName) {
+            HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+            if (FAILED(hr)) {
+                LOG_ERROR("Failed to initialize COM: {:#x}", static_cast<unsigned int>(hr));
+                return hr;
+            }
+
+            IFileSaveDialog* pFileSave = nullptr;
+            hr = CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_ALL,
+                                  IID_IFileSaveDialog, reinterpret_cast<void**>(&pFileSave));
+
+            if (SUCCEEDED(hr)) {
+                if (rgSpec != nullptr && cFileTypes > 0) {
+                    pFileSave->SetFileTypes(cFileTypes, rgSpec);
+                    pFileSave->SetFileTypeIndex(1);
+                    pFileSave->SetDefaultExtension(L"ply");
+                }
+
+                if (defaultName != nullptr) {
+                    pFileSave->SetFileName(defaultName);
+                }
+
+                hr = pFileSave->Show(NULL);
+
+                if (SUCCEEDED(hr)) {
+                    IShellItem* pItem;
+                    hr = pFileSave->GetResult(&pItem);
+                    if (SUCCEEDED(hr)) {
+                        PWSTR filePath = nullptr;
+                        hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &filePath);
+                        if (SUCCEEDED(hr)) {
+                            outPath = filePath;
+                        }
+                        pItem->Release();
+                    }
+                }
+                pFileSave->Release();
+            }
+            CoUninitialize();
+            return hr;
+        }
+    } // namespace utils
+
+    std::filesystem::path SavePlyFileDialog(const std::string& defaultName) {
+        PWSTR filePath = nullptr;
+        COMDLG_FILTERSPEC rgSpec[] = {
+            {L"PLY Point Cloud", L"*.ply"},
+        };
+
+        std::wstring wDefaultName(defaultName.begin(), defaultName.end());
+
+        if (SUCCEEDED(utils::saveFileNative(filePath, rgSpec, 1, wDefaultName.c_str()))) {
+            std::filesystem::path result(filePath);
+            CoTaskMemFree(filePath);
+            return result;
+        }
+        return {};
+    }
+
 #endif // WIN32
 
 } // namespace lfs::vis::gui

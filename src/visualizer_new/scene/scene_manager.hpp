@@ -152,6 +152,9 @@ namespace lfs::vis {
         bool renamePLY(const std::string& old_name, const std::string& new_name);
         void updatePlyPath(const std::string& ply_name, const std::filesystem::path& ply_path);
 
+        // Permanently remove soft-deleted gaussians from all nodes
+        size_t applyDeleted();
+
     private:
         void setupEventHandlers();
         void emitSceneChanged();

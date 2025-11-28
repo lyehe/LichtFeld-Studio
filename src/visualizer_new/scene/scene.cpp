@@ -469,4 +469,26 @@ namespace lfs::vis {
         LOG_WARN("Scene: Cannot find node '{}' to rename", old_name);
         return false;
     }
+
+    size_t Scene::applyDeleted() {
+        size_t total_removed = 0;
+
+        for (auto& node : nodes_) {
+            if (node.model && node.model->has_deleted_mask()) {
+                const size_t removed = node.model->apply_deleted();
+                if (removed > 0) {
+                    node.gaussian_count = node.model->size();
+                    node.centroid = computeCentroid(node.model.get());
+                    total_removed += removed;
+                }
+            }
+        }
+
+        if (total_removed > 0) {
+            invalidateCache();
+            clearSelection();
+        }
+
+        return total_removed;
+    }
 } // namespace lfs::vis

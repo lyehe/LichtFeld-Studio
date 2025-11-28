@@ -332,6 +332,100 @@ namespace lfs::core {
         }
     }
 
+    size_t SplatData::apply_deleted() {
+        if (!_deleted.is_valid() || !_means.is_valid()) {
+            return 0;
+        }
+
+        const size_t old_size = size();
+
+        // Validate mask dimensions match data
+        if (_deleted.size(0) != old_size) {
+            LOG_ERROR("apply_deleted: mask size {} != data size {}, aborting",
+                      _deleted.size(0), old_size);
+            _deleted = Tensor();
+            return 0;
+        }
+
+        // Validate mask is boolean type
+        if (_deleted.dtype() != DataType::Bool) {
+            LOG_ERROR("apply_deleted: mask is not Bool type, aborting");
+            _deleted = Tensor();
+            return 0;
+        }
+
+        // Validate all required tensors have matching sizes
+        if (_sh0.size(0) != old_size || _scaling.size(0) != old_size ||
+            _rotation.size(0) != old_size || _opacity.size(0) != old_size) {
+            LOG_ERROR("apply_deleted: tensor size mismatch, aborting");
+            _deleted = Tensor();
+            return 0;
+        }
+
+        const auto keep_mask = _deleted.logical_not();
+        const size_t new_size = static_cast<size_t>(keep_mask.sum_scalar());
+
+        // Nothing to delete
+        if (new_size == old_size) {
+            _deleted = Tensor();
+            return 0;
+        }
+
+        // Would delete everything
+        if (new_size == 0) {
+            LOG_WARN("apply_deleted: would remove all gaussians, aborting");
+            return 0;
+        }
+
+        LOG_DEBUG("apply_deleted: filtering {} -> {} gaussians", old_size, new_size);
+
+        // Filter all tensors by keep mask
+        auto new_means = _means.index_select(0, keep_mask);
+        auto new_sh0 = _sh0.index_select(0, keep_mask);
+        auto new_scaling = _scaling.index_select(0, keep_mask);
+        auto new_rotation = _rotation.index_select(0, keep_mask);
+        auto new_opacity = _opacity.index_select(0, keep_mask);
+
+        // Verify new sizes are correct before committing
+        if (new_means.size(0) != new_size || new_sh0.size(0) != new_size ||
+            new_scaling.size(0) != new_size || new_rotation.size(0) != new_size ||
+            new_opacity.size(0) != new_size) {
+            LOG_ERROR("apply_deleted: post-filter size mismatch - means:{} sh0:{} scaling:{} rotation:{} opacity:{} expected:{}",
+                      new_means.size(0), new_sh0.size(0), new_scaling.size(0),
+                      new_rotation.size(0), new_opacity.size(0), new_size);
+            return 0;
+        }
+
+        // Commit the changes
+        _means = std::move(new_means);
+        _sh0 = std::move(new_sh0);
+        _scaling = std::move(new_scaling);
+        _rotation = std::move(new_rotation);
+        _opacity = std::move(new_opacity);
+
+        if (_shN.is_valid() && _shN.size(0) == old_size) {
+            _shN = _shN.index_select(0, keep_mask);
+        }
+
+        // Clear gradients (they're now invalid)
+        _means_grad = Tensor();
+        _sh0_grad = Tensor();
+        _shN_grad = Tensor();
+        _scaling_grad = Tensor();
+        _rotation_grad = Tensor();
+        _opacity_grad = Tensor();
+
+        // Clear densification info
+        _densification_info = Tensor();
+
+        // Clear deletion mask
+        _deleted = Tensor();
+
+        const size_t removed = old_size - new_size;
+        LOG_INFO("apply_deleted: removed {} gaussians ({} -> {})", removed, old_size, new_size);
+        return removed;
+    }
+
     // ========== FREE FUNCTION: FACTORY ==========
 
     std::expected<SplatData, std::string> init_model_from_pointcloud(

@@ -11,6 +11,7 @@
 #include "command/command_history.hpp"
 #include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
+#include "core_new/splat_data_export.hpp"
 #include "project_new/project.hpp"
 #include "gui/panels/main_panel.hpp"
 #include "gui/panels/scene_panel.hpp"
@@ -379,6 +380,69 @@ namespace lfs::vis::gui {
 #endif
         }
 
+        // Save PLY dialog
+        if (show_save_ply_dialog_) {
+            // Materialize deletions before saving
+            if (auto* sm = viewer_->getSceneManager()) {
+                sm->applyDeleted();
+            }
+
+#ifdef WIN32
+            // Use native Windows file dialog
+            std::filesystem::path save_path = SavePlyFileDialog(save_ply_node_name_);
+            if (!save_path.empty()) {
+                if (auto* sm = viewer_->getSceneManager()) {
+                    const auto* node = sm->getScene().getNode(save_ply_node_name_);
+                    if (node && node->model) {
+                        lfs::core::save_ply(*node->model, save_path.parent_path(), 0, true, save_path.stem().string());
+                        LOG_INFO("Saved PLY to: {}", save_path.string());
+                    }
+                }
+            }
+            show_save_ply_dialog_ = false;
+#else
+            ImGui::OpenPopup("Save PLY As");
+#endif
+        }
+
+#ifndef WIN32
+        // ImGui fallback dialog for non-Windows platforms
+        if (ImGui::BeginPopupModal("Save PLY As", &show_save_ply_dialog_, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Save \"%s\" as:", save_ply_node_name_.c_str());
+            ImGui::Separator();
+
+            char path_buf[512];
+            strncpy(path_buf, save_ply_path_.c_str(), sizeof(path_buf) - 1);
+            path_buf[sizeof(path_buf) - 1] = '\0';
+
+            ImGui::SetNextItemWidth(400);
+            if (ImGui::InputText("##path", path_buf, sizeof(path_buf))) {
+                save_ply_path_ = path_buf;
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::Button("Save", ImVec2(120, 0))) {
+                if (auto* sm = viewer_->getSceneManager()) {
+                    const auto* node = sm->getScene().getNode(save_ply_node_name_);
+                    if (node && node->model) {
+                        std::filesystem::path save_path(save_ply_path_);
+                        lfs::core::save_ply(*node->model, save_path.parent_path(), 0, true, save_path.stem().string());
+                        LOG_INFO("Saved PLY to: {}", save_ply_path_);
+                    }
+                }
+                show_save_ply_dialog_ = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                show_save_ply_dialog_ = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+#endif
+
         if (menu_bar_ && viewer_) {
             auto project = viewer_->getProject();
             menu_bar_->setIsProjectTemp(project ? project->getIsTempProject() : false);
@@ -405,6 +469,16 @@ namespace lfs::vis::gui {
             const bool is_align_mode = (current_tool == panels::ToolMode::Align);
             const bool is_selection_mode = (current_tool == panels::ToolMode::Selection);
             const bool is_cropbox_mode = (current_tool == panels::ToolMode::CropBox);
+
+            // Materialize deletions when switching away from selection or cropbox tools
+            const bool was_selection_mode = (previous_tool_ == panels::ToolMode::Selection);
+            const bool was_cropbox_mode = (previous_tool_ == panels::ToolMode::CropBox);
+            if ((was_selection_mode || was_cropbox_mode) && current_tool != previous_tool_) {
+                if (auto* sm = ctx.viewer->getSceneManager()) {
+                    sm->applyDeleted();
+                }
+            }
+            previous_tool_ = current_tool;
 
             if (brush_tool) brush_tool->setEnabled(is_brush_mode);
             if (align_tool) align_tool->setEnabled(is_align_mode);
@@ -978,6 +1052,13 @@ namespace lfs::vis::gui {
             viewer_->getCommandHistory().execute(std::move(cmd));
 
             LOG_INFO("Crop inverse mode: {}", settings.crop_inverse);
+        });
+
+        // Handle Save PLY As command
+        cmd::SavePLYAs::when([this](const auto& e) {
+            save_ply_node_name_ = e.name;
+            save_ply_path_ = (std::filesystem::current_path() / (e.name + ".ply")).string();
+            show_save_ply_dialog_ = true;
         });
     }
 

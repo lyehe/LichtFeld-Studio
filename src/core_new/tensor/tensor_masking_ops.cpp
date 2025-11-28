@@ -143,6 +143,18 @@ namespace lfs::core {
         if (dim < 0 || dim >= static_cast<int>(shape_.rank()))
             return {};
 
+        if (indices.dtype() == DataType::Bool) {
+            if (indices.numel() != shape_[dim])
+                return {};
+            const auto idx = indices.nonzero().squeeze(1);
+            if (idx.numel() == 0) {
+                auto dims = shape_.dims();
+                dims[dim] = 0;
+                return empty(TensorShape(dims), device_, dtype_);
+            }
+            return index_select(dim, idx, mode);
+        }
+
         auto dims = shape_.dims();
         dims[dim] = indices.numel();
         auto result = zeros(TensorShape(dims), device_, dtype_);

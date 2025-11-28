@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 #pragma once
 
+#include <filesystem>
+#include <string>
+
 #ifdef WIN32
 #include <Shobjidl.h>
 #include <Windows.h>
@@ -25,6 +28,19 @@ namespace lfs::vis::gui {
                                  COMDLG_FILTERSPEC rgSpec[] = nullptr,
                                  UINT cFileTypes = 0,
                                  bool blnDirectory = false);
+
+        /**
+         * Opens a native Windows save file dialog
+         * @param outPath Output path selected by the user
+         * @param rgSpec File type filters (can be nullptr)
+         * @param cFileTypes Number of file type filters
+         * @param defaultName Default filename
+         * @return HRESULT indicating success or failure
+         */
+        HRESULT saveFileNative(PWSTR& outPath,
+                               COMDLG_FILTERSPEC rgSpec[] = nullptr,
+                               UINT cFileTypes = 0,
+                               const wchar_t* defaultName = nullptr);
     } // namespace utils
 
     // in windows- open file browser that search for lfs project
@@ -33,5 +49,7 @@ namespace lfs::vis::gui {
     void OpenPlyFileDialog();
     // in windows- open file browser that search directories
     void OpenDatasetFolderDialog();
+    // in windows- save file dialog for PLY, returns selected path or empty if cancelled
+    std::filesystem::path SavePlyFileDialog(const std::string& defaultName);
 #endif
 } // namespace lfs::vis::gui

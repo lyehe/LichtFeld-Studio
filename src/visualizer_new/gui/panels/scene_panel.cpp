@@ -537,6 +537,10 @@ namespace lfs::vis::gui {
 
                     // Right-click context menu - provide explicit popup ID
                     if (ImGui::BeginPopupContextItem(popup_id.c_str())) {
+                        if (ImGui::MenuItem("Save As...")) {
+                            LOG_DEBUG("Save PLY '{}' as...", node.name);
+                            cmd::SavePLYAs{.name = node.name}.emit();
+                        }
                         if (ImGui::MenuItem("Rename PLY")) {
                             startRenaming(static_cast<int>(i));
                             LOG_DEBUG("Starting rename for PLY '{}'", node.name);

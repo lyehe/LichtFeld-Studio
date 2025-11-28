@@ -120,6 +120,7 @@ set(OPTIONAL_TEST_FILES
     test_mcmc_dead_mask.cpp         # Comprehensive tests for MCMC dead mask calculation: (opacities <= min_opacity) | (rot_mag_sq < 1e-8)
     test_relocate_gs_edge_cases.cpp # Comprehensive edge case tests for relocate_gs(): logit, Int32 ops, logical ops, indexing, division
     test_bool_reduction.cpp  # Bool reduction tests for cropping bug investigation
+    test_tensor_index_select_bool.cpp  # Tests for index_select with boolean masks
 )
 
 foreach(TEST_FILE ${OPTIONAL_TEST_FILES})

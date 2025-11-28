@@ -689,6 +689,14 @@ namespace lfs::vis {
         }
     }
 
+    size_t SceneManager::applyDeleted() {
+        const size_t removed = scene_.applyDeleted();
+        if (removed > 0 && rendering_manager_) {
+            rendering_manager_->markDirty();
+        }
+        return removed;
+    }
+
     bool SceneManager::renamePLY(const std::string& old_name, const std::string& new_name) {
         LOG_DEBUG("Renaming '{}' to '{}'", old_name, new_name);
 

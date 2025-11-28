@@ -133,6 +133,14 @@ namespace lfs::vis {
             // Cropbox undo/redo state
             bool cropbox_gizmo_active_ = false;
             std::optional<command::CropBoxState> cropbox_state_before_drag_;
+
+            // Previous tool mode for detecting tool changes
+            panels::ToolMode previous_tool_ = panels::ToolMode::None;
+
+            // Save PLY dialog state
+            bool show_save_ply_dialog_ = false;
+            std::string save_ply_node_name_;
+            std::string save_ply_path_;
         };
     } // namespace gui
 } // namespace lfs::vis

@@ -87,6 +87,10 @@ namespace lfs::vis {
         // Mark scene data as changed (e.g., after modifying a node's deleted mask)
         void markDirty() { invalidateCache(); }
 
+        // Permanently remove soft-deleted gaussians from all nodes
+        // Returns total number of gaussians removed
+        size_t applyDeleted();
+
     private:
         std::vector<Node> nodes_;
 

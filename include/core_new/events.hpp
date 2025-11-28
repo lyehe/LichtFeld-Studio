@@ -55,6 +55,7 @@ namespace lfs::core {
             EVENT(RemovePLY, std::string name;);
             EVENT(RenamePLY, std::string old_name; std::string new_name;);
             EVENT(SetPLYVisibility, std::string name; bool visible;);
+            EVENT(SavePLYAs, std::string name;);  // Open save dialog for specific PLY node
             EVENT(CropPLY, lfs::geometry::BoundingBox crop_box; bool inverse;);
             EVENT(ApplyCropBox, );
             EVENT(FitCropBoxToScene, bool use_percentile;);

@@ -116,6 +116,10 @@ namespace lfs::core {
         void undelete(const Tensor& mask);
         void clear_deleted();
 
+        // Permanently remove deleted gaussians (compacts data)
+        // Returns number of gaussians removed
+        size_t apply_deleted();
+
         // ========== Gradient management ==========
         void allocate_gradients();
         void reserve_capacity(size_t capacity);
