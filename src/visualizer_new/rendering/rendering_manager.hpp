@@ -90,9 +90,9 @@ namespace lfs::vis {
         bool equirectangular = false;
 
         // Selection colors
-        glm::vec3 selection_color_committed{1.0f, 0.2f, 0.2f};
-        glm::vec3 selection_color_preview{0.0f, 1.0f, 0.0f};
-        glm::vec3 selection_color_center_marker{1.0f, 1.0f, 1.0f};
+        glm::vec3 selection_color_committed{0.859f, 0.325f, 0.325f};    // 219, 83, 83
+        glm::vec3 selection_color_preview{0.0f, 0.871f, 0.298f};        // 0, 222, 76
+        glm::vec3 selection_color_center_marker{0.0f, 0.510f, 0.090f};  // 0, 130, 23
     };
 
     struct SplitViewInfo {

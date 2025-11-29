@@ -12,9 +12,9 @@
 #include <functional>
 
 namespace lfs::rendering::config {
-    __constant__ float3 SELECTION_COLOR_COMMITTED = {1.0f, 0.2f, 0.2f};
-    __constant__ float3 SELECTION_COLOR_PREVIEW = {0.0f, 1.0f, 0.0f};
-    __constant__ float3 SELECTION_COLOR_CENTER_MARKER = {1.0f, 1.0f, 1.0f};
+    __constant__ float3 SELECTION_COLOR_COMMITTED = {0.859f, 0.325f, 0.325f};    // 219, 83, 83
+    __constant__ float3 SELECTION_COLOR_PREVIEW = {0.0f, 0.871f, 0.298f};        // 0, 222, 76
+    __constant__ float3 SELECTION_COLOR_CENTER_MARKER = {0.0f, 0.510f, 0.090f};  // 0, 130, 23
 
     void setSelectionColors(const float3 committed, const float3 preview, const float3 center_marker) {
         cudaMemcpyToSymbol(SELECTION_COLOR_COMMITTED, &committed, sizeof(float3));
