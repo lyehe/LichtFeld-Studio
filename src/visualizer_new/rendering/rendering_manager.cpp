@@ -393,20 +393,19 @@ namespace lfs::vis {
     void RenderingManager::updateSettings(const RenderSettings& new_settings) {
         std::lock_guard<std::mutex> lock(settings_mutex_);
 
-        // Update selection colors in CUDA constant memory if they changed
-        if (settings_.selection_color_committed != new_settings.selection_color_committed ||
+        const bool colors_changed =
+            settings_.selection_color_committed != new_settings.selection_color_committed ||
             settings_.selection_color_preview != new_settings.selection_color_preview ||
-            settings_.selection_color_center_marker != new_settings.selection_color_center_marker) {
+            settings_.selection_color_center_marker != new_settings.selection_color_center_marker;
+
+        if (colors_changed) {
+            const auto& c = new_settings.selection_color_committed;
+            const auto& p = new_settings.selection_color_preview;
+            const auto& m = new_settings.selection_color_center_marker;
             lfs::rendering::config::setSelectionColors(
-                make_float3(new_settings.selection_color_committed.x,
-                            new_settings.selection_color_committed.y,
-                            new_settings.selection_color_committed.z),
-                make_float3(new_settings.selection_color_preview.x,
-                            new_settings.selection_color_preview.y,
-                            new_settings.selection_color_preview.z),
-                make_float3(new_settings.selection_color_center_marker.x,
-                            new_settings.selection_color_center_marker.y,
-                            new_settings.selection_color_center_marker.z));
+                make_float3(c.x, c.y, c.z),
+                make_float3(p.x, p.y, p.z),
+                make_float3(m.x, m.y, m.z));
         }
 
         settings_ = new_settings;

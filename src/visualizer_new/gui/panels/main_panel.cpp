@@ -240,32 +240,17 @@ namespace lfs::vis::gui::panels {
         if (ImGui::CollapsingHeader("Selection Colors")) {
             ImGui::Indent();
 
-            float committed_color[3] = {
-                settings.selection_color_committed.x,
-                settings.selection_color_committed.y,
-                settings.selection_color_committed.z};
-            if (ImGui::ColorEdit3("Committed##sel", committed_color)) {
-                settings.selection_color_committed = glm::vec3(committed_color[0], committed_color[1], committed_color[2]);
-                settings_changed = true;
-            }
+            auto color_edit = [&](const char* label, glm::vec3& color) {
+                float c[3] = {color.x, color.y, color.z};
+                if (ImGui::ColorEdit3(label, c)) {
+                    color = glm::vec3(c[0], c[1], c[2]);
+                    settings_changed = true;
+                }
+            };
 
-            float preview_color[3] = {
-                settings.selection_color_preview.x,
-                settings.selection_color_preview.y,
-                settings.selection_color_preview.z};
-            if (ImGui::ColorEdit3("Preview##sel", preview_color)) {
-                settings.selection_color_preview = glm::vec3(preview_color[0], preview_color[1], preview_color[2]);
-                settings_changed = true;
-            }
-
-            float center_marker_color[3] = {
-                settings.selection_color_center_marker.x,
-                settings.selection_color_center_marker.y,
-                settings.selection_color_center_marker.z};
-            if (ImGui::ColorEdit3("Center Marker##sel", center_marker_color)) {
-                settings.selection_color_center_marker = glm::vec3(center_marker_color[0], center_marker_color[1], center_marker_color[2]);
-                settings_changed = true;
-            }
+            color_edit("Committed##sel", settings.selection_color_committed);
+            color_edit("Preview##sel", settings.selection_color_preview);
+            color_edit("Center Marker##sel", settings.selection_color_center_marker);
 
             ImGui::Unindent();
         }

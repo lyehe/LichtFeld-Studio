@@ -615,27 +615,38 @@ namespace lfs::rendering::kernels::forward {
                     continue;
                 }
 
-                // Center markers
+                // Center markers: render solid dots at Gaussian centers
                 float3 final_color = collected_color[j];
                 if (show_center_markers) {
+                    constexpr float INNER_RADIUS_SQ = 2.25f;   // 1.5px
+                    constexpr float OUTER_RADIUS_SQ = 6.25f;   // 2.5px
                     constexpr float COLOR_TOLERANCE = 0.1f;
-                    constexpr float CENTER_RADIUS_SQ = 4.0f;
-                    const float3& c = final_color;
+                    constexpr float OUTLINE_DARKEN = 0.4f;
+
+                    const float dist_sq = delta.x * delta.x + delta.y * delta.y;
+                    if (dist_sq > OUTER_RADIUS_SQ)
+                        continue;
+
                     const float3& sel = config::SELECTION_COLOR_COMMITTED;
                     const float3& prev = config::SELECTION_COLOR_PREVIEW;
-                    const bool is_committed = (fabsf(c.x - sel.x) < COLOR_TOLERANCE &&
-                                               fabsf(c.y - sel.y) < COLOR_TOLERANCE &&
-                                               fabsf(c.z - sel.z) < COLOR_TOLERANCE);
-                    const bool is_preview = (fabsf(c.x - prev.x) < COLOR_TOLERANCE &&
-                                             fabsf(c.y - prev.y) < COLOR_TOLERANCE &&
-                                             fabsf(c.z - prev.z) < COLOR_TOLERANCE);
-                    if (!is_committed && !is_preview) {
-                        const float dist_sq = delta.x * delta.x + delta.y * delta.y;
-                        if (dist_sq <= CENTER_RADIUS_SQ) {
-                            final_color = config::SELECTION_COLOR_CENTER_MARKER;
-                            alpha = 0.95f;
-                        }
-                    }
+                    const bool is_selected =
+                        (fabsf(final_color.x - sel.x) < COLOR_TOLERANCE &&
+                         fabsf(final_color.y - sel.y) < COLOR_TOLERANCE &&
+                         fabsf(final_color.z - sel.z) < COLOR_TOLERANCE) ||
+                        (fabsf(final_color.x - prev.x) < COLOR_TOLERANCE &&
+                         fabsf(final_color.y - prev.y) < COLOR_TOLERANCE &&
+                         fabsf(final_color.z - prev.z) < COLOR_TOLERANCE);
+
+                    if (!is_selected)
+                        final_color = config::SELECTION_COLOR_CENTER_MARKER;
+
+                    if (dist_sq > INNER_RADIUS_SQ)
+                        final_color = final_color * OUTLINE_DARKEN;
+
+                    color_pixel = final_color;
+                    transmittance = 0.0f;
+                    done = true;
+                    continue;
                 }
 
                 color_pixel += transmittance * alpha * final_color;
