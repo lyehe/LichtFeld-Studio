@@ -100,6 +100,7 @@ namespace lfs::rendering {
         const float3* crop_box_min = nullptr,
         const float3* crop_box_max = nullptr,
         bool crop_inverse = false,
+        bool crop_desaturate = false,
         const bool* deleted_mask = nullptr,
         unsigned long long* hovered_depth_id = nullptr,
         int highlight_gaussian_id = -1);

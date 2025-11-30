@@ -31,6 +31,18 @@ __global__ void init_mean2d_kernel(float2* data, int n) {
     }
 }
 
+// Invalidate screen positions for gaussians outside crop box (uses precomputed flag)
+__global__ void invalidate_outside_crop_kernel(
+    float2* __restrict__ screen_positions,
+    const bool* __restrict__ outside_crop,
+    const int n) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= n) return;
+    if (outside_crop[idx]) {
+        screen_positions[idx] = make_float2(-10000.0f, -10000.0f);
+    }
+}
+
 // Copy mean2d to screen positions, flipping Y to match window coordinates
 // The rasterizer's mean2d has Y increasing upward (OpenGL convention),
 // but window coordinates have Y increasing downward
@@ -284,6 +296,7 @@ void lfs::rendering::forward(
     const float3* crop_box_min,
     const float3* crop_box_max,
     bool crop_inverse,
+    bool crop_desaturate,
     const bool* deleted_mask,
     unsigned long long* hovered_depth_id,
     int highlight_gaussian_id) {
@@ -337,6 +350,7 @@ void lfs::rendering::forward(
         per_primitive_buffers.conic_opacity,
         per_primitive_buffers.color,
         per_primitive_buffers.depth,
+        per_primitive_buffers.outside_crop,
         per_primitive_buffers.n_visible_primitives,
         per_primitive_buffers.n_instances,
         n_primitives,
@@ -369,6 +383,7 @@ void lfs::rendering::forward(
         crop_box_min,
         crop_box_max,
         crop_inverse,
+        crop_desaturate,
         deleted_mask,
         highlight_gaussian_id,
         hovered_depth_id);
@@ -379,6 +394,14 @@ void lfs::rendering::forward(
     if (screen_positions_out != nullptr) {
         cudaMemcpy(screen_positions_out, per_primitive_buffers.mean2d,
                    sizeof(float2) * n_primitives, cudaMemcpyDeviceToDevice);
+
+        // In desaturate mode, invalidate screen positions for outside gaussians
+        if (crop_desaturate) {
+            constexpr int BLOCK = 256;
+            const int grid = (n_primitives + BLOCK - 1) / BLOCK;
+            invalidate_outside_crop_kernel<<<grid, BLOCK>>>(
+                screen_positions_out, per_primitive_buffers.outside_crop, n_primitives);
+        }
     }
 
     int n_visible_primitives;
@@ -450,6 +473,7 @@ void lfs::rendering::forward(
         per_primitive_buffers.conic_opacity,
         per_primitive_buffers.color,
         per_primitive_buffers.depth,
+        per_primitive_buffers.outside_crop,
         image,
         alpha,
         depth,

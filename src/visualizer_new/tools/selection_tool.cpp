@@ -1012,6 +1012,7 @@ namespace lfs::vis::tools {
         settings.use_crop_box = true;
         settings.show_crop_box = false;
         settings.crop_inverse = false;
+        settings.crop_desaturate = true;
         rm->updateSettings(settings);
     }
 
@@ -1022,6 +1023,7 @@ namespace lfs::vis::tools {
         if (rm) {
             auto settings = rm->getSettings();
             settings.use_crop_box = false;
+            settings.crop_desaturate = false;
             rm->updateSettings(settings);
         }
     }

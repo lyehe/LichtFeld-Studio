@@ -47,6 +47,7 @@ namespace lfs::rendering {
         float4* conic_opacity;
         float3* color;
         float* depth;  // Camera-space depth of each Gaussian center
+        bool* outside_crop;  // True if gaussian is outside crop box (for depth filter)
         uint* n_visible_primitives;
         uint* n_instances;
 
@@ -69,6 +70,7 @@ namespace lfs::rendering {
             obtain(blob, buffers.conic_opacity, n_primitives, 128);
             obtain(blob, buffers.color, n_primitives, 128);
             obtain(blob, buffers.depth, n_primitives, 128);
+            obtain(blob, buffers.outside_crop, n_primitives, 128);
             cub::DeviceScan::ExclusiveSum(
                 nullptr, buffers.cub_workspace_size,
                 buffers.offset, buffers.offset,

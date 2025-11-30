@@ -64,6 +64,7 @@ namespace lfs::rendering {
             const Tensor* crop_box_min = nullptr;
             const Tensor* crop_box_max = nullptr;
             bool crop_inverse = false;
+            bool crop_desaturate = false;
             const Tensor* deleted_mask = nullptr;  // Soft deletion mask [N], true = skip
             // Ring mode hover output
             unsigned long long* hovered_depth_id = nullptr;

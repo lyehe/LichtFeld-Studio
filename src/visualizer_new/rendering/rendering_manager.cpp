@@ -613,6 +613,7 @@ namespace lfs::vis {
                 .max = settings_.crop_max,
                 .transform = transform.inv().toMat4()};
             request.crop_inverse = settings_.crop_inverse;
+            request.crop_desaturate = settings_.crop_desaturate;
         }
 
         // Render the gaussians

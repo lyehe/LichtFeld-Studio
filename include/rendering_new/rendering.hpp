@@ -82,6 +82,7 @@ namespace lfs::rendering {
         float brush_saturation_amount = 0.0f;
         bool selection_mode_rings = false;
         bool crop_inverse = false;
+        bool crop_desaturate = false;
         unsigned long long* hovered_depth_id = nullptr;
         int highlight_gaussian_id = -1;
         float far_plane = 1e10f;

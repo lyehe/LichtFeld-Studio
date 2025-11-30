@@ -32,6 +32,7 @@ namespace lfs::rendering::kernels::forward {
         float4* primitive_conic_opacity,
         float3* primitive_color,
         float* primitive_depth,
+        bool* primitive_outside_crop,
         uint* n_visible_primitives,
         uint* n_instances,
         const uint n_primitives,
@@ -64,6 +65,7 @@ namespace lfs::rendering::kernels::forward {
         const float3* crop_box_min,
         const float3* crop_box_max,
         const bool crop_inverse,
+        const bool crop_desaturate,
         const bool* deleted_mask,
         const int highlight_gaussian_id,
         unsigned long long* hovered_depth_id) {
@@ -82,24 +84,24 @@ namespace lfs::rendering::kernels::forward {
         if (active)
             primitive_n_touched_tiles[primitive_idx] = 0;
 
-        // load 3d mean
         float3 mean3d = means[primitive_idx];
 
-        // Crop box culling
-        if (active && crop_box_transform != nullptr && crop_box_min != nullptr && crop_box_max != nullptr) {
-            const float3 box_min = *crop_box_min;
-            const float3 box_max = *crop_box_max;
-            const float local_x = crop_box_transform[0] * mean3d.x + crop_box_transform[1] * mean3d.y +
-                                  crop_box_transform[2] * mean3d.z + crop_box_transform[3];
-            const float local_y = crop_box_transform[4] * mean3d.x + crop_box_transform[5] * mean3d.y +
-                                  crop_box_transform[6] * mean3d.z + crop_box_transform[7];
-            const float local_z = crop_box_transform[8] * mean3d.x + crop_box_transform[9] * mean3d.y +
-                                  crop_box_transform[10] * mean3d.z + crop_box_transform[11];
-            const bool inside = local_x >= box_min.x && local_x <= box_max.x &&
-                                local_y >= box_min.y && local_y <= box_max.y &&
-                                local_z >= box_min.z && local_z <= box_max.z;
-            // Normal: cull outside, Inverse: cull inside
-            if (crop_inverse ? inside : !inside) {
+        // Crop box test
+        bool outside_crop = false;
+        if (active && crop_box_transform != nullptr) {
+            const float3 bmin = *crop_box_min;
+            const float3 bmax = *crop_box_max;
+            const float lx = crop_box_transform[0] * mean3d.x + crop_box_transform[1] * mean3d.y +
+                             crop_box_transform[2] * mean3d.z + crop_box_transform[3];
+            const float ly = crop_box_transform[4] * mean3d.x + crop_box_transform[5] * mean3d.y +
+                             crop_box_transform[6] * mean3d.z + crop_box_transform[7];
+            const float lz = crop_box_transform[8] * mean3d.x + crop_box_transform[9] * mean3d.y +
+                             crop_box_transform[10] * mean3d.z + crop_box_transform[11];
+            const bool inside = lx >= bmin.x && lx <= bmax.x &&
+                                ly >= bmin.y && ly <= bmax.y &&
+                                lz >= bmin.z && lz <= bmax.z;
+            outside_crop = crop_inverse ? inside : !inside;
+            if (outside_crop && !crop_desaturate) {
                 active = false;
             }
         }
@@ -315,13 +317,13 @@ namespace lfs::rendering::kernels::forward {
             static_cast<ushort>(screen_bounds.w));
         primitive_mean2d[primitive_idx] = mean2d;
         primitive_conic_opacity[primitive_idx] = make_float4(conic, opacity);
-        // Compute color from SH coefficients
         float3 color = convert_sh_to_color(
             sh_coefficients_0, sh_coefficients_rest,
             mean3d, cam_position[0],
             primitive_idx, active_sh_bases, total_bases_sh_rest);
 
-        // Compute if Gaussian is under brush (used for both selection and preview)
+        // Brush hit test
+        const bool selectable = !outside_crop;
         bool under_brush = false;
         if (brush_active) {
             const float dx = mean2d.x - brush_x;
@@ -329,21 +331,29 @@ namespace lfs::rendering::kernels::forward {
             under_brush = (dx * dx + dy * dy <= brush_radius_sq);
         }
 
-        // Brush selection: mark Gaussians within brush radius (only when output buffer provided)
-        if (under_brush && brush_selection_out != nullptr) {
+        // Brush selection
+        if (under_brush && brush_selection_out != nullptr && selectable) {
             brush_selection_out[primitive_idx] = brush_add_mode;
         }
 
-        // Saturation mode: show saturation preview under brush
-        if (brush_saturation_mode && under_brush) {
+        // Saturation preview
+        if (brush_saturation_mode && under_brush && selectable) {
             const float lum = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
-            const float factor = 1.0f + brush_saturation_amount;
-            color.x = fmaxf(0.0f, fminf(1.0f, lum + factor * (color.x - lum)));
-            color.y = fmaxf(0.0f, fminf(1.0f, lum + factor * (color.y - lum)));
-            color.z = fmaxf(0.0f, fminf(1.0f, lum + factor * (color.z - lum)));
+            const float sat = 1.0f + brush_saturation_amount;
+            color.x = fmaxf(0.0f, fminf(1.0f, lum + sat * (color.x - lum)));
+            color.y = fmaxf(0.0f, fminf(1.0f, lum + sat * (color.y - lum)));
+            color.z = fmaxf(0.0f, fminf(1.0f, lum + sat * (color.z - lum)));
         }
+
+        // Depth filter: dim outside gaussians
+        if (outside_crop) {
+            constexpr float DEPTH_FILTER_BRIGHTNESS = 0.25f;
+            const float lum = 0.2126f * color.x + 0.7152f * color.y + 0.0722f * color.z;
+            color = make_float3(lum * DEPTH_FILTER_BRIGHTNESS, lum * DEPTH_FILTER_BRIGHTNESS, lum * DEPTH_FILTER_BRIGHTNESS);
+        }
+
         // Ring mode hover detection
-        if (selection_mode_rings && brush_active && hovered_depth_id != nullptr) {
+        if (selection_mode_rings && brush_active && hovered_depth_id != nullptr && selectable) {
             if (brush_x >= mean2d.x - extent_x && brush_x <= mean2d.x + extent_x &&
                 brush_y >= mean2d.y - extent_y && brush_y <= mean2d.y + extent_y) {
                 const float2 delta = make_float2(brush_x - mean2d.x, brush_y - mean2d.y);
@@ -378,6 +388,7 @@ namespace lfs::rendering::kernels::forward {
 
         primitive_color[primitive_idx] = color;
         primitive_depth[primitive_idx] = depth;
+        primitive_outside_crop[primitive_idx] = outside_crop;
 
         const uint offset = atomicAdd(n_visible_primitives, 1);
         const uint depth_key = __float_as_uint(depth);
@@ -542,6 +553,7 @@ namespace lfs::rendering::kernels::forward {
         const float4* primitive_conic_opacity,
         const float3* primitive_color,
         const float* primitive_depth,
+        const bool* primitive_outside_crop,
         float* image,
         float* alpha_map,
         float* depth_map,
@@ -567,6 +579,7 @@ namespace lfs::rendering::kernels::forward {
         __shared__ float4 collected_conic_opacity[config::block_size_blend];
         __shared__ float3 collected_color[config::block_size_blend];
         __shared__ float collected_depth[config::block_size_blend];
+        __shared__ bool collected_outside_crop[config::block_size_blend];
         // initialize local storage
         float3 color_pixel = make_float3(0.0f);
         float depth_pixel = 1e10f;  // Median depth (at 50% accumulated alpha)
@@ -583,6 +596,7 @@ namespace lfs::rendering::kernels::forward {
                 collected_conic_opacity[thread_rank] = primitive_conic_opacity[primitive_idx];
                 collected_color[thread_rank] = fmaxf(primitive_color[primitive_idx], 0.0f);
                 collected_depth[thread_rank] = primitive_depth[primitive_idx];
+                collected_outside_crop[thread_rank] = primitive_outside_crop[primitive_idx];
             }
             block.sync();
             const int current_batch_size = min(config::block_size_blend, n_points_remaining);
@@ -601,8 +615,10 @@ namespace lfs::rendering::kernels::forward {
                 if (alpha < config::min_alpha_threshold)
                     continue;
 
-                // Ring mode: draw outline at visibility boundary
-                if (show_rings) {
+                const bool is_outside = collected_outside_crop[j];
+
+                // Ring mode (skip for outside gaussians)
+                if (show_rings && !is_outside) {
                     const float boundary_gaussian = config::min_alpha_threshold / opacity;
                     const float ring_outer = boundary_gaussian * (1.0f + ring_width * 10.0f);
                     const float ring_inner = boundary_gaussian * (1.0f - ring_width * 10.0f);
@@ -616,9 +632,9 @@ namespace lfs::rendering::kernels::forward {
                     continue;
                 }
 
-                // Center markers: render solid dots at Gaussian centers
+                // Center markers (skip for outside gaussians)
                 float3 final_color = collected_color[j];
-                if (show_center_markers) {
+                if (show_center_markers && !is_outside) {
                     constexpr float INNER_RADIUS_SQ = 2.25f;   // 1.5px
                     constexpr float OUTER_RADIUS_SQ = 6.25f;   // 2.5px
                     constexpr float COLOR_TOLERANCE = 0.1f;
@@ -666,6 +682,7 @@ namespace lfs::rendering::kernels::forward {
         if (inside) {
             const int pixel_idx = width * pixel_coords.y + pixel_coords.x;
             const int n_pixels = width * height;
+
             // store results
             image[pixel_idx] = color_pixel.x;
             image[pixel_idx + n_pixels] = color_pixel.y;

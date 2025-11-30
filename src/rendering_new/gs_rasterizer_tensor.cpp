@@ -33,6 +33,7 @@ namespace lfs::rendering {
         const Tensor* crop_box_min,
         const Tensor* crop_box_max,
         bool crop_inverse,
+        bool crop_desaturate,
         const Tensor* deleted_mask,
         unsigned long long* hovered_depth_id,
         int highlight_gaussian_id,
@@ -138,6 +139,7 @@ namespace lfs::rendering {
             crop_box_min,
             crop_box_max,
             crop_inverse,
+            crop_desaturate,
             actual_deleted_mask,
             hovered_depth_id,
             highlight_gaussian_id);
