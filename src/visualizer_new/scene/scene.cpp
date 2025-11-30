@@ -26,10 +26,15 @@ namespace lfs::vis {
         }
         // Compute mean on GPU, copy only 3 floats back
         auto centroid_tensor = means.mean({0}, false);
-        return glm::vec3(
+        glm::vec3 result(
             centroid_tensor.slice(0, 0, 1).item<float>(),
             centroid_tensor.slice(0, 1, 2).item<float>(),
             centroid_tensor.slice(0, 2, 3).item<float>());
+        // Guard against NaN from empty or invalid data
+        if (std::isnan(result.x) || std::isnan(result.y) || std::isnan(result.z)) {
+            return glm::vec3(0.0f);
+        }
+        return result;
     }
 
     void Scene::addNode(const std::string& name, std::unique_ptr<lfs::core::SplatData> model) {

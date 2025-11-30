@@ -39,6 +39,9 @@
 
 namespace lfs::vis::gui {
 
+    // Gizmo axis/plane visibility threshold (near-zero to always show)
+    constexpr float GIZMO_AXIS_LIMIT = 0.0001f;
+
     GuiManager::GuiManager(VisualizerImpl* viewer)
         : viewer_(viewer) {
 
@@ -1161,29 +1164,25 @@ namespace lfs::vis::gui {
         // viewport_pos_ already includes WorkPos offset, use directly
         ImGuizmo::SetRect(viewport_pos_.x, viewport_pos_.y, viewport_size_.x, viewport_size_.y);
 
-        // Disable view angle culling - make everything visible before drag
-        ImGuizmo::SetAxisLimit(0.0001f);
-        ImGuizmo::SetPlaneLimit(0.0001f);
+        ImGuizmo::SetAxisLimit(GIZMO_AXIS_LIMIT);
+        ImGuizmo::SetPlaneLimit(GIZMO_AXIS_LIMIT);
 
-        // Axis mask depends on operation mode
+        // SetAxisMask: true = HIDE axis, false = SHOW axis (counterintuitive)
         if (crop_gizmo_operation_ == ImGuizmo::BOUNDS) {
-            // BOUNDS mode: always use full mask for visibility
+            // BOUNDS mode uses its own rendering, axis mask has no effect
             ImGuizmo::SetAxisMask(true, true, true);
         } else {
-            // TRANSLATE/ROTATE/SCALE: dynamic masking based on hover state
-            static bool hovered_axis = false;
+            // Show all axes when idle, hide during single-axis drag for clarity
+            static bool s_hovered_axis = false;
+            const bool is_using = ImGuizmo::IsUsing();
 
-            if (!ImGuizmo::IsUsing()) {
-                hovered_axis = ImGuizmo::IsOver(ImGuizmo::TRANSLATE_X) ||
-                              ImGuizmo::IsOver(ImGuizmo::TRANSLATE_Y) ||
-                              ImGuizmo::IsOver(ImGuizmo::TRANSLATE_Z);
+            if (!is_using) {
+                s_hovered_axis = ImGuizmo::IsOver(ImGuizmo::TRANSLATE_X) ||
+                                 ImGuizmo::IsOver(ImGuizmo::TRANSLATE_Y) ||
+                                 ImGuizmo::IsOver(ImGuizmo::TRANSLATE_Z);
                 ImGuizmo::SetAxisMask(false, false, false);
             } else {
-                if (hovered_axis) {
-                    ImGuizmo::SetAxisMask(true, true, true);
-                } else {
-                    ImGuizmo::SetAxisMask(false, false, false);
-                }
+                ImGuizmo::SetAxisMask(s_hovered_axis, s_hovered_axis, s_hovered_axis);
             }
         }
 
@@ -1323,10 +1322,13 @@ namespace lfs::vis::gui {
 
         auto settings = render_manager->getSettings();
 
-        // Get camera matrices
+        // Get camera matrices - use viewport_size_ for aspect ratio (same as cropbox)
         auto& viewport = ctx.viewer->getViewport();
-        glm::mat4 view = viewport.getViewMatrix();
-        glm::mat4 projection = viewport.getProjectionMatrix(settings.fov);
+        const glm::mat4 view = viewport.getViewMatrix();
+        const float aspect = viewport_size_.x / viewport_size_.y;
+        const float fov_rad = glm::radians(settings.fov);
+        const glm::mat4 projection = glm::perspective(fov_rad, aspect,
+            lfs::rendering::DEFAULT_NEAR_PLANE, lfs::rendering::DEFAULT_FAR_PLANE);
 
         // Get current node transform and centroid
         glm::vec3 centroid = scene_manager->getSelectedNodeCentroid();
@@ -1359,6 +1361,23 @@ namespace lfs::vis::gui {
         // viewport_pos_ already includes WorkPos offset, use directly
         ImGuizmo::SetRect(viewport_pos_.x, viewport_pos_.y, viewport_size_.x, viewport_size_.y);
 
+        ImGuizmo::SetAxisLimit(GIZMO_AXIS_LIMIT);
+        ImGuizmo::SetPlaneLimit(GIZMO_AXIS_LIMIT);
+
+        // SetAxisMask: true = HIDE axis, false = SHOW axis (counterintuitive)
+        // Show all axes when idle, hide during single-axis drag for clarity
+        static bool s_node_hovered_axis = false;
+        const bool is_using = ImGuizmo::IsUsing();
+
+        if (!is_using) {
+            s_node_hovered_axis = ImGuizmo::IsOver(ImGuizmo::TRANSLATE_X) ||
+                                  ImGuizmo::IsOver(ImGuizmo::TRANSLATE_Y) ||
+                                  ImGuizmo::IsOver(ImGuizmo::TRANSLATE_Z);
+            ImGuizmo::SetAxisMask(false, false, false);
+        } else {
+            ImGuizmo::SetAxisMask(s_node_hovered_axis, s_node_hovered_axis, s_node_hovered_axis);
+        }
+
         // Clip ImGuizmo rendering to viewport so it doesn't draw over GUI panels
         ImDrawList* overlay_drawlist = ImGui::GetForegroundDrawList();
         ImVec2 clip_min(viewport_pos_.x, viewport_pos_.y);
@@ -1368,28 +1387,24 @@ namespace lfs::vis::gui {
         // Set drawlist after pushing clip rect
         ImGuizmo::SetDrawlist(overlay_drawlist);
 
-        // Use LOCAL mode for rotation/scale so they rotate around the gizmo center
-        ImGuizmo::MODE gizmo_mode = (node_gizmo_operation_ == ImGuizmo::TRANSLATE)
-                                        ? ImGuizmo::WORLD
-                                        : ImGuizmo::LOCAL;
+        // LOCAL mode for rotation/scale, WORLD for translation
+        const ImGuizmo::MODE gizmo_mode = (node_gizmo_operation_ == ImGuizmo::TRANSLATE)
+                                              ? ImGuizmo::WORLD
+                                              : ImGuizmo::LOCAL;
 
-        // Draw the gizmo
-        glm::mat4 deltaMatrix;
-        bool gizmo_changed = ImGuizmo::Manipulate(
+        glm::mat4 delta_matrix;
+        const bool gizmo_changed = ImGuizmo::Manipulate(
             glm::value_ptr(view),
             glm::value_ptr(projection),
             node_gizmo_operation_,
             gizmo_mode,
             glm::value_ptr(gizmo_matrix),
-            glm::value_ptr(deltaMatrix),
-            nullptr);  // snap
+            glm::value_ptr(delta_matrix),
+            nullptr);
 
         if (gizmo_changed) {
-            // Extract new position
-            glm::vec3 new_gizmo_position = glm::vec3(gizmo_matrix[3]);
-
-            // The node's translation offset is new_gizmo_position - centroid
-            glm::vec3 new_translation = new_gizmo_position - centroid;
+            const glm::vec3 new_gizmo_position = glm::vec3(gizmo_matrix[3]);
+            const glm::vec3 new_translation = new_gizmo_position - centroid;
 
             // Build new node transform with the updated values
             glm::mat4 new_transform = gizmo_matrix;

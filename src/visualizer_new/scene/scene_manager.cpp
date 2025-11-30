@@ -392,15 +392,19 @@ namespace lfs::vis {
         }
 
         if (node_name.empty()) {
+            LOG_INFO("getSelectedNodeCentroid: no node selected");
             return glm::vec3(0.0f);
         }
 
         // Get the node - centroid is pre-cached when model was loaded
         const auto* node = scene_.getNode(node_name);
         if (!node || !node->model) {
+            LOG_INFO("getSelectedNodeCentroid: node '{}' not found or no model", node_name);
             return glm::vec3(0.0f);
         }
 
+        LOG_INFO("getSelectedNodeCentroid: node '{}' centroid=({},{},{})",
+                 node_name, node->centroid.x, node->centroid.y, node->centroid.z);
         return node->centroid;
     }
 
