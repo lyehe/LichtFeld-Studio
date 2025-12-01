@@ -119,6 +119,8 @@ namespace lfs::vis {
         void deleteSelectedGaussians();
         void invertSelection();
         void deselectAll();
+        void copySelection();
+        void pasteSelection();
 
         std::shared_ptr<TrainerManager> trainer_manager_;
 

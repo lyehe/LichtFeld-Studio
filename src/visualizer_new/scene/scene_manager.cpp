@@ -8,12 +8,14 @@
 #include "core_new/logger.hpp"
 #include "core_new/splat_data_export.hpp"
 #include "core_new/splat_data_transform.hpp"
+#include "geometry_new/bounding_box.hpp"
 #include "geometry_new/euclidean_transform.hpp"
 #include "gui/panels/gizmo_toolbar.hpp"
 #include "loader_new/loader.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "training/training_manager.hpp"
 #include "training_new/training_setup.hpp"
+#include <format>
 #include <glm/gtc/quaternion.hpp>
 #include <stdexcept>
 
@@ -787,6 +789,77 @@ namespace lfs::vis {
 
         LOG_INFO("Cropbox: center({:.2f}, {:.2f}, {:.2f}), size({:.2f}, {:.2f}, {:.2f})",
                  center.x, center.y, center.z, size.x, size.y, size.z);
+    }
+
+    bool SceneManager::copySelection() {
+        const auto* const model = scene_.getCombinedModel();
+        if (!model) { return false; }
+
+        // Try selection mask first
+        if (const auto mask = scene_.getSelectionMask(); mask && mask->is_valid()) {
+            auto extracted = lfs::core::extract_by_mask(*model, *mask);
+            if (extracted.size() > 0) {
+                clipboard_ = std::make_unique<lfs::core::SplatData>(std::move(extracted));
+                LOG_INFO("Copied {} gaussians from selection", clipboard_->size());
+                return true;
+            }
+        }
+
+        // Fall back to crop box
+        if (rendering_manager_) {
+            const auto& settings = rendering_manager_->getSettings();
+            if (settings.show_crop_box || settings.use_crop_box) {
+                lfs::geometry::BoundingBox bbox;
+                bbox.setBounds(settings.crop_min, settings.crop_max);
+                bbox.setworld2BBox(settings.crop_transform.inv());
+                auto extracted = lfs::core::crop_by_cropbox(*model, bbox, settings.crop_inverse);
+                if (extracted.size() > 0) {
+                    clipboard_ = std::make_unique<lfs::core::SplatData>(std::move(extracted));
+                    LOG_INFO("Copied {} gaussians from crop box", clipboard_->size());
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    std::string SceneManager::pasteSelection() {
+        if (!clipboard_ || clipboard_->size() == 0) { return ""; }
+
+        auto paste_data = std::make_unique<lfs::core::SplatData>(
+            clipboard_->get_max_sh_degree(),
+            clipboard_->means_raw().clone(),
+            clipboard_->sh0_raw().clone(),
+            clipboard_->shN_raw().clone(),
+            clipboard_->scaling_raw().clone(),
+            clipboard_->rotation_raw().clone(),
+            clipboard_->opacity_raw().clone(),
+            clipboard_->get_scene_scale());
+        paste_data->set_active_sh_degree(clipboard_->get_active_sh_degree());
+
+        ++clipboard_counter_;
+        const std::string name = std::format("Pasted_{}", clipboard_counter_);
+        const size_t count = clipboard_->size();
+
+        scene_.addNode(name, std::move(paste_data));
+
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            if (content_type_ == ContentType::Empty) {
+                content_type_ = ContentType::SplatFiles;
+            }
+        }
+
+        state::PLYAdded{
+            .name = name,
+            .node_gaussians = count,
+            .total_gaussians = scene_.getTotalGaussianCount(),
+            .is_visible = true
+        }.emit();
+        emitSceneChanged();
+
+        LOG_INFO("Pasted {} gaussians as '{}'", count, name);
+        return name;
     }
 
 } // namespace lfs::vis

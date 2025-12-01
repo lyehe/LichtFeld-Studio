@@ -176,6 +176,8 @@ namespace lfs::vis {
         cmd::DeleteSelected::when([this](const auto&) { deleteSelectedGaussians(); });
         cmd::InvertSelection::when([this](const auto&) { invertSelection(); });
         cmd::DeselectAll::when([this](const auto&) { deselectAll(); });
+        cmd::CopySelection::when([this](const auto&) { copySelection(); });
+        cmd::PasteSelection::when([this](const auto&) { pasteSelection(); });
 
         // Render settings changes
         ui::RenderSettingsChanged::when([this]([[maybe_unused]] const auto& event) {
@@ -562,6 +564,27 @@ namespace lfs::vis {
             scene_manager_.get(),
             old_mask ? std::make_shared<lfs::core::Tensor>(old_mask->clone()) : nullptr,
             nullptr));
+        if (rendering_manager_) rendering_manager_->markDirty();
+    }
+
+    void VisualizerImpl::copySelection() {
+        if (!scene_manager_) return;
+        scene_manager_->copySelection();
+    }
+
+    void VisualizerImpl::pasteSelection() {
+        if (!scene_manager_) return;
+
+        const std::string name = scene_manager_->pasteSelection();
+        if (name.empty()) return;
+
+        if (selection_tool_) {
+            selection_tool_->clearPolygon();
+            selection_tool_->setEnabled(false);
+        }
+        scene_manager_->getScene().resetSelectionState();
+        scene_manager_->selectNode(name);
+
         if (rendering_manager_) rendering_manager_->markDirty();
     }
 

@@ -196,6 +196,11 @@ namespace lfs::vis::gui::panels {
             s_editing_active = false;
             commitUndoIfChanged(ctx.viewer, rm);
         }
+
+        // Help text
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextDisabled("Enter: Commit crop | Ctrl+C: Copy contents");
     }
 
     const CropBoxState& getCropBoxState() {

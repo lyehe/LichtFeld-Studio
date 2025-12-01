@@ -155,6 +155,11 @@ namespace lfs::vis {
         // Permanently remove soft-deleted gaussians from all nodes
         size_t applyDeleted();
 
+        // Clipboard
+        bool copySelection();
+        std::string pasteSelection();
+        [[nodiscard]] bool hasClipboard() const { return clipboard_ != nullptr; }
+
     private:
         void setupEventHandlers();
         void emitSceneChanged();
@@ -186,6 +191,9 @@ namespace lfs::vis {
 
         // Selected node for transforms
         std::string selected_node_;
+
+        std::unique_ptr<lfs::core::SplatData> clipboard_;
+        int clipboard_counter_ = 0;
     };
 
 } // namespace lfs::vis

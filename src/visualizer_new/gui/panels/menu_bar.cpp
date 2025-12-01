@@ -726,17 +726,25 @@ namespace lfs::vis::gui {
                     }
 
                     // Editing - global and most tools
-                    if (mode == input::ToolMode::GLOBAL) {
+                    if (mode == input::ToolMode::GLOBAL ||
+                        mode == input::ToolMode::SELECTION ||
+                        mode == input::ToolMode::CROP_BOX) {
                         renderSectionHeader("EDITING");
-                        renderBindingRow(input::Action::DELETE_SELECTED, mode);
-                        renderBindingRow(input::Action::UNDO, mode);
-                        renderBindingRow(input::Action::REDO, mode);
-                        renderBindingRow(input::Action::INVERT_SELECTION, mode);
-                        renderBindingRow(input::Action::DESELECT_ALL, mode);
-                        renderBindingRow(input::Action::APPLY_CROP_BOX, mode);
-                        renderBindingRow(input::Action::CANCEL_POLYGON, mode);
-                        renderBindingRow(input::Action::CYCLE_BRUSH_MODE, mode);
+                        renderBindingRow(input::Action::COPY_SELECTION, mode);
+                        renderBindingRow(input::Action::PASTE_SELECTION, mode);
+                        if (mode == input::ToolMode::GLOBAL) {
+                            renderBindingRow(input::Action::DELETE_SELECTED, mode);
+                            renderBindingRow(input::Action::UNDO, mode);
+                            renderBindingRow(input::Action::REDO, mode);
+                            renderBindingRow(input::Action::INVERT_SELECTION, mode);
+                            renderBindingRow(input::Action::DESELECT_ALL, mode);
+                            renderBindingRow(input::Action::APPLY_CROP_BOX, mode);
+                            renderBindingRow(input::Action::CANCEL_POLYGON, mode);
+                            renderBindingRow(input::Action::CYCLE_BRUSH_MODE, mode);
+                        }
+                    }
 
+                    if (mode == input::ToolMode::GLOBAL) {
                         renderSectionHeader("VIEW");
                         renderBindingRow(input::Action::TOGGLE_SPLIT_VIEW, mode);
                         renderBindingRow(input::Action::TOGGLE_GT_COMPARISON, mode);

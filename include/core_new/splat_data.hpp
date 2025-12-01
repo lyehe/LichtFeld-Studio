@@ -166,6 +166,7 @@ namespace lfs::core {
         friend std::vector<std::string> get_attribute_names(const SplatData&);
         friend SplatData& transform(SplatData&, const glm::mat4&);
         friend SplatData crop_by_cropbox(const SplatData&, const lfs::geometry::BoundingBox&, bool);
+        friend SplatData extract_by_mask(const SplatData&, const Tensor&);
         friend void random_choose(SplatData&, int, int);
     };
 

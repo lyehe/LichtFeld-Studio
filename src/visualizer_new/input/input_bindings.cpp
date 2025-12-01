@@ -371,6 +371,8 @@ namespace lfs::vis::input {
             {KeyTrigger{GLFW_KEY_Y, MODIFIER_CTRL}, Action::REDO, "Redo"},
             {KeyTrigger{GLFW_KEY_I, MODIFIER_CTRL}, Action::INVERT_SELECTION, "Invert"},
             {KeyTrigger{GLFW_KEY_D, MODIFIER_CTRL}, Action::DESELECT_ALL, "Deselect"},
+            {KeyTrigger{GLFW_KEY_C, MODIFIER_CTRL}, Action::COPY_SELECTION, "Copy"},
+            {KeyTrigger{GLFW_KEY_V, MODIFIER_CTRL}, Action::PASTE_SELECTION, "Paste"},
             // Tools
             {KeyTrigger{GLFW_KEY_B, MODIFIER_NONE}, Action::CYCLE_BRUSH_MODE, "Brush mode"},
             {KeyTrigger{GLFW_KEY_T, MODIFIER_CTRL}, Action::CYCLE_SELECTION_VIS, "Sel vis"},
@@ -435,6 +437,8 @@ namespace lfs::vis::input {
         case Action::REDO: return "Redo";
         case Action::INVERT_SELECTION: return "Invert Selection";
         case Action::DESELECT_ALL: return "Deselect All";
+        case Action::COPY_SELECTION: return "Copy Selection";
+        case Action::PASTE_SELECTION: return "Paste Selection";
         case Action::DEPTH_ADJUST_FAR: return "Adjust Depth Far";
         case Action::DEPTH_ADJUST_SIDE: return "Adjust Depth Side";
         case Action::BRUSH_RESIZE: return "Resize Brush";

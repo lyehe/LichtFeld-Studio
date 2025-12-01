@@ -358,4 +358,28 @@ namespace lfs::core {
         return true;
     }
 
+    SplatData extract_by_mask(const SplatData& splat_data, const Tensor& mask) {
+        if (!splat_data._means.is_valid() || splat_data._means.size(0) == 0) { return SplatData(); }
+        if (!mask.is_valid() || mask.size(0) != splat_data._means.size(0)) { return SplatData(); }
+
+        const auto selection_mask = mask.to(DataType::Bool);
+        const int count = selection_mask.sum_scalar();
+        if (count == 0) { return SplatData(); }
+
+        auto indices = selection_mask.nonzero();
+        if (indices.ndim() == 2) { indices = indices.squeeze(1); }
+
+        SplatData result(
+            splat_data._max_sh_degree,
+            splat_data._means.index_select(0, indices).contiguous(),
+            splat_data._sh0.index_select(0, indices).contiguous(),
+            splat_data._shN.index_select(0, indices).contiguous(),
+            splat_data._scaling.index_select(0, indices).contiguous(),
+            splat_data._rotation.index_select(0, indices).contiguous(),
+            splat_data._opacity.index_select(0, indices).contiguous(),
+            splat_data._scene_scale);
+        result.set_active_sh_degree(splat_data._active_sh_degree);
+        return result;
+    }
+
 } // namespace lfs::core

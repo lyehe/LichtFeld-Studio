@@ -67,7 +67,6 @@ namespace lfs::vis::gui {
             handlePLYRenamed(event);
         });
 
-        // Listen for programmatic node selection
         ui::NodeSelected::when([this](const auto& event) {
             if (event.type == "PLY") {
                 for (size_t i = 0; i < m_plyNodes.size(); ++i) {

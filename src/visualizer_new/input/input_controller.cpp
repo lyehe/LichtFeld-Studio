@@ -638,6 +638,14 @@ namespace lfs::vis {
                     cmd::DeselectAll{}.emit();
                     return;
 
+                case input::Action::COPY_SELECTION:
+                    cmd::CopySelection{}.emit();
+                    return;
+
+                case input::Action::PASTE_SELECTION:
+                    cmd::PasteSelection{}.emit();
+                    return;
+
                 case input::Action::APPLY_CROP_BOX:
                     cmd::ApplyCropBox{}.emit();
                     return;

@@ -64,4 +64,7 @@ namespace lfs::core {
                         float padding = 0.0f,
                         bool use_percentile = false);
 
+    // Extract gaussians where mask is non-zero
+    SplatData extract_by_mask(const SplatData& splat_data, const Tensor& mask);
+
 } // namespace lfs::core
