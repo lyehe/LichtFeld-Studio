@@ -140,10 +140,9 @@ namespace lfs::vis::tools {
 
             if (input_bindings_ && mods != 0) {
                 // Check if current modifiers match add/remove bindings
-                if (const auto action = input_bindings_->getActionForDrag(input::MouseButton::LEFT, mods)) {
-                    if (*action == input::Action::SELECTION_ADD) mod_suffix = " +";
-                    else if (*action == input::Action::SELECTION_REMOVE) mod_suffix = " -";
-                }
+                const auto action = input_bindings_->getActionForDrag(input::ToolMode::SELECTION, input::MouseButton::LEFT, mods);
+                if (action == input::Action::SELECTION_ADD) mod_suffix = " +";
+                else if (action == input::Action::SELECTION_REMOVE) mod_suffix = " -";
             } else if (!input_bindings_) {
                 // Fallback display
                 const bool alt = glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
@@ -206,12 +205,11 @@ namespace lfs::vis::tools {
             !polygon_closed_ && !polygon_points_.empty()) {
             const auto mouse_btn = static_cast<input::MouseButton>(button);
             if (input_bindings_) {
-                if (const auto bound_action = input_bindings_->getActionForDrag(mouse_btn, mods)) {
-                    if (*bound_action == input::Action::UNDO_POLYGON_VERTEX) {
-                        polygon_points_.pop_back();
-                        ctx.requestRender();
-                        return true;
-                    }
+                const auto bound_action = input_bindings_->getActionForDrag(input::ToolMode::SELECTION, mouse_btn, mods);
+                if (bound_action == input::Action::UNDO_POLYGON_VERTEX) {
+                    polygon_points_.pop_back();
+                    ctx.requestRender();
+                    return true;
                 }
             } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
                 // Fallback when no bindings
@@ -234,14 +232,13 @@ namespace lfs::vis::tools {
 
             if (input_bindings_) {
                 const auto mouse_btn = static_cast<input::MouseButton>(button);
-                if (const auto bound_action = input_bindings_->getActionForDrag(mouse_btn, mods)) {
-                    if (*bound_action == input::Action::SELECTION_ADD) {
-                        is_remove_mode = false;
-                        replace_mode = false;
-                    } else if (*bound_action == input::Action::SELECTION_REMOVE) {
-                        is_remove_mode = true;
-                        replace_mode = false;
-                    }
+                const auto bound_action = input_bindings_->getActionForDrag(input::ToolMode::SELECTION, mouse_btn, mods);
+                if (bound_action == input::Action::SELECTION_ADD) {
+                    is_remove_mode = false;
+                    replace_mode = false;
+                } else if (bound_action == input::Action::SELECTION_REMOVE) {
+                    is_remove_mode = true;
+                    replace_mode = false;
                 }
             } else {
                 // Fallback to hardcoded modifiers when no bindings
@@ -440,20 +437,19 @@ namespace lfs::vis::tools {
         if (depth_filter_enabled_ && mode != lfs::rendering::SelectionMode::Rings) {
             // Check if bindings are available
             if (input_bindings_) {
-                if (auto action = input_bindings_->getActionForScroll(mods)) {
-                    const float scale = (y_offset > 0) ? ADJUST_FACTOR : (1.0f / ADJUST_FACTOR);
+                const auto action = input_bindings_->getActionForScroll(input::ToolMode::SELECTION, mods);
+                const float scale = (y_offset > 0) ? ADJUST_FACTOR : (1.0f / ADJUST_FACTOR);
 
-                    if (*action == input::Action::DEPTH_ADJUST_SIDE) {
-                        frustum_half_width_ = std::clamp(frustum_half_width_ * scale, WIDTH_MIN, WIDTH_MAX);
-                        updateSelectionCropBox(ctx);
-                        ctx.requestRender();
-                        return true;
-                    } else if (*action == input::Action::DEPTH_ADJUST_FAR) {
-                        depth_far_ = std::clamp(depth_far_ * scale, DEPTH_MIN, DEPTH_MAX);
-                        updateSelectionCropBox(ctx);
-                        ctx.requestRender();
-                        return true;
-                    }
+                if (action == input::Action::DEPTH_ADJUST_SIDE) {
+                    frustum_half_width_ = std::clamp(frustum_half_width_ * scale, WIDTH_MIN, WIDTH_MAX);
+                    updateSelectionCropBox(ctx);
+                    ctx.requestRender();
+                    return true;
+                } else if (action == input::Action::DEPTH_ADJUST_FAR) {
+                    depth_far_ = std::clamp(depth_far_ * scale, DEPTH_MIN, DEPTH_MAX);
+                    updateSelectionCropBox(ctx);
+                    ctx.requestRender();
+                    return true;
                 }
             } else {
                 // Fallback to hardcoded Alt+Scroll behavior if no bindings

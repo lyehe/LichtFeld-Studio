@@ -128,6 +128,7 @@ namespace lfs::vis {
         bool isNearSplitter(double x) const;
         int getModifierKeys() const;
         glm::vec3 unprojectScreenPoint(double x, double y, float fallback_distance = 5.0f) const;
+        input::ToolMode getCurrentToolMode() const;
 
         // Training pause/resume helpers
         void onCameraMovementStart();
@@ -204,20 +205,22 @@ namespace lfs::vis {
         GLFWcursor* resize_cursor_ = nullptr;
         GLFWcursor* hand_cursor_ = nullptr;
 
+        // Double-click detection
+        static constexpr double DOUBLE_CLICK_TIME = 0.3;
+        static constexpr double DOUBLE_CLICK_DISTANCE = 5.0;
+
         // Camera frustum interaction
         int last_camview_ = -1;
         int hovered_camera_id_ = -1;
         int last_clicked_camera_id_ = -1;
         std::chrono::steady_clock::time_point last_click_time_;
         glm::dvec2 last_click_pos_{0, 0};
-        static constexpr double DOUBLE_CLICK_TIME = 0.3;     // seconds
-        static constexpr double DOUBLE_CLICK_DISTANCE = 5.0; // pixels
 
-        // Pivot point double-click tracking
-        std::chrono::steady_clock::time_point last_pivot_click_time_;
-        glm::dvec2 last_pivot_click_pos_{0, 0};
+        // General double-click tracking
+        std::chrono::steady_clock::time_point last_general_click_time_;
+        glm::dvec2 last_general_click_pos_{0, 0};
+        int last_general_click_button_ = -1;
 
-        // Static instance for callbacks
         static InputController* instance_;
     };
 

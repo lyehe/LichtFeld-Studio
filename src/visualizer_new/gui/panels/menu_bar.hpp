@@ -5,6 +5,7 @@
 #pragma once
 
 #include "input/input_bindings.hpp"
+#include <chrono>
 #include <functional>
 #include <optional>
 
@@ -15,10 +16,8 @@ namespace lfs::vis::gui {
         MenuBar();
         ~MenuBar();
 
-        // Render the menu bar
         void render();
 
-        // Callbacks for menu actions
         void setOnImportDataset(std::function<void()> callback);
         void setOnOpenProject(std::function<void()> callback);
         void setOnImportPLY(std::function<void()> callback);
@@ -26,7 +25,6 @@ namespace lfs::vis::gui {
         void setOnSaveProject(std::function<void()> callback);
         void setOnExit(std::function<void()> callback);
 
-        // Render separate windows (call these in your main render loop)
         void renderGettingStartedWindow();
         void renderAboutWindow();
         void renderInputSettingsWindow();
@@ -34,10 +32,8 @@ namespace lfs::vis::gui {
         void setIsProjectTemp(bool is_temp) { is_project_temp_ = is_temp; }
         [[nodiscard]] bool getIsProjectTemp() const { return is_project_temp_; }
 
-        // Input bindings for settings window
         void setInputBindings(input::InputBindings* bindings) { input_bindings_ = bindings; }
 
-        // Key capture for rebinding - returns true if capturing
         bool isCapturingInput() const { return rebinding_action_.has_value(); }
         bool isInputSettingsOpen() const { return show_input_settings_; }
         void captureKey(int key, int mods);
@@ -45,10 +41,12 @@ namespace lfs::vis::gui {
         void cancelCapture();
 
     private:
-        void openURL(const char* url);
-        void renderBindingRow(input::Action action);
+        static constexpr double DOUBLE_CLICK_WAIT_TIME = 0.35;
 
-        // Callbacks
+        void openURL(const char* url);
+        void renderBindingRow(input::Action action, input::ToolMode mode);
+        void updateCapture();
+
         std::function<void()> on_import_dataset_;
         std::function<void()> on_open_project_;
         std::function<void()> on_import_ply_;
@@ -56,18 +54,21 @@ namespace lfs::vis::gui {
         std::function<void()> on_save_project_;
         std::function<void()> on_exit_;
 
-        // Window states
         bool show_about_window_ = false;
         bool show_getting_started_ = false;
         bool show_input_settings_ = false;
-
         bool is_project_temp_ = true;
 
-        // Input bindings pointer
         input::InputBindings* input_bindings_ = nullptr;
 
-        // Key capture state for rebinding
         std::optional<input::Action> rebinding_action_;
+        input::ToolMode rebinding_mode_ = input::ToolMode::GLOBAL;
+        input::ToolMode selected_tool_mode_ = input::ToolMode::GLOBAL;
+
+        bool waiting_for_double_click_ = false;
+        int pending_button_ = -1;
+        int pending_mods_ = 0;
+        std::chrono::steady_clock::time_point first_click_time_;
     };
 
 } // namespace lfs::vis::gui

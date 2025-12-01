@@ -6,7 +6,6 @@
 
 #include <GLFW/glfw3.h>
 #include <filesystem>
-#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -15,9 +14,20 @@
 
 namespace lfs::vis::input {
 
-    // Actions that can be bound to inputs
+    enum class ToolMode {
+        GLOBAL = 0,
+        SELECTION,
+        BRUSH,
+        TRANSLATE,
+        ROTATE,
+        SCALE,
+        ALIGN,
+        CROP_BOX,
+    };
+
     enum class Action {
-        // Camera navigation
+        NONE = 0,
+        // Camera
         CAMERA_ORBIT,
         CAMERA_PAN,
         CAMERA_ZOOM,
@@ -36,49 +46,40 @@ namespace lfs::vis::input {
         CAMERA_SPEED_DOWN,
         ZOOM_SPEED_UP,
         ZOOM_SPEED_DOWN,
-
-        // View controls
+        // View
         TOGGLE_SPLIT_VIEW,
         TOGGLE_GT_COMPARISON,
         TOGGLE_DEPTH_MODE,
         CYCLE_PLY,
-
-        // Selection/editing
+        // Editing
         DELETE_SELECTED,
         UNDO,
         REDO,
         INVERT_SELECTION,
         DESELECT_ALL,
-
-        // Depth filter (in selection tool)
+        // Depth filter
         DEPTH_ADJUST_FAR,
         DEPTH_ADJUST_SIDE,
-
-        // Tool-specific
+        // Tools
         BRUSH_RESIZE,
         CYCLE_BRUSH_MODE,
         CONFIRM_POLYGON,
         CANCEL_POLYGON,
         UNDO_POLYGON_VERTEX,
         CYCLE_SELECTION_VIS,
-
-        // Selection actions (mouse + modifier)
+        // Selection
         SELECTION_ADD,
         SELECTION_REMOVE,
-
-        // Selection mode shortcuts
         SELECT_MODE_CENTERS,
         SELECT_MODE_RECTANGLE,
         SELECT_MODE_POLYGON,
         SELECT_MODE_LASSO,
         SELECT_MODE_RINGS,
-
         // Misc
         APPLY_CROP_BOX,
     };
 
-    // Modifier flags (can be combined)
-    // Note: Using MODIFIER_ prefix to avoid Windows macro conflicts (MOD_NONE, MOD_SHIFT etc.)
+    // Using MODIFIER_ prefix to avoid Windows macro conflicts
     enum Modifier : int {
         MODIFIER_NONE = 0,
         MODIFIER_SHIFT = GLFW_MOD_SHIFT,
@@ -87,27 +88,26 @@ namespace lfs::vis::input {
         MODIFIER_SUPER = GLFW_MOD_SUPER,
     };
 
-    // Mouse button identifiers
     enum class MouseButton {
         LEFT = GLFW_MOUSE_BUTTON_LEFT,
         RIGHT = GLFW_MOUSE_BUTTON_RIGHT,
         MIDDLE = GLFW_MOUSE_BUTTON_MIDDLE,
     };
 
-    // Input trigger types
     struct KeyTrigger {
-        int key;                           // GLFW key code
-        int modifiers = MODIFIER_NONE;     // Required modifiers
-        bool on_repeat = false;            // Allow repeat
+        int key;
+        int modifiers = MODIFIER_NONE;
+        bool on_repeat = false;
     };
 
     struct MouseButtonTrigger {
         MouseButton button;
         int modifiers = MODIFIER_NONE;
+        bool double_click = false;
     };
 
     struct MouseScrollTrigger {
-        int modifiers = MODIFIER_NONE;     // Modifiers to activate
+        int modifiers = MODIFIER_NONE;
     };
 
     struct MouseDragTrigger {
@@ -117,26 +117,23 @@ namespace lfs::vis::input {
 
     using InputTrigger = std::variant<KeyTrigger, MouseButtonTrigger, MouseScrollTrigger, MouseDragTrigger>;
 
-    // A single binding: trigger -> action
     struct Binding {
+        ToolMode mode = ToolMode::GLOBAL;
         InputTrigger trigger;
         Action action;
-        std::string description;     // Human-readable description
+        std::string description;
     };
 
-    // A profile contains a named set of bindings
     struct Profile {
         std::string name;
         std::string description;
         std::vector<Binding> bindings;
     };
 
-    // Input binding manager
     class InputBindings {
     public:
         InputBindings();
 
-        // Profile management
         void loadProfile(const std::string& name);
         void saveProfile(const std::string& name) const;
         bool loadProfileFromFile(const std::filesystem::path& path);
@@ -144,41 +141,41 @@ namespace lfs::vis::input {
         std::vector<std::string> getAvailableProfiles() const;
         const std::string& getCurrentProfileName() const { return current_profile_name_; }
 
-        // Get config directory for profile storage
         static std::filesystem::path getConfigDir();
 
-        // Query bindings
-        std::optional<Action> getActionForKey(int key, int modifiers) const;
-        std::optional<Action> getActionForMouseButton(MouseButton button, int modifiers) const;
-        std::optional<Action> getActionForScroll(int modifiers) const;
-        std::optional<Action> getActionForDrag(MouseButton button, int modifiers) const;
+        // Query bindings (mode-specific only, no fallback)
+        Action getActionForKey(ToolMode mode, int key, int modifiers) const;
+        Action getActionForMouseButton(ToolMode mode, MouseButton button, int modifiers, bool is_double_click = false) const;
+        Action getActionForScroll(ToolMode mode, int modifiers) const;
+        Action getActionForDrag(ToolMode mode, MouseButton button, int modifiers) const;
 
-        // Get trigger for an action (for UI display)
-        std::optional<InputTrigger> getTriggerForAction(Action action) const;
-        std::string getTriggerDescription(Action action) const;
+        std::optional<InputTrigger> getTriggerForAction(Action action, ToolMode mode = ToolMode::GLOBAL) const;
+        std::string getTriggerDescription(Action action, ToolMode mode = ToolMode::GLOBAL) const;
 
-        // Modify bindings
-        void setBinding(Action action, const InputTrigger& trigger);
-        void clearBinding(Action action);
+        void setBinding(ToolMode mode, Action action, const InputTrigger& trigger);
+        void clearBinding(ToolMode mode, Action action);
 
-        // Built-in profiles
         static Profile createDefaultProfile();
 
     private:
+        static constexpr int MODIFIER_MASK = MODIFIER_SHIFT | MODIFIER_CTRL | MODIFIER_ALT | MODIFIER_SUPER;
+
         std::string current_profile_name_;
         std::vector<Binding> bindings_;
 
-        // Lookup maps for fast queries
-        std::map<std::pair<int, int>, Action> key_map_;           // (key, mods) -> action
-        std::map<std::pair<MouseButton, int>, Action> mouse_button_map_;
-        std::map<int, Action> scroll_map_;                        // mods -> action
-        std::map<std::pair<MouseButton, int>, Action> drag_map_;
+        using KeyMapKey = std::tuple<ToolMode, int, int>;
+        using MouseMapKey = std::tuple<ToolMode, MouseButton, int, bool>;
+        using ScrollMapKey = std::pair<ToolMode, int>;
+        using DragMapKey = std::tuple<ToolMode, MouseButton, int>;
+
+        std::map<KeyMapKey, Action> key_map_;
+        std::map<MouseMapKey, Action> mouse_button_map_;
+        std::map<ScrollMapKey, Action> scroll_map_;
+        std::map<DragMapKey, Action> drag_map_;
 
         void rebuildLookupMaps();
-        static bool modifiersMatch(int required, int actual);
     };
 
-    // Helper to get human-readable names
     std::string getActionName(Action action);
     std::string getKeyName(int key);
     std::string getMouseButtonName(MouseButton button);

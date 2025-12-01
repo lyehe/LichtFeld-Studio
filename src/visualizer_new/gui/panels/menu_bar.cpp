@@ -380,7 +380,23 @@ namespace lfs::vis::gui {
         on_exit_ = std::move(callback);
     }
 
-    void MenuBar::renderBindingRow(const input::Action action) {
+    namespace {
+        const char* getToolModeName(input::ToolMode mode) {
+            switch (mode) {
+            case input::ToolMode::GLOBAL: return "Global";
+            case input::ToolMode::SELECTION: return "Selection Tool";
+            case input::ToolMode::BRUSH: return "Brush Tool";
+            case input::ToolMode::TRANSLATE: return "Translate";
+            case input::ToolMode::ROTATE: return "Rotate";
+            case input::ToolMode::SCALE: return "Scale";
+            case input::ToolMode::ALIGN: return "Align Tool";
+            case input::ToolMode::CROP_BOX: return "Crop Box";
+            default: return "Unknown";
+            }
+        }
+    }
+
+    void MenuBar::renderBindingRow(const input::Action action, const input::ToolMode mode) {
         static constexpr ImVec4 COLOR_ACTION{0.9f, 0.9f, 0.9f, 1.0f};
         static constexpr ImVec4 COLOR_BINDING{0.4f, 0.7f, 1.0f, 1.0f};
         static constexpr ImVec4 COLOR_WAITING{1.0f, 0.8f, 0.2f, 1.0f};
@@ -391,7 +407,9 @@ namespace lfs::vis::gui {
         static constexpr ImVec4 COLOR_CANCEL_HOVER{0.7f, 0.3f, 0.3f, 1.0f};
         static constexpr ImVec4 COLOR_CANCEL_ACTIVE{0.8f, 0.4f, 0.4f, 1.0f};
 
-        const bool is_rebinding = rebinding_action_.has_value() && *rebinding_action_ == action;
+        const bool is_rebinding = rebinding_action_.has_value() &&
+                                   *rebinding_action_ == action &&
+                                   rebinding_mode_ == mode;
 
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -399,20 +417,24 @@ namespace lfs::vis::gui {
 
         ImGui::TableNextColumn();
         if (is_rebinding) {
-            ImGui::TextColored(COLOR_WAITING, "Press key or mouse...");
+            if (waiting_for_double_click_) {
+                ImGui::TextColored(COLOR_WAITING, "Click again for double-click...");
+            } else {
+                ImGui::TextColored(COLOR_WAITING, "Press key or click mouse...");
+            }
         } else {
-            const std::string desc = input_bindings_->getTriggerDescription(action);
+            const std::string desc = input_bindings_->getTriggerDescription(action, mode);
             ImGui::TextColored(COLOR_BINDING, "%s", desc.c_str());
         }
 
         ImGui::TableNextColumn();
-        const int action_id = static_cast<int>(action);
+        const int unique_id = static_cast<int>(action) * 100 + static_cast<int>(mode);
         if (is_rebinding) {
             ImGui::PushStyleColor(ImGuiCol_Button, COLOR_CANCEL);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_CANCEL_HOVER);
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, COLOR_CANCEL_ACTIVE);
             char label[32];
-            snprintf(label, sizeof(label), "Cancel##%d", action_id);
+            snprintf(label, sizeof(label), "Cancel##%d", unique_id);
             if (ImGui::Button(label, ImVec2(-1, 0))) {
                 cancelCapture();
             }
@@ -422,9 +444,10 @@ namespace lfs::vis::gui {
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, COLOR_REBIND_HOVER);
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, COLOR_REBIND_ACTIVE);
             char label[32];
-            snprintf(label, sizeof(label), "Rebind##%d", action_id);
+            snprintf(label, sizeof(label), "Rebind##%d", unique_id);
             if (ImGui::Button(label, ImVec2(-1, 0))) {
                 rebinding_action_ = action;
+                rebinding_mode_ = mode;
             }
             ImGui::PopStyleColor(3);
         }
@@ -449,7 +472,7 @@ namespace lfs::vis::gui {
         }
 
         const input::KeyTrigger trigger{key, mods, false};
-        input_bindings_->setBinding(*rebinding_action_, trigger);
+        input_bindings_->setBinding(rebinding_mode_, *rebinding_action_, trigger);
         rebinding_action_.reset();
     }
 
@@ -458,14 +481,52 @@ namespace lfs::vis::gui {
             return;
         }
 
-        const auto mouse_btn = static_cast<input::MouseButton>(button);
-        const input::MouseDragTrigger trigger{mouse_btn, mods};
-        input_bindings_->setBinding(*rebinding_action_, trigger);
-        rebinding_action_.reset();
+        if (waiting_for_double_click_) {
+            // Second click - check if it's the same button
+            if (button == pending_button_ && mods == pending_mods_) {
+                // This is a double-click!
+                const auto mouse_btn = static_cast<input::MouseButton>(button);
+                const input::MouseButtonTrigger trigger{mouse_btn, mods, true};
+                input_bindings_->setBinding(rebinding_mode_, *rebinding_action_, trigger);
+                rebinding_action_.reset();
+                waiting_for_double_click_ = false;
+                pending_button_ = -1;
+                return;
+            }
+            // Different button - commit the first click as single and start new wait
+        }
+
+        // First click - start waiting for potential second click
+        waiting_for_double_click_ = true;
+        pending_button_ = button;
+        pending_mods_ = mods;
+        first_click_time_ = std::chrono::steady_clock::now();
+    }
+
+    void MenuBar::updateCapture() {
+        if (!waiting_for_double_click_ || !rebinding_action_.has_value() || !input_bindings_) {
+            return;
+        }
+
+        // Check if we've waited long enough for a double-click
+        auto now = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(now - first_click_time_).count();
+
+        if (elapsed >= DOUBLE_CLICK_WAIT_TIME) {
+            // Timeout - commit as single-click (drag) binding
+            const auto mouse_btn = static_cast<input::MouseButton>(pending_button_);
+            const input::MouseDragTrigger trigger{mouse_btn, pending_mods_};
+            input_bindings_->setBinding(rebinding_mode_, *rebinding_action_, trigger);
+            rebinding_action_.reset();
+            waiting_for_double_click_ = false;
+            pending_button_ = -1;
+        }
     }
 
     void MenuBar::cancelCapture() {
         rebinding_action_.reset();
+        waiting_for_double_click_ = false;
+        pending_button_ = -1;
     }
 
     void MenuBar::renderInputSettingsWindow() {
@@ -473,6 +534,9 @@ namespace lfs::vis::gui {
             cancelCapture();
             return;
         }
+
+        // Check for double-click timeout each frame
+        updateCapture();
 
         constexpr ImGuiWindowFlags WINDOW_FLAGS = ImGuiWindowFlags_NoDocking;
         ImGui::SetNextWindowSize(ImVec2(600, 600), ImGuiCond_FirstUseEver);
@@ -534,8 +598,49 @@ namespace lfs::vis::gui {
                 ImGui::Spacing();
                 ImGui::Spacing();
 
+                ImGui::TextColored(ImVec4(0.26f, 0.59f, 0.98f, 1.0f), "TOOL MODE");
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Select tool mode to view/edit bindings");
+                ImGui::Spacing();
+
+                // Tool mode selector
+                static constexpr input::ToolMode TOOL_MODES[] = {
+                    input::ToolMode::GLOBAL,
+                    input::ToolMode::SELECTION,
+                    input::ToolMode::BRUSH,
+                    input::ToolMode::ALIGN,
+                    input::ToolMode::CROP_BOX,
+                };
+
+                if (is_rebinding) {
+                    ImGui::BeginDisabled();
+                }
+
+                if (ImGui::BeginCombo("##toolmode", getToolModeName(selected_tool_mode_))) {
+                    for (const auto mode : TOOL_MODES) {
+                        const bool is_selected = (mode == selected_tool_mode_);
+                        if (ImGui::Selectable(getToolModeName(mode), is_selected)) {
+                            selected_tool_mode_ = mode;
+                        }
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+
+                if (is_rebinding) {
+                    ImGui::EndDisabled();
+                }
+
+                ImGui::Spacing();
+                ImGui::Spacing();
+
                 ImGui::TextColored(ImVec4(0.26f, 0.59f, 0.98f, 1.0f), "CURRENT BINDINGS");
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Click Rebind, then press key or mouse button");
+                if (selected_tool_mode_ == input::ToolMode::GLOBAL) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Global bindings apply everywhere unless overridden");
+                } else {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Tool-specific bindings override global bindings");
+                }
                 ImGui::Spacing();
 
                 constexpr ImGuiTableFlags TABLE_FLAGS = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
@@ -560,51 +665,84 @@ namespace lfs::vis::gui {
                         ImGui::TableNextColumn();
                     };
 
+                    const auto mode = selected_tool_mode_;
+
+                    // Navigation - always relevant for all tools
                     renderSectionHeader("NAVIGATION");
-                    renderBindingRow(input::Action::CAMERA_ORBIT);
-                    renderBindingRow(input::Action::CAMERA_PAN);
-                    renderBindingRow(input::Action::CAMERA_ZOOM);
-                    renderBindingRow(input::Action::CAMERA_MOVE_FORWARD);
-                    renderBindingRow(input::Action::CAMERA_MOVE_BACKWARD);
-                    renderBindingRow(input::Action::CAMERA_MOVE_LEFT);
-                    renderBindingRow(input::Action::CAMERA_MOVE_RIGHT);
-                    renderBindingRow(input::Action::CAMERA_MOVE_UP);
-                    renderBindingRow(input::Action::CAMERA_MOVE_DOWN);
-                    renderBindingRow(input::Action::CAMERA_RESET_HOME);
-                    renderBindingRow(input::Action::CAMERA_NEXT_VIEW);
-                    renderBindingRow(input::Action::CAMERA_PREV_VIEW);
-                    renderBindingRow(input::Action::CAMERA_SPEED_UP);
-                    renderBindingRow(input::Action::CAMERA_SPEED_DOWN);
-                    renderBindingRow(input::Action::ZOOM_SPEED_UP);
-                    renderBindingRow(input::Action::ZOOM_SPEED_DOWN);
+                    renderBindingRow(input::Action::CAMERA_ORBIT, mode);
+                    renderBindingRow(input::Action::CAMERA_PAN, mode);
+                    renderBindingRow(input::Action::CAMERA_ZOOM, mode);
+                    renderBindingRow(input::Action::CAMERA_SET_PIVOT, mode);
+                    renderBindingRow(input::Action::CAMERA_MOVE_FORWARD, mode);
+                    renderBindingRow(input::Action::CAMERA_MOVE_BACKWARD, mode);
+                    renderBindingRow(input::Action::CAMERA_MOVE_LEFT, mode);
+                    renderBindingRow(input::Action::CAMERA_MOVE_RIGHT, mode);
+                    renderBindingRow(input::Action::CAMERA_MOVE_UP, mode);
+                    renderBindingRow(input::Action::CAMERA_MOVE_DOWN, mode);
+                    renderBindingRow(input::Action::CAMERA_SPEED_UP, mode);
+                    renderBindingRow(input::Action::CAMERA_SPEED_DOWN, mode);
+                    renderBindingRow(input::Action::ZOOM_SPEED_UP, mode);
+                    renderBindingRow(input::Action::ZOOM_SPEED_DOWN, mode);
 
-                    renderSectionHeader("SELECTION");
-                    renderBindingRow(input::Action::SELECTION_ADD);
-                    renderBindingRow(input::Action::SELECTION_REMOVE);
-                    renderBindingRow(input::Action::SELECT_MODE_CENTERS);
-                    renderBindingRow(input::Action::SELECT_MODE_RECTANGLE);
-                    renderBindingRow(input::Action::SELECT_MODE_POLYGON);
-                    renderBindingRow(input::Action::SELECT_MODE_LASSO);
-                    renderBindingRow(input::Action::SELECT_MODE_RINGS);
-                    renderBindingRow(input::Action::TOGGLE_DEPTH_MODE);
-                    renderBindingRow(input::Action::DEPTH_ADJUST_FAR);
-                    renderBindingRow(input::Action::DEPTH_ADJUST_SIDE);
+                    if (mode == input::ToolMode::GLOBAL) {
+                        // These only make sense globally
+                        renderBindingRow(input::Action::CAMERA_RESET_HOME, mode);
+                        renderBindingRow(input::Action::CAMERA_NEXT_VIEW, mode);
+                        renderBindingRow(input::Action::CAMERA_PREV_VIEW, mode);
+                    }
 
-                    renderSectionHeader("EDITING");
-                    renderBindingRow(input::Action::DELETE_SELECTED);
-                    renderBindingRow(input::Action::UNDO);
-                    renderBindingRow(input::Action::REDO);
-                    renderBindingRow(input::Action::INVERT_SELECTION);
-                    renderBindingRow(input::Action::DESELECT_ALL);
-                    renderBindingRow(input::Action::APPLY_CROP_BOX);
-                    renderBindingRow(input::Action::CANCEL_POLYGON);
-                    renderBindingRow(input::Action::CYCLE_BRUSH_MODE);
+                    // Tool-specific actions
+                    if (mode == input::ToolMode::GLOBAL ||
+                        mode == input::ToolMode::SELECTION ||
+                        mode == input::ToolMode::BRUSH) {
+                        renderSectionHeader("SELECTION");
+                        renderBindingRow(input::Action::SELECTION_ADD, mode);
+                        renderBindingRow(input::Action::SELECTION_REMOVE, mode);
 
-                    renderSectionHeader("VIEW");
-                    renderBindingRow(input::Action::TOGGLE_SPLIT_VIEW);
-                    renderBindingRow(input::Action::TOGGLE_GT_COMPARISON);
-                    renderBindingRow(input::Action::CYCLE_PLY);
-                    renderBindingRow(input::Action::CYCLE_SELECTION_VIS);
+                        if (mode == input::ToolMode::GLOBAL) {
+                            renderBindingRow(input::Action::SELECT_MODE_CENTERS, mode);
+                            renderBindingRow(input::Action::SELECT_MODE_RECTANGLE, mode);
+                            renderBindingRow(input::Action::SELECT_MODE_POLYGON, mode);
+                            renderBindingRow(input::Action::SELECT_MODE_LASSO, mode);
+                            renderBindingRow(input::Action::SELECT_MODE_RINGS, mode);
+                        }
+
+                        if (mode == input::ToolMode::GLOBAL || mode == input::ToolMode::SELECTION) {
+                            renderBindingRow(input::Action::TOGGLE_DEPTH_MODE, mode);
+                            renderBindingRow(input::Action::DEPTH_ADJUST_FAR, mode);
+                            renderBindingRow(input::Action::DEPTH_ADJUST_SIDE, mode);
+                        }
+                    }
+
+                    if (mode == input::ToolMode::BRUSH) {
+                        renderSectionHeader("BRUSH");
+                        renderBindingRow(input::Action::CYCLE_BRUSH_MODE, mode);
+                        renderBindingRow(input::Action::BRUSH_RESIZE, mode);
+                    }
+
+                    if (mode == input::ToolMode::CROP_BOX) {
+                        renderSectionHeader("CROP BOX");
+                        renderBindingRow(input::Action::APPLY_CROP_BOX, mode);
+                    }
+
+                    // Editing - global and most tools
+                    if (mode == input::ToolMode::GLOBAL) {
+                        renderSectionHeader("EDITING");
+                        renderBindingRow(input::Action::DELETE_SELECTED, mode);
+                        renderBindingRow(input::Action::UNDO, mode);
+                        renderBindingRow(input::Action::REDO, mode);
+                        renderBindingRow(input::Action::INVERT_SELECTION, mode);
+                        renderBindingRow(input::Action::DESELECT_ALL, mode);
+                        renderBindingRow(input::Action::APPLY_CROP_BOX, mode);
+                        renderBindingRow(input::Action::CANCEL_POLYGON, mode);
+                        renderBindingRow(input::Action::CYCLE_BRUSH_MODE, mode);
+
+                        renderSectionHeader("VIEW");
+                        renderBindingRow(input::Action::TOGGLE_SPLIT_VIEW, mode);
+                        renderBindingRow(input::Action::TOGGLE_GT_COMPARISON, mode);
+                        renderBindingRow(input::Action::CYCLE_PLY, mode);
+                        renderBindingRow(input::Action::CYCLE_SELECTION_VIS, mode);
+                    }
 
                     ImGui::EndTable();
                 }
@@ -682,6 +820,7 @@ namespace lfs::vis::gui {
             }
 
             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Save to persist custom bindings");
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Tip: Double-click to bind double-click action");
         }
         ImGui::End();
 

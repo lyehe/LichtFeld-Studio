@@ -247,38 +247,34 @@ namespace lfs::vis {
 
         const bool over_gui = ImGui::GetIO().WantCaptureMouse;
 
-        if (brush_tool_ && brush_tool_->isEnabled() && tool_context_) {
-            const int mods = getModifierKeys();
-            if (!over_gui && brush_tool_->handleMouseButton(button, action, mods, x, y, *tool_context_)) {
-                if (action == GLFW_PRESS) {
-                    drag_mode_ = DragMode::Brush;
-                    drag_button_ = button;
-                } else if (action == GLFW_RELEASE && drag_mode_ == DragMode::Brush) {
-                    drag_mode_ = DragMode::None;
-                    drag_button_ = -1;
-                }
-                return;
-            }
-        }
+        // Single binding lookup with current tool mode
+        const int mods = getModifierKeys();
+        const auto mouse_btn = static_cast<input::MouseButton>(button);
+        const auto tool_mode = getCurrentToolMode();
 
-        if (selection_tool_ && selection_tool_->isEnabled() && tool_context_) {
-            const int mods = getModifierKeys();
-            if (!over_gui && selection_tool_->handleMouseButton(button, action, mods, x, y, *tool_context_)) {
-                if (action == GLFW_PRESS) {
-                    drag_mode_ = DragMode::Brush;
-                    drag_button_ = button;
-                } else if (action == GLFW_RELEASE && drag_mode_ == DragMode::Brush) {
-                    drag_mode_ = DragMode::None;
-                    drag_button_ = -1;
-                }
-                return;
-            }
-        }
+        // Check for double-click
+        auto now = std::chrono::steady_clock::now();
+        const double time_since_last = std::chrono::duration<double>(now - last_general_click_time_).count();
+        const double dist = glm::length(glm::dvec2(x, y) - last_general_click_pos_);
+        const bool is_general_double_click = (time_since_last < DOUBLE_CLICK_TIME &&
+                                               dist < DOUBLE_CLICK_DISTANCE &&
+                                               last_general_click_button_ == button);
 
-        if (align_tool_ && align_tool_->isEnabled() && tool_context_) {
-            if (!over_gui && align_tool_->handleMouseButton(button, action, x, y, *tool_context_)) {
-                return;
-            }
+        // Update click tracking for double-click detection
+        last_general_click_time_ = now;
+        last_general_click_pos_ = {x, y};
+        last_general_click_button_ = button;
+
+        // Check double-click bindings first, then drag bindings
+        auto bound_action = input::Action::NONE;
+        if (is_general_double_click) {
+            bound_action = bindings_.getActionForMouseButton(tool_mode, mouse_btn, mods, true);
+        }
+        if (bound_action == input::Action::NONE) {
+            bound_action = bindings_.getActionForDrag(tool_mode, mouse_btn, mods);
+        }
+        if (bound_action == input::Action::NONE) {
+            bound_action = bindings_.getActionForMouseButton(tool_mode, mouse_btn, mods, false);
         }
 
         if (action == GLFW_PRESS) {
@@ -292,49 +288,60 @@ namespace lfs::vis {
                 return;
             }
 
-            // Only handle camera controls if clicking within the viewport
+            // Only handle if clicking within the viewport
             if (!isInViewport(x, y)) {
                 return;
             }
 
-            viewport_.camera.initScreenPos(glm::vec2(x, y));
-
-            const int mods = getModifierKeys();
-            const auto mouse_btn = static_cast<input::MouseButton>(button);
-
-            if (const auto bound_action = bindings_.getActionForDrag(mouse_btn, mods)) {
+            switch (bound_action) {
+            case input::Action::CAMERA_PAN:
+                viewport_.camera.initScreenPos(glm::vec2(x, y));
+                drag_mode_ = DragMode::Pan;
                 drag_button_ = button;
-                switch (*bound_action) {
-                case input::Action::CAMERA_PAN: {
-                    // Double-click sets pivot
-                    const auto now = std::chrono::steady_clock::now();
-                    const double time_since_last = std::chrono::duration<double>(now - last_pivot_click_time_).count();
-                    const double dist = glm::length(glm::dvec2(x, y) - last_pivot_click_pos_);
+                break;
 
-                    if (time_since_last < DOUBLE_CLICK_TIME && dist < DOUBLE_CLICK_DISTANCE) {
-                        const glm::vec3 new_pivot = unprojectScreenPoint(x, y);
-                        const float current_distance = glm::length(viewport_.camera.getPivot() - viewport_.camera.t);
-                        const glm::vec3 forward = glm::normalize(viewport_.camera.R * glm::vec3(0, 0, 1));
-                        viewport_.camera.t = new_pivot - forward * current_distance;
-                        viewport_.camera.setPivot(new_pivot);
-                        publishCameraMove();
+            case input::Action::CAMERA_ORBIT:
+                viewport_.camera.initScreenPos(glm::vec2(x, y));
+                drag_mode_ = DragMode::Orbit;
+                drag_button_ = button;
+                viewport_.camera.startRotateAroundCenter(glm::vec2(x, y), static_cast<float>(glfwGetTime()));
+                break;
+
+            case input::Action::CAMERA_SET_PIVOT: {
+                const glm::vec3 new_pivot = unprojectScreenPoint(x, y);
+                const float current_distance = glm::length(viewport_.camera.getPivot() - viewport_.camera.t);
+                const glm::vec3 forward = glm::normalize(viewport_.camera.R * glm::vec3(0, 0, 1));
+                viewport_.camera.t = new_pivot - forward * current_distance;
+                viewport_.camera.setPivot(new_pivot);
+                publishCameraMove();
+                break;
+            }
+
+            case input::Action::SELECTION_ADD:
+            case input::Action::SELECTION_REMOVE:
+                if (!over_gui && tool_context_) {
+                    if (selection_tool_ && selection_tool_->isEnabled()) {
+                        if (selection_tool_->handleMouseButton(button, action, mods, x, y, *tool_context_)) {
+                            drag_mode_ = DragMode::Brush;
+                            drag_button_ = button;
+                        }
+                    } else if (brush_tool_ && brush_tool_->isEnabled()) {
+                        if (brush_tool_->handleMouseButton(button, action, mods, x, y, *tool_context_)) {
+                            drag_mode_ = DragMode::Brush;
+                            drag_button_ = button;
+                        }
                     }
+                }
+                break;
 
-                    last_pivot_click_time_ = now;
-                    last_pivot_click_pos_ = {x, y};
-                    drag_mode_ = DragMode::Pan;
-                    break;
+            case input::Action::NONE:
+            default:
+                if (align_tool_ && align_tool_->isEnabled() && tool_context_) {
+                    if (!over_gui && align_tool_->handleMouseButton(button, action, x, y, *tool_context_)) {
+                        return;
+                    }
                 }
-                case input::Action::CAMERA_ORBIT: {
-                    drag_mode_ = DragMode::Orbit;
-                    viewport_.camera.startRotateAroundCenter(
-                        glm::vec2(x, y), static_cast<float>(glfwGetTime()));
-                    break;
-                }
-                default:
-                    drag_button_ = -1;
-                    break;
-                }
+                break;
             }
         } else if (action == GLFW_RELEASE) {
             bool was_dragging = false;
@@ -348,6 +355,15 @@ namespace lfs::vis {
                 drag_mode_ = DragMode::None;
                 drag_button_ = -1;
                 was_dragging = true;
+            } else if (drag_mode_ == DragMode::Brush) {
+                // Release for selection/brush tools
+                if (selection_tool_ && selection_tool_->isEnabled() && tool_context_) {
+                    selection_tool_->handleMouseButton(button, action, mods, x, y, *tool_context_);
+                } else if (brush_tool_ && brush_tool_->isEnabled() && tool_context_) {
+                    brush_tool_->handleMouseButton(button, action, mods, x, y, *tool_context_);
+                }
+                drag_mode_ = DragMode::None;
+                drag_button_ = -1;
             }
 
             if (was_dragging) {
@@ -574,8 +590,10 @@ namespace lfs::vis {
         // Handle key press actions through bindings
         if (action == GLFW_PRESS && !ImGui::IsAnyItemActive()) {
             // Check if this key+mods triggers a bound action
-            if (auto bound_action = bindings_.getActionForKey(key, mods)) {
-                switch (*bound_action) {
+            const auto tool_mode = getCurrentToolMode();
+            const auto bound_action = bindings_.getActionForKey(tool_mode, key, mods);
+            if (bound_action != input::Action::NONE) {
+                switch (bound_action) {
                 case input::Action::TOGGLE_SPLIT_VIEW:
                     cmd::ToggleSplitView{}.emit();
                     return;
@@ -1135,6 +1153,13 @@ namespace lfs::vis {
 
         // Transform from camera space to world space
         return glm::vec3(glm::inverse(w2c) * view_pos);
+    }
+
+    input::ToolMode InputController::getCurrentToolMode() const {
+        if (selection_tool_ && selection_tool_->isEnabled()) return input::ToolMode::SELECTION;
+        if (brush_tool_ && brush_tool_->isEnabled()) return input::ToolMode::BRUSH;
+        if (align_tool_ && align_tool_->isEnabled()) return input::ToolMode::ALIGN;
+        return input::ToolMode::GLOBAL;
     }
 
 } // namespace lfs::vis
