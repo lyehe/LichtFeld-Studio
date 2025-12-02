@@ -953,6 +953,20 @@ namespace lfs::vis {
         }.emit();
         emitSceneChanged();
 
+        // Update crop box to fit pasted data
+        if (rendering_manager_) {
+            glm::vec3 min_bounds, max_bounds;
+            if (lfs::core::compute_bounds(*clipboard_, min_bounds, max_bounds)) {
+                const glm::vec3 center = (min_bounds + max_bounds) * 0.5f;
+                const glm::vec3 half_size = (max_bounds - min_bounds) * 0.5f;
+                auto settings = rendering_manager_->getSettings();
+                settings.crop_min = -half_size;
+                settings.crop_max = half_size;
+                settings.crop_transform = lfs::geometry::EuclideanTransform({1, 0, 0, 0}, center);
+                rendering_manager_->updateSettings(settings);
+            }
+        }
+
         LOG_INFO("Pasted {} gaussians as '{}'", count, name);
         return name;
     }
