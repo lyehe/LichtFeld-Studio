@@ -1089,20 +1089,17 @@ namespace lfs::vis::tools {
 
         const auto& viewport = ctx.getViewport();
         const glm::quat cam_quat = glm::quat_cast(viewport.camera.R);
-        const lfs::geometry::EuclideanTransform crop_transform(cam_quat, viewport.camera.t);
+        const lfs::geometry::EuclideanTransform filter_transform(cam_quat, viewport.camera.t);
 
         constexpr float Y_BOUND = 10000.0f;
-        const glm::vec3 crop_min(-frustum_half_width_, -Y_BOUND, 0.0f);
-        const glm::vec3 crop_max(frustum_half_width_, Y_BOUND, depth_far_);
+        const glm::vec3 filter_min(-frustum_half_width_, -Y_BOUND, 0.0f);
+        const glm::vec3 filter_max(frustum_half_width_, Y_BOUND, depth_far_);
 
         auto settings = rm->getSettings();
-        settings.crop_transform = crop_transform;
-        settings.crop_min = crop_min;
-        settings.crop_max = crop_max;
-        settings.use_crop_box = true;
-        settings.show_crop_box = false;
-        settings.crop_inverse = false;
-        settings.crop_desaturate = true;
+        settings.depth_filter_enabled = true;
+        settings.depth_filter_transform = filter_transform;
+        settings.depth_filter_min = filter_min;
+        settings.depth_filter_max = filter_max;
         rm->updateSettings(settings);
     }
 
@@ -1112,8 +1109,7 @@ namespace lfs::vis::tools {
         auto* const rm = ctx.getRenderingManager();
         if (rm) {
             auto settings = rm->getSettings();
-            settings.use_crop_box = false;
-            settings.crop_desaturate = false;
+            settings.depth_filter_enabled = false;
             rm->updateSettings(settings);
         }
     }

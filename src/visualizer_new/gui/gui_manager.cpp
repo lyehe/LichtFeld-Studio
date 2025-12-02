@@ -29,6 +29,8 @@
 #include "tools/brush_tool.hpp"
 #include "tools/selection_tool.hpp"
 #include "rendering/rendering_manager.hpp"
+#include "scene/scene.hpp"
+#include "scene/scene_manager.hpp"
 #include "visualizer_impl.hpp"
 
 #include <chrono>
@@ -1021,8 +1023,17 @@ namespace lfs::vis::gui {
             showWindow(e.window_name, e.show);
         });
 
-        ui::NodeSelected::when([this](const auto&) { deactivateAllTools(); });
-        ui::NodeDeselected::when([this](const auto&) { deactivateAllTools(); });
+        ui::NodeSelected::when([this](const auto&) {
+            if (auto* const t = viewer_->getSelectionTool()) t->setEnabled(false);
+            if (auto* const t = viewer_->getBrushTool()) t->setEnabled(false);
+            if (auto* const t = viewer_->getAlignTool()) t->setEnabled(false);
+            if (auto* const sm = viewer_->getSceneManager()) sm->syncCropBoxToRenderSettings();
+        });
+        ui::NodeDeselected::when([this](const auto&) {
+            if (auto* const t = viewer_->getSelectionTool()) t->setEnabled(false);
+            if (auto* const t = viewer_->getBrushTool()) t->setEnabled(false);
+            if (auto* const t = viewer_->getAlignTool()) t->setEnabled(false);
+        });
         state::PLYRemoved::when([this](const auto&) { deactivateAllTools(); });
         state::SceneCleared::when([this](const auto&) { deactivateAllTools(); });
 
@@ -1199,8 +1210,26 @@ namespace lfs::vis::gui {
 
         auto settings = render_manager->getSettings();
 
-        // Only draw gizmo if crop box is visible
+        // Only draw gizmo if cropbox tool is active
         if (!settings.show_crop_box)
+            return;
+
+        // Get the SELECTED node's cropbox - gizmo follows selection
+        auto* scene_manager = ctx.viewer->getSceneManager();
+        if (!scene_manager)
+            return;
+
+        // Must have a selected node with a visible cropbox
+        const NodeId selected_cropbox_id = scene_manager->getSelectedNodeCropBoxId();
+        if (selected_cropbox_id == NULL_NODE)
+            return;
+
+        const auto* cropbox_node = scene_manager->getScene().getNodeById(selected_cropbox_id);
+        if (!cropbox_node || !cropbox_node->visible || !cropbox_node->cropbox)
+            return;
+
+        // Check parent is also visible
+        if (!scene_manager->getScene().isNodeEffectivelyVisible(selected_cropbox_id))
             return;
 
         // Get camera matrices - use viewport_size_ for aspect ratio to match bbox renderer
@@ -1213,12 +1242,19 @@ namespace lfs::vis::gui {
         const glm::mat4 projection = glm::perspective(fov_rad, aspect,
             lfs::rendering::DEFAULT_NEAR_PLANE, lfs::rendering::DEFAULT_FAR_PLANE);
 
+        // Use the selected node's cropbox data
+        const glm::vec3 cropbox_min = cropbox_node->cropbox->min;
+        const glm::vec3 cropbox_max = cropbox_node->cropbox->max;
+        const glm::mat4 cropbox_world_transform = scene_manager->getScene().getWorldTransform(selected_cropbox_id);
+
         // Build gizmo matrix: T * R * S where S encodes the box size
         // ImGuizmo BOUNDS mode expects unit cube [-0.5, 0.5] with size in matrix scale
-        const glm::vec3 translation = settings.crop_transform.getTranslation();
-        const glm::mat3 rotation3x3 = settings.crop_transform.getRotationMat();
-        const glm::vec3 original_size = settings.crop_max - settings.crop_min;
-        const glm::vec3 original_center = (settings.crop_min + settings.crop_max) * 0.5f;
+        const glm::vec3 original_size = cropbox_max - cropbox_min;
+        const glm::vec3 original_center = (cropbox_min + cropbox_max) * 0.5f;
+
+        // Extract translation and rotation from world transform
+        const glm::vec3 translation = glm::vec3(cropbox_world_transform[3]);
+        const glm::mat3 rotation3x3 = glm::mat3(cropbox_world_transform);
 
         // Build T * R * S matrix
         glm::mat4 gizmo_matrix = glm::translate(glm::mat4(1.0f), translation + rotation3x3 * original_center);
@@ -1340,6 +1376,29 @@ namespace lfs::vis::gui {
 
             // Always update settings for visual feedback during dragging
             render_manager->updateSettings(settings);
+
+            // Sync changes to the selected cropbox node
+            auto* mutable_cropbox = scene_manager->getScene().getMutableNode(cropbox_node->name);
+            if (mutable_cropbox && mutable_cropbox->cropbox) {
+                mutable_cropbox->cropbox->min = settings.crop_min;
+                mutable_cropbox->cropbox->max = settings.crop_max;
+
+                // Convert world transform back to local by removing parent's transform
+                // world = parent * local => local = inverse(parent) * world
+                glm::mat4 new_world_transform = settings.crop_transform.toMat4();
+                if (mutable_cropbox->parent_id != NULL_NODE) {
+                    const auto* parent = scene_manager->getScene().getNodeById(mutable_cropbox->parent_id);
+                    if (parent) {
+                        glm::mat4 parent_world = scene_manager->getScene().getWorldTransform(mutable_cropbox->parent_id);
+                        mutable_cropbox->local_transform = glm::inverse(parent_world) * new_world_transform;
+                    } else {
+                        mutable_cropbox->local_transform = new_world_transform;
+                    }
+                } else {
+                    mutable_cropbox->local_transform = new_world_transform;
+                }
+                mutable_cropbox->transform_dirty = true;
+            }
         }
 
         // Create undo command when manipulation ends
@@ -1390,13 +1449,19 @@ namespace lfs::vis::gui {
         if (scene_manager->isSelectedNodeLocked())
             return;
 
+        // Don't show gizmo if selected node is not visible
+        const auto& scene = scene_manager->getScene();
+        const auto* selected_node = scene.getNode(scene_manager->getSelectedNodeName());
+        if (!selected_node || !scene.isNodeEffectivelyVisible(selected_node->id))
+            return;
+
         auto* render_manager = ctx.viewer->getRenderingManager();
         if (!render_manager)
             return;
 
         auto settings = render_manager->getSettings();
 
-        // Get camera matrices - use viewport_size_ for aspect ratio (same as cropbox)
+        // Camera matrices
         auto& viewport = ctx.viewer->getViewport();
         const glm::mat4 view = viewport.getViewMatrix();
         const float aspect = viewport_size_.x / viewport_size_.y;
@@ -1407,7 +1472,6 @@ namespace lfs::vis::gui {
         const glm::vec3 center = scene_manager->getSelectedNodeCenter();
         const glm::mat4 node_transform = scene_manager->getSelectedNodeTransform();
         const glm::mat3 rotation_scale(node_transform);
-        // Transform center to world space
         const glm::vec3 gizmo_position = glm::vec3(node_transform * glm::vec4(center, 1.0f));
         const bool use_world_space =
             (gizmo_toolbar_state_.transform_space == panels::TransformSpace::World);

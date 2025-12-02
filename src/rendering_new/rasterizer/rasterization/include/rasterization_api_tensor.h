@@ -6,6 +6,7 @@
 
 #include "core_new/tensor.hpp"
 #include <tuple>
+#include <vector>
 
 namespace lfs::rendering {
 
@@ -81,9 +82,13 @@ namespace lfs::rendering {
         const Tensor* crop_box_max = nullptr,
         bool crop_inverse = false,
         bool crop_desaturate = false,
+        const Tensor* depth_filter_transform = nullptr,
+        const Tensor* depth_filter_min = nullptr,
+        const Tensor* depth_filter_max = nullptr,
         const Tensor* deleted_mask = nullptr,
         unsigned long long* hovered_depth_id = nullptr,
-        int highlight_gaussian_id = -1);
+        int highlight_gaussian_id = -1,
+        const std::vector<bool>& selected_node_mask = {});
 
     /**
      * @brief Select Gaussians within brush radius using GPU

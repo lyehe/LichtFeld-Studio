@@ -111,7 +111,8 @@ namespace lfs::core {
             EVENT(SceneCleared, );
             EVENT(ModelUpdated, int iteration; size_t num_gaussians;);
             EVENT(SceneChanged, );
-            EVENT(PLYAdded, std::string name; size_t node_gaussians; size_t total_gaussians; bool is_visible; std::string parent_name; bool is_group;);
+            // node_type: 0=SPLAT, 1=GROUP, 2=CROPBOX
+            EVENT(PLYAdded, std::string name; size_t node_gaussians; size_t total_gaussians; bool is_visible; std::string parent_name; bool is_group; int node_type;);
             EVENT(PLYRemoved, std::string name; bool children_kept = false; std::string parent_of_removed;);
             EVENT(NodeReparented, std::string name; std::string old_parent; std::string new_parent;);
 

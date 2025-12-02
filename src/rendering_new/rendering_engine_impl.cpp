@@ -174,7 +174,8 @@ namespace lfs::rendering {
             .selection_mode_rings = request.selection_mode_rings,
             .hovered_depth_id = request.hovered_depth_id,
             .highlight_gaussian_id = request.highlight_gaussian_id,
-            .far_plane = request.far_plane};
+            .far_plane = request.far_plane,
+            .selected_node_mask = request.selected_node_mask};
 
         // Convert crop box if present
         std::unique_ptr<lfs::geometry::BoundingBox> temp_crop_box;
@@ -211,6 +212,30 @@ namespace lfs::rendering {
             pipeline_req.crop_box_max = &crop_box_max_tensor;
             pipeline_req.crop_inverse = request.crop_inverse;
             pipeline_req.crop_desaturate = request.crop_desaturate;
+        }
+
+        // Convert depth filter if present (Selection tool - separate from crop box)
+        Tensor depth_filter_transform_tensor, depth_filter_min_tensor, depth_filter_max_tensor;
+        if (request.depth_filter.has_value()) {
+            // Prepare depth filter tensors for GPU desaturation
+            const glm::mat4& w2b = request.depth_filter->transform;
+            std::vector<float> transform_data(16);
+            for (int row = 0; row < 4; ++row) {
+                for (int col = 0; col < 4; ++col) {
+                    transform_data[row * 4 + col] = w2b[col][row];  // Transpose to row-major
+                }
+            }
+            depth_filter_transform_tensor = Tensor::from_vector(transform_data, {4, 4}, lfs::core::Device::CPU).cuda();
+
+            std::vector<float> min_data = {request.depth_filter->min.x, request.depth_filter->min.y, request.depth_filter->min.z};
+            depth_filter_min_tensor = Tensor::from_vector(min_data, {3}, lfs::core::Device::CPU).cuda();
+
+            std::vector<float> max_data = {request.depth_filter->max.x, request.depth_filter->max.y, request.depth_filter->max.z};
+            depth_filter_max_tensor = Tensor::from_vector(max_data, {3}, lfs::core::Device::CPU).cuda();
+
+            pipeline_req.depth_filter_transform = &depth_filter_transform_tensor;
+            pipeline_req.depth_filter_min = &depth_filter_min_tensor;
+            pipeline_req.depth_filter_max = &depth_filter_max_tensor;
         }
 
         auto pipeline_result = pipeline_.render(splat_data, pipeline_req);

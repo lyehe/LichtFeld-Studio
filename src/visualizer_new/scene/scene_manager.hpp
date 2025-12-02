@@ -8,6 +8,7 @@
 #include "core_new/parameters.hpp"
 #include "geometry_new/bounding_box.hpp"
 #include "scene/scene.hpp"
+#include "scene/scene_render_state.hpp"
 #include <filesystem>
 #include <mutex>
 #include <project_new/project.hpp>
@@ -130,12 +131,22 @@ namespace lfs::vis {
         void setSelectedNodeTransform(const glm::mat4& transform);
         glm::mat4 getSelectedNodeTransform() const;
 
+        // Cropbox operations for selected node
+        NodeId getSelectedNodeCropBoxId() const;
+        CropBoxData* getSelectedNodeCropBox();
+        const CropBoxData* getSelectedNodeCropBox() const;
+        void syncCropBoxToRenderSettings();  // Sync selected node's cropbox to render settings
+
         void loadDataset(const std::filesystem::path& path,
                          const lfs::core::param::TrainingParameters& params);
         void clear();
 
         // For rendering - gets appropriate model
         const lfs::core::SplatData* getModelForRendering() const;
+
+        // Build complete render state from scene graph
+        // This is the single source of truth for all rendering data
+        SceneRenderState buildRenderState() const;
 
         // Direct info queries
         struct SceneInfo {

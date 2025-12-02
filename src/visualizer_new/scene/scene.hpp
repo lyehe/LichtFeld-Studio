@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "core_new/observable.hpp"
 #include "core_new/splat_data.hpp"
 #include "core_new/tensor.hpp"
 #include <glm/glm.hpp>
@@ -21,8 +22,19 @@ namespace lfs::vis {
 
     // Node types
     enum class NodeType : uint8_t {
-        SPLAT,   // Contains gaussian splat data
-        GROUP    // Empty transform node for organization
+        SPLAT,    // Contains gaussian splat data
+        GROUP,    // Empty transform node for organization
+        CROPBOX   // Crop box visualization (child of SPLAT)
+    };
+
+    // Crop box data for CROPBOX nodes
+    struct CropBoxData {
+        glm::vec3 min{-1.0f, -1.0f, -1.0f};
+        glm::vec3 max{1.0f, 1.0f, 1.0f};
+        bool inverse = false;      // Invert crop (keep outside instead of inside)
+        bool enabled = false;      // Whether to use for filtering gaussians
+        glm::vec3 color{1.0f, 1.0f, 0.0f};  // Visualization color
+        float line_width = 2.0f;   // Line width for rendering
     };
 
     // Selection group with ID, name, and color
@@ -34,28 +46,51 @@ namespace lfs::vis {
         bool locked = false;         // If true, painting with other groups won't overwrite
     };
 
+    class Scene;  // Forward declaration
+
+    // Scene graph node with Observable properties
+    // Changes to observable properties automatically invalidate the scene cache
+    class SceneNode {
+    public:
+        SceneNode() = default;
+        explicit SceneNode(Scene* scene);
+
+        // Initialize observables with scene callback (called after node is added to scene)
+        void initObservables(Scene* scene);
+
+        // Non-observable identity
+        NodeId id = NULL_NODE;
+        NodeId parent_id = NULL_NODE;
+        std::vector<NodeId> children;
+        NodeType type = NodeType::SPLAT;
+        std::string name;
+
+        // Data (changes require manual cache invalidation via scene)
+        std::unique_ptr<lfs::core::SplatData> model;
+        std::unique_ptr<CropBoxData> cropbox;
+        size_t gaussian_count = 0;
+        glm::vec3 centroid{0.0f};
+
+        // Cached world transform (mutable for lazy evaluation)
+        mutable glm::mat4 world_transform{1.0f};
+        mutable bool transform_dirty = true;
+
+        // Observable properties - changes auto-invalidate scene cache
+        lfs::core::Observable<glm::mat4> local_transform{glm::mat4{1.0f}, nullptr};
+        lfs::core::Observable<bool> visible{true, nullptr};
+        lfs::core::Observable<bool> locked{false, nullptr};
+
+        // Legacy accessor
+        [[nodiscard]] const glm::mat4& transform() const { return local_transform.get(); }
+
+    private:
+        Scene* scene_ = nullptr;
+    };
+
     class Scene {
     public:
-        struct Node {
-            NodeId id = NULL_NODE;
-            NodeId parent_id = NULL_NODE;          // NULL_NODE = root level
-            std::vector<NodeId> children;
-            NodeType type = NodeType::SPLAT;
-
-            std::string name;
-            std::unique_ptr<lfs::core::SplatData> model;  // Only for SPLAT type
-            glm::mat4 local_transform{1.0f};
-            mutable glm::mat4 world_transform{1.0f};
-            mutable bool transform_dirty = true;
-            bool visible = true;
-            bool locked = false;
-            size_t gaussian_count = 0;
-            glm::vec3 centroid{0.0f};
-
-            // Legacy accessor (transform is now local_transform)
-            [[nodiscard]] glm::mat4& transform() { return local_transform; }
-            [[nodiscard]] const glm::mat4& transform() const { return local_transform; }
-        };
+        // Alias for backwards compatibility
+        using Node = SceneNode;
 
         Scene();
         ~Scene() = default;
@@ -84,6 +119,7 @@ namespace lfs::vis {
         // Scene graph operations
         NodeId addGroup(const std::string& name, NodeId parent = NULL_NODE);
         NodeId addSplat(const std::string& name, std::unique_ptr<lfs::core::SplatData> model, NodeId parent = NULL_NODE);
+        NodeId addCropBox(const std::string& name, NodeId parent_splat);
         void reparent(NodeId node, NodeId new_parent);
         // Duplicate a node (and all children recursively for groups)
         // Returns new node name (original name with "_copy" or "_copy_N" suffix)
@@ -100,6 +136,22 @@ namespace lfs::vis {
         [[nodiscard]] glm::vec3 getNodeBoundsCenter(NodeId id) const;
         [[nodiscard]] bool getNodeBounds(NodeId id, glm::vec3& out_min, glm::vec3& out_max) const;
 
+        // Cropbox operations
+        [[nodiscard]] NodeId getCropBoxForSplat(NodeId splat_id) const;
+        [[nodiscard]] NodeId getOrCreateCropBoxForSplat(NodeId splat_id);
+        [[nodiscard]] CropBoxData* getCropBoxData(NodeId cropbox_id);
+        [[nodiscard]] const CropBoxData* getCropBoxData(NodeId cropbox_id) const;
+        void setCropBoxData(NodeId cropbox_id, const CropBoxData& data);
+
+        // Renderable cropbox info for rendering
+        struct RenderableCropBox {
+            NodeId node_id = NULL_NODE;
+            NodeId parent_splat_id = NULL_NODE;
+            const CropBoxData* data = nullptr;
+            glm::mat4 world_transform{1.0f};
+        };
+        [[nodiscard]] std::vector<RenderableCropBox> getVisibleCropBoxes() const;
+
         // Get combined model for rendering
         const lfs::core::SplatData* getCombinedModel() const;
 
@@ -112,6 +164,11 @@ namespace lfs::vis {
 
         // Get node index in combined model (-1 if not found or not visible)
         [[nodiscard]] int getVisibleNodeIndex(const std::string& name) const;
+
+        // Get mask of selected visible SPLAT nodes for desaturation
+        // When a group is selected, all descendant SPLAT nodes are marked as selected
+        // Returns vector of bools, one per visible SPLAT node (same order as transforms)
+        [[nodiscard]] std::vector<bool> getSelectedNodeMask(const std::string& selected_node_name) const;
 
         // Selection mask for highlighting selected Gaussians
         // Returns nullptr if no selection (all zeros = no selection)
@@ -156,14 +213,17 @@ namespace lfs::vis {
         std::vector<const Node*> getVisibleNodes() const;
 
         // Mark scene data as changed (e.g., after modifying a node's deleted mask)
+        // Also called by SceneNode Observable properties when they change
+        void invalidateCache() { cache_valid_ = false; }
         void markDirty() { invalidateCache(); }
+        void markTransformDirty(NodeId node);
 
         // Permanently remove soft-deleted gaussians from all nodes
         // Returns total number of gaussians removed
         size_t applyDeleted();
 
     private:
-        std::vector<Node> nodes_;
+        std::vector<std::unique_ptr<Node>> nodes_;  // unique_ptr for stable addresses (Observable callbacks capture 'this')
         std::unordered_map<NodeId, size_t> id_to_index_;  // NodeId -> index in nodes_
         NodeId next_node_id_ = 0;
 
@@ -182,11 +242,7 @@ namespace lfs::vis {
         uint8_t active_selection_group_ = 1;  // Default to group 1
         uint8_t next_group_id_ = 1;
 
-        void invalidateCache() { cache_valid_ = false; }
         void rebuildCacheIfNeeded() const;
-
-        // Scene graph helpers
-        void markTransformDirty(NodeId node);
         void updateWorldTransform(const Node& node) const;
 
         // Helper to find group by ID

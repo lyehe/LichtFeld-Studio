@@ -83,6 +83,12 @@ namespace lfs::rendering {
         bool selection_mode_rings = false;
         bool crop_inverse = false;
         bool crop_desaturate = false;
+        // Depth filter for selection tool (separate from crop box, always desaturates outside)
+        std::optional<BoundingBox> depth_filter;
+        // Desaturate unselected nodes (when multiple PLYs visible)
+        // Mask of selected nodes: true = node is selected (don't desaturate), false = desaturate
+        // Size matches number of transforms. Empty = no desaturation.
+        std::vector<bool> selected_node_mask;
         unsigned long long* hovered_depth_id = nullptr;
         int highlight_gaussian_id = -1;
         float far_plane = 1e10f;

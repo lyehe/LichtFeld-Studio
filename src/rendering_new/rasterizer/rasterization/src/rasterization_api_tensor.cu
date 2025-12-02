@@ -6,6 +6,7 @@
 #include "rasterization_api_tensor.h"
 #include "rasterization_config.h"
 #include "core_new/cuda/memory_arena.hpp"
+#include <algorithm>
 #include <functional>
 #include <stdexcept>
 #include <tuple>
@@ -73,9 +74,13 @@ namespace lfs::rendering {
         const Tensor* crop_box_max,
         bool crop_inverse,
         bool crop_desaturate,
+        const Tensor* depth_filter_transform,
+        const Tensor* depth_filter_min,
+        const Tensor* depth_filter_max,
         const Tensor* deleted_mask,
         unsigned long long* hovered_depth_id,
-        int highlight_gaussian_id) {
+        int highlight_gaussian_id,
+        const std::vector<bool>& selected_node_mask) {
 
         check_tensor_input(config::debug, means, "means");
         check_tensor_input(config::debug, scales_raw, "scales_raw");
@@ -163,12 +168,43 @@ namespace lfs::rendering {
             crop_box_max_ptr = reinterpret_cast<const float3*>(crop_box_max_contig.ptr<float>());
         }
 
+        // Prepare depth filter parameters (Selection tool - separate from crop box)
+        const float* depth_filter_transform_ptr = nullptr;
+        const float3* depth_filter_min_ptr = nullptr;
+        const float3* depth_filter_max_ptr = nullptr;
+        Tensor depth_filter_transform_contig, depth_filter_min_contig, depth_filter_max_contig;
+        if (depth_filter_transform != nullptr && depth_filter_transform->is_valid() &&
+            depth_filter_min != nullptr && depth_filter_min->is_valid() &&
+            depth_filter_max != nullptr && depth_filter_max->is_valid()) {
+            depth_filter_transform_contig = depth_filter_transform->is_contiguous() ? *depth_filter_transform : depth_filter_transform->contiguous();
+            depth_filter_min_contig = depth_filter_min->is_contiguous() ? *depth_filter_min : depth_filter_min->contiguous();
+            depth_filter_max_contig = depth_filter_max->is_contiguous() ? *depth_filter_max : depth_filter_max->contiguous();
+            depth_filter_transform_ptr = depth_filter_transform_contig.ptr<float>();
+            depth_filter_min_ptr = reinterpret_cast<const float3*>(depth_filter_min_contig.ptr<float>());
+            depth_filter_max_ptr = reinterpret_cast<const float3*>(depth_filter_max_contig.ptr<float>());
+        }
+
         // Prepare deleted mask pointer
         const bool* deleted_mask_ptr = nullptr;
         Tensor deleted_mask_contig;
         if (deleted_mask != nullptr && deleted_mask->is_valid() && deleted_mask->numel() > 0) {
             deleted_mask_contig = deleted_mask->is_contiguous() ? *deleted_mask : deleted_mask->contiguous();
             deleted_mask_ptr = deleted_mask_contig.ptr<bool>();
+        }
+
+        // Selected node mask (small, typically < 20 nodes)
+        const bool* selected_node_mask_ptr = nullptr;
+        Tensor selected_node_mask_tensor;
+        const int num_selected_nodes = static_cast<int>(selected_node_mask.size());
+        if (num_selected_nodes > 0) {
+            // vector<bool> is not contiguous, convert to uint8_t
+            std::vector<uint8_t> mask_data(num_selected_nodes);
+            std::transform(selected_node_mask.begin(), selected_node_mask.end(),
+                          mask_data.begin(), [](bool b) { return b ? 1 : 0; });
+            selected_node_mask_tensor = Tensor::from_blob(
+                mask_data.data(), {static_cast<size_t>(num_selected_nodes)},
+                lfs::core::Device::CPU, lfs::core::DataType::UInt8).cuda();
+            selected_node_mask_ptr = reinterpret_cast<const bool*>(selected_node_mask_tensor.ptr<uint8_t>());
         }
 
         forward(
@@ -219,9 +255,14 @@ namespace lfs::rendering {
             crop_box_max_ptr,
             crop_inverse,
             crop_desaturate,
+            depth_filter_transform_ptr,
+            depth_filter_min_ptr,
+            depth_filter_max_ptr,
             deleted_mask_ptr,
             hovered_depth_id,
-            highlight_gaussian_id);
+            highlight_gaussian_id,
+            selected_node_mask_ptr,
+            num_selected_nodes);
 
         arena.end_frame(frame_id, true);  // true = from_rendering
         arena.set_rendering_active(false);

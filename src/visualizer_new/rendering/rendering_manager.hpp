@@ -39,6 +39,7 @@ namespace lfs::vis {
         bool use_crop_box = false;
         bool crop_inverse = false;
         bool crop_desaturate = false;
+        bool desaturate_unselected = true;  // Desaturate unselected PLYs when one is selected
         glm::vec3 crop_min = glm::vec3(-1.0f, -1.0f, -1.0f);
         glm::vec3 crop_max = glm::vec3(1.0f, 1.0f, 1.0f);
         glm::vec3 crop_color = glm::vec3(1.0f, 1.0f, 0.0f);
@@ -96,6 +97,12 @@ namespace lfs::vis {
         // Depth clipping
         bool depth_clip_enabled = false;
         float depth_clip_far = 100.0f;
+
+        // Depth filter (Selection tool only - separate from crop box)
+        bool depth_filter_enabled = false;
+        glm::vec3 depth_filter_min = glm::vec3(-50.0f, -10000.0f, 0.0f);
+        glm::vec3 depth_filter_max = glm::vec3(50.0f, 10000.0f, 100.0f);
+        lfs::geometry::EuclideanTransform depth_filter_transform;
     };
 
     struct SplitViewInfo {

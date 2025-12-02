@@ -146,10 +146,12 @@ namespace lfs::rendering {
                                                 request.show_center_markers,
                                                 request.crop_box_transform, request.crop_box_min, request.crop_box_max,
                                                 request.crop_inverse, request.crop_desaturate,
+                                                request.depth_filter_transform, request.depth_filter_min, request.depth_filter_max,
                                                 request.deleted_mask,
                                                 request.hovered_depth_id,
                                                 request.highlight_gaussian_id,
-                                                request.far_plane);
+                                                request.far_plane,
+                                                request.selected_node_mask);
                 result.image = std::move(image);
                 result.depth = std::move(depth);
                 if (request.output_screen_positions) {
@@ -187,10 +189,12 @@ namespace lfs::rendering {
                                             request.show_center_markers,
                                             request.crop_box_transform, request.crop_box_min, request.crop_box_max,
                                             request.crop_inverse, request.crop_desaturate,
+                                            request.depth_filter_transform, request.depth_filter_min, request.depth_filter_max,
                                             request.deleted_mask,
                                             request.hovered_depth_id,
                                             request.highlight_gaussian_id,
-                                            request.far_plane);
+                                            request.far_plane,
+                                            request.selected_node_mask);
             result.image = std::move(image);
             result.depth = std::move(depth);
             if (request.output_screen_positions) {

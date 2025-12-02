@@ -34,10 +34,14 @@ namespace lfs::rendering {
         const Tensor* crop_box_max,
         bool crop_inverse,
         bool crop_desaturate,
+        const Tensor* depth_filter_transform,
+        const Tensor* depth_filter_min,
+        const Tensor* depth_filter_max,
         const Tensor* deleted_mask,
         unsigned long long* hovered_depth_id,
         int highlight_gaussian_id,
-        float far_plane) {
+        float far_plane,
+        const std::vector<bool>& selected_node_mask) {
 
         // Get camera parameters
         const float fx = viewpoint_camera.focal_x();
@@ -140,9 +144,13 @@ namespace lfs::rendering {
             crop_box_max,
             crop_inverse,
             crop_desaturate,
+            depth_filter_transform,
+            depth_filter_min,
+            depth_filter_max,
             actual_deleted_mask,
             hovered_depth_id,
-            highlight_gaussian_id);
+            highlight_gaussian_id,
+            selected_node_mask);
 
         // Manually blend the background since the forward pass does not support it
         // bg_color is [3], need to make it [3, 1, 1]

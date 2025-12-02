@@ -38,9 +38,13 @@ namespace lfs::rendering {
         const Tensor* crop_box_max = nullptr,
         bool crop_inverse = false,
         bool crop_desaturate = false,
+        const Tensor* depth_filter_transform = nullptr,
+        const Tensor* depth_filter_min = nullptr,
+        const Tensor* depth_filter_max = nullptr,
         const Tensor* deleted_mask = nullptr,
         unsigned long long* hovered_depth_id = nullptr,
         int highlight_gaussian_id = -1,
-        float far_plane = 1e10f);
+        float far_plane = 1e10f,
+        const std::vector<bool>& selected_node_mask = {});
 
 } // namespace lfs::rendering

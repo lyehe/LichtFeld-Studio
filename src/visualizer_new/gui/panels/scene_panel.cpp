@@ -55,6 +55,19 @@ namespace lfs::vis::gui {
             if (it != m_plyNodes.end()) {
                 it->visible = event.visible;
                 LOG_TRACE("Updated PLY '{}' visibility in scene panel to: {}", event.name, event.visible);
+
+                // Also update visibility for all children recursively
+                std::function<void(const std::string&, bool)> update_children = [&](const std::string& parent_name, bool visible) {
+                    for (auto& node : m_plyNodes) {
+                        if (node.parent_name == parent_name) {
+                            node.visible = visible;
+                            // Emit visibility change for children too
+                            cmd::SetPLYVisibility{.name = node.name, .visible = visible}.emit();
+                            update_children(node.name, visible);
+                        }
+                    }
+                };
+                update_children(event.name, event.visible);
             }
         });
 
@@ -130,6 +143,7 @@ namespace lfs::vis::gui {
             it->gaussian_count = event.node_gaussians;
             it->parent_name = event.parent_name;
             it->is_group = event.is_group;
+            it->node_type = event.node_type;
         } else {
             m_plyNodes.push_back({
                 .name = event.name,
@@ -138,7 +152,8 @@ namespace lfs::vis::gui {
                 .visible = event.is_visible,
                 .selected = false,
                 .locked = false,
-                .gaussian_count = event.node_gaussians
+                .gaussian_count = event.node_gaussians,
+                .node_type = event.node_type
             });
         }
         updateModeFromTab();
@@ -512,7 +527,7 @@ namespace lfs::vis::gui {
                 cancelRenaming();
             }
         } else {
-            const bool has_children = node.is_group && std::ranges::any_of(m_plyNodes,
+            const bool has_children = (node.is_group || node.node_type == 0) && std::ranges::any_of(m_plyNodes,
                 [&node](const PLYNode& n) { return n.parent_name == node.name; });
 
             constexpr ImGuiTreeNodeFlags BASE_FLAGS = ImGuiTreeNodeFlags_OpenOnArrow;
@@ -521,9 +536,15 @@ namespace lfs::vis::gui {
             if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
             if (node.is_group) flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
-            const std::string label = node.is_group
-                ? node.name
-                : std::format("{} ({:L})", node.name, node.gaussian_count);
+            // Build label based on node type
+            std::string label;
+            if (node.node_type == 2) {  // CROPBOX
+                label = std::format("[Crop] {}", node.name);
+            } else if (node.is_group) {
+                label = node.name;
+            } else {
+                label = std::format("{} ({:L})", node.name, node.gaussian_count);
+            }
 
             const bool is_open = ImGui::TreeNodeEx(label.c_str(), flags);
 
@@ -587,6 +608,23 @@ namespace lfs::vis::gui {
 
             // Context menu
             if (ImGui::BeginPopup(("##ctx_" + node.name).c_str())) {
+                // CROPBOX-specific menu items
+                if (node.node_type == 2) {  // CROPBOX
+                    if (ImGui::MenuItem("Fit to Scene")) {
+                        cmd::FitCropBoxToScene{.use_percentile = false}.emit();
+                    }
+                    if (ImGui::MenuItem("Fit to Scene (Trimmed)")) {
+                        cmd::FitCropBoxToScene{.use_percentile = true}.emit();
+                    }
+                    ImGui::EndPopup();
+                    if (is_open && has_children) {
+                        renderNodeChildren(node.name);
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                    return;  // Skip the rest of the menu for cropbox
+                }
+
                 if (node.is_group && ImGui::MenuItem("Add Group...")) {
                     cmd::AddGroup{.name = "New Group", .parent_name = node.name}.emit();
                 }

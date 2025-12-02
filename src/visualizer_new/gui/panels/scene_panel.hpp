@@ -48,6 +48,7 @@ namespace lfs::vis {
                 bool selected = false;
                 bool locked = false;
                 size_t gaussian_count = 0;
+                int node_type = 0;  // 0=SPLAT, 1=GROUP, 2=CROPBOX
             };
             std::vector<PLYNode> m_plyNodes;
             int m_selectedPLYIndex = -1;

@@ -111,8 +111,12 @@ namespace lfs::vis {
         // Handle node selection from scene panel (both PLYs and Groups)
         ui::NodeSelected::when([this](const auto& event) {
             if (event.type == "PLY" || event.type == "Group") {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                selected_node_ = event.path;
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    selected_node_ = event.path;
+                }
+                // Sync selected node's cropbox to render settings
+                syncCropBoxToRenderSettings();
             }
         });
 
@@ -171,6 +175,15 @@ namespace lfs::vis {
 
             scene_.addNode(name, std::make_unique<lfs::core::SplatData>(std::move(**splat_data)));
 
+            // Create cropbox as child of this splat
+            const auto* splat_node = scene_.getNode(name);
+            if (splat_node) {
+                const NodeId cropbox_id = scene_.getOrCreateCropBoxForSplat(splat_node->id);
+                if (cropbox_id != NULL_NODE) {
+                    LOG_DEBUG("Created cropbox for '{}'", name);
+                }
+            }
+
             // Update content state
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
@@ -198,8 +211,30 @@ namespace lfs::vis {
                 .total_gaussians = scene_.getTotalGaussianCount(),
                 .is_visible = true,
                 .parent_name = "",
-                .is_group = false}
+                .is_group = false,
+                .node_type = 0}  // SPLAT
                 .emit();
+
+            // Emit PLYAdded for the cropbox (re-lookup splat as vector may have reallocated)
+            const auto* splat_for_cropbox = scene_.getNode(name);
+            if (splat_for_cropbox) {
+                const NodeId cropbox_id = scene_.getCropBoxForSplat(splat_for_cropbox->id);
+                if (cropbox_id != NULL_NODE) {
+                    const auto* cropbox_node = scene_.getNodeById(cropbox_id);
+                    if (cropbox_node) {
+                        LOG_DEBUG("Emitting PLYAdded for cropbox '{}'", cropbox_node->name);
+                        state::PLYAdded{
+                            .name = cropbox_node->name,
+                            .node_gaussians = 0,
+                            .total_gaussians = scene_.getTotalGaussianCount(),
+                            .is_visible = true,
+                            .parent_name = name,
+                            .is_group = false,
+                            .node_type = 2}  // CROPBOX
+                            .emit();
+                    }
+                }
+            }
 
             emitSceneChanged();
             updateCropBoxToFitScene(true);
@@ -264,6 +299,12 @@ namespace lfs::vis {
 
             scene_.addNode(name, std::make_unique<lfs::core::SplatData>(std::move(**splat_data)));
 
+            // Create cropbox as child of this splat
+            const auto* splat_node = scene_.getNode(name);
+            if (splat_node) {
+                [[maybe_unused]] const NodeId cropbox_id = scene_.getOrCreateCropBoxForSplat(splat_node->id);
+            }
+
             // Update paths
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
@@ -276,8 +317,30 @@ namespace lfs::vis {
                 .total_gaussians = scene_.getTotalGaussianCount(),
                 .is_visible = is_visible,
                 .parent_name = "",
-                .is_group = false}
+                .is_group = false,
+                .node_type = 0}  // SPLAT
                 .emit();
+
+            // Emit PLYAdded for the cropbox (re-lookup splat as vector may have reallocated)
+            const auto* splat_for_cropbox = scene_.getNode(name);
+            if (splat_for_cropbox) {
+                const NodeId cropbox_id = scene_.getCropBoxForSplat(splat_for_cropbox->id);
+                if (cropbox_id != NULL_NODE) {
+                    const auto* cropbox_node = scene_.getNodeById(cropbox_id);
+                    if (cropbox_node) {
+                        LOG_DEBUG("Emitting PLYAdded for cropbox '{}'", cropbox_node->name);
+                        state::PLYAdded{
+                            .name = cropbox_node->name,
+                            .node_gaussians = 0,
+                            .total_gaussians = scene_.getTotalGaussianCount(),
+                            .is_visible = true,
+                            .parent_name = name,
+                            .is_group = false,
+                            .node_type = 2}  // CROPBOX
+                            .emit();
+                    }
+                }
+            }
 
             emitSceneChanged();
             updateCropBoxToFitScene(true);
@@ -465,6 +528,8 @@ namespace lfs::vis {
             return;
         }
 
+        LOG_DEBUG("setSelectedNodeTransform '{}': pos=[{:.2f}, {:.2f}, {:.2f}]",
+                  node_name, transform[3][0], transform[3][1], transform[3][2]);
         scene_.setNodeTransform(node_name, transform);
         emitSceneChanged();
     }
@@ -481,6 +546,66 @@ namespace lfs::vis {
         }
 
         return scene_.getNodeTransform(node_name);
+    }
+
+    // ========== Cropbox Operations ==========
+
+    NodeId SceneManager::getSelectedNodeCropBoxId() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (selected_node_.empty()) return NULL_NODE;
+
+        const auto* node = scene_.getNode(selected_node_);
+        if (!node) return NULL_NODE;
+
+        // If selected node is a cropbox, return its ID
+        if (node->type == NodeType::CROPBOX) {
+            return node->id;
+        }
+
+        // If selected node is a splat, return its cropbox child
+        if (node->type == NodeType::SPLAT) {
+            return scene_.getCropBoxForSplat(node->id);
+        }
+
+        // For groups, no cropbox
+        return NULL_NODE;
+    }
+
+    CropBoxData* SceneManager::getSelectedNodeCropBox() {
+        const NodeId cropbox_id = getSelectedNodeCropBoxId();
+        if (cropbox_id == NULL_NODE) return nullptr;
+        return scene_.getCropBoxData(cropbox_id);
+    }
+
+    const CropBoxData* SceneManager::getSelectedNodeCropBox() const {
+        const NodeId cropbox_id = getSelectedNodeCropBoxId();
+        if (cropbox_id == NULL_NODE) return nullptr;
+        return scene_.getCropBoxData(cropbox_id);
+    }
+
+    void SceneManager::syncCropBoxToRenderSettings() {
+        if (!rendering_manager_) return;
+
+        const CropBoxData* cropbox = getSelectedNodeCropBox();
+        if (!cropbox) return;
+
+        auto settings = rendering_manager_->getSettings();
+
+        // Sync min/max from cropbox data
+        settings.crop_min = cropbox->min;
+        settings.crop_max = cropbox->max;
+        settings.crop_inverse = cropbox->inverse;
+        settings.crop_color = cropbox->color;
+        settings.crop_line_width = cropbox->line_width;
+
+        // Get cropbox world transform
+        const NodeId cropbox_id = getSelectedNodeCropBoxId();
+        if (cropbox_id != NULL_NODE) {
+            const glm::mat4& world_transform = scene_.getWorldTransform(cropbox_id);
+            settings.crop_transform = lfs::geometry::EuclideanTransform(world_transform);
+        }
+
+        rendering_manager_->updateSettings(settings);
     }
 
     void SceneManager::loadDataset(const std::filesystem::path& path,
@@ -611,6 +736,62 @@ namespace lfs::vis {
         return nullptr;
     }
 
+    SceneRenderState SceneManager::buildRenderState() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+
+        SceneRenderState state;
+
+        // Get combined model
+        if (content_type_ == ContentType::SplatFiles) {
+            state.combined_model = scene_.getCombinedModel();
+        } else if (content_type_ == ContentType::Dataset) {
+            if (trainer_manager_ && trainer_manager_->getTrainer()) {
+                state.combined_model = &trainer_manager_->getTrainer()->get_strategy().get_model();
+            }
+        }
+
+        // Get transforms and indices
+        state.model_transforms = scene_.getVisibleNodeTransforms();
+        state.transform_indices = scene_.getTransformIndices();
+        state.visible_splat_count = state.model_transforms.size();
+
+
+        // Get selection mask
+        state.selection_mask = scene_.getSelectionMask();
+        state.has_selection = scene_.hasSelection();
+
+        // Get selected node info for desaturation
+        // Use mask-based approach: when a group is selected, all descendant SPLAT nodes are marked
+        state.selected_node_name = selected_node_;
+        state.selected_node_mask = scene_.getSelectedNodeMask(selected_node_);
+
+        // Get cropboxes
+        state.cropboxes = scene_.getVisibleCropBoxes();
+
+        // Find selected cropbox index
+        if (!selected_node_.empty()) {
+            const auto* selected = scene_.getNode(selected_node_);
+            if (selected) {
+                NodeId cropbox_id = NULL_NODE;
+                if (selected->type == NodeType::CROPBOX) {
+                    cropbox_id = selected->id;
+                } else if (selected->type == NodeType::SPLAT) {
+                    cropbox_id = scene_.getCropBoxForSplat(selected->id);
+                }
+                if (cropbox_id != NULL_NODE) {
+                    for (size_t i = 0; i < state.cropboxes.size(); ++i) {
+                        if (state.cropboxes[i].node_id == cropbox_id) {
+                            state.selected_cropbox_index = static_cast<int>(i);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return state;
+    }
+
     SceneManager::SceneInfo SceneManager::getSceneInfo() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
 
@@ -670,12 +851,38 @@ namespace lfs::vis {
     void SceneManager::handleCropActivePly(const lfs::geometry::BoundingBox& crop_box, const bool inverse) {
         changeContentType(ContentType::SplatFiles);
 
+        // Only crop the selected node, not all visible nodes
         std::vector<std::string> node_names;
-        for (const auto* node : scene_.getVisibleNodes()) {
-            node_names.push_back(node->name);
+        bool had_selection = false;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            if (!selected_node_.empty()) {
+                had_selection = true;
+                // Get the selected node - it may be a group or a PLY
+                const auto* selected = scene_.getNode(selected_node_);
+                if (selected && selected->type == NodeType::SPLAT) {
+                    node_names.push_back(selected_node_);
+                    LOG_INFO("Cropping selected SPLAT node: {}", selected_node_);
+                } else if (selected) {
+                    LOG_INFO("Selected node '{}' is not a SPLAT (type={}), not cropping",
+                              selected_node_, static_cast<int>(selected->type));
+                } else {
+                    LOG_WARN("Selected node '{}' not found in scene", selected_node_);
+                }
+            }
+        }
+
+        // Only fall back to all visible nodes if there was NO selection at all
+        // If there was a selection but it wasn't a SPLAT, don't crop anything
+        if (node_names.empty() && !had_selection) {
+            LOG_INFO("No selection, falling back to all visible nodes");
+            for (const auto* node : scene_.getVisibleNodes()) {
+                node_names.push_back(node->name);
+            }
         }
 
         if (node_names.empty()) {
+            LOG_INFO("No nodes to crop");
             return;
         }
 
@@ -730,7 +937,8 @@ namespace lfs::vis {
                     .total_gaussians = scene_.getTotalGaussianCount(),
                     .is_visible = true,
                     .parent_name = "",
-                    .is_group = false
+                    .is_group = false,
+                    .node_type = 0  // SPLAT
                 }.emit();
 
             } catch (const std::exception& e) {
@@ -849,7 +1057,8 @@ namespace lfs::vis {
             .total_gaussians = scene_.getTotalGaussianCount(),
             .is_visible = true,
             .parent_name = parent_name,
-            .is_group = true
+            .is_group = true,
+            .node_type = 1  // GROUP
         }.emit();
     }
 
@@ -879,7 +1088,8 @@ namespace lfs::vis {
                 .total_gaussians = scene_.getTotalGaussianCount(),
                 .is_visible = node->visible,
                 .parent_name = pn,
-                .is_group = node->type == NodeType::GROUP
+                .is_group = node->type == NodeType::GROUP,
+                .node_type = static_cast<int>(node->type)
             }.emit();
 
             for (const NodeId cid : node->children) {
@@ -908,18 +1118,32 @@ namespace lfs::vis {
             return;
         }
 
-        auto settings = rendering_manager_->getSettings();
         const glm::vec3 center = (min_bounds + max_bounds) * 0.5f;
         const glm::vec3 size = max_bounds - min_bounds;
 
+        // Update global render settings
+        auto settings = rendering_manager_->getSettings();
         settings.crop_min = -size * 0.5f;
         settings.crop_max = size * 0.5f;
         settings.crop_transform = lfs::geometry::EuclideanTransform(
             glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
             center
         );
-
         rendering_manager_->updateSettings(settings);
+
+        // Also update all scene graph cropboxes with the same bounds
+        for (const auto* node : scene_.getNodes()) {
+            if (node->type == NodeType::CROPBOX && node->cropbox) {
+                // Get mutable node to update data
+                auto* mutable_node = scene_.getMutableNode(node->name);
+                if (mutable_node && mutable_node->cropbox) {
+                    mutable_node->cropbox->min = -size * 0.5f;
+                    mutable_node->cropbox->max = size * 0.5f;
+                    mutable_node->local_transform = glm::translate(glm::mat4(1.0f), center);
+                    mutable_node->transform_dirty = true;
+                }
+            }
+        }
 
         LOG_INFO("Cropbox: center({:.2f}, {:.2f}, {:.2f}), size({:.2f}, {:.2f}, {:.2f})",
                  center.x, center.y, center.z, size.x, size.y, size.z);
@@ -1051,6 +1275,12 @@ namespace lfs::vis {
         const size_t count = clipboard_->size();
         scene_.addNode(name, std::move(paste_data));
 
+        // Create cropbox as child of this splat
+        const auto* splat_node = scene_.getNode(name);
+        if (splat_node) {
+            [[maybe_unused]] const NodeId cropbox_id = scene_.getOrCreateCropBoxForSplat(splat_node->id);
+        }
+
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (content_type_ == ContentType::Empty) {
@@ -1064,8 +1294,30 @@ namespace lfs::vis {
             .total_gaussians = scene_.getTotalGaussianCount(),
             .is_visible = true,
             .parent_name = "",
-            .is_group = false
+            .is_group = false,
+            .node_type = 0  // SPLAT
         }.emit();
+
+        // Emit PLYAdded for the cropbox (re-lookup splat as vector may have reallocated)
+        const auto* splat_for_cropbox = scene_.getNode(name);
+        if (splat_for_cropbox) {
+            const NodeId cropbox_id = scene_.getCropBoxForSplat(splat_for_cropbox->id);
+            if (cropbox_id != NULL_NODE) {
+                const auto* cropbox_node = scene_.getNodeById(cropbox_id);
+                if (cropbox_node) {
+                    state::PLYAdded{
+                        .name = cropbox_node->name,
+                        .node_gaussians = 0,
+                        .total_gaussians = scene_.getTotalGaussianCount(),
+                        .is_visible = true,
+                        .parent_name = name,
+                        .is_group = false,
+                        .node_type = 2  // CROPBOX
+                    }.emit();
+                }
+            }
+        }
+
         emitSceneChanged();
 
         // Update crop box to fit pasted data
@@ -1079,6 +1331,18 @@ namespace lfs::vis {
                 settings.crop_max = half_size;
                 settings.crop_transform = lfs::geometry::EuclideanTransform({1, 0, 0, 0}, center);
                 rendering_manager_->updateSettings(settings);
+
+                // Also update the cropbox in scene graph
+                const auto* pasted_node = scene_.getNode(name);
+                if (pasted_node) {
+                    auto* mutable_cropbox_node = scene_.getMutableNode(name + "_cropbox");
+                    if (mutable_cropbox_node && mutable_cropbox_node->cropbox) {
+                        mutable_cropbox_node->cropbox->min = -half_size;
+                        mutable_cropbox_node->cropbox->max = half_size;
+                        mutable_cropbox_node->local_transform = glm::translate(glm::mat4(1.0f), center);
+                        mutable_cropbox_node->transform_dirty = true;
+                    }
+                }
             }
         }
 

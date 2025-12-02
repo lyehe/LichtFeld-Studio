@@ -7,6 +7,7 @@
 #include "command/commands/cropbox_command.hpp"
 #include "gui/ui_widgets.hpp"
 #include "rendering/rendering_manager.hpp"
+#include "scene/scene_manager.hpp"
 #include "visualizer_impl.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -62,6 +63,22 @@ namespace lfs::vis::gui::panels {
                 viewer->getCommandHistory().execute(std::move(cmd));
             }
             s_state_before_edit.reset();
+        }
+
+        // Sync render settings back to scene graph cropbox data
+        void syncToSceneGraph(VisualizerImpl* const viewer, const RenderSettings& settings) {
+            auto* sm = viewer->getSceneManager();
+            if (!sm) return;
+
+            CropBoxData* cropbox = sm->getSelectedNodeCropBox();
+            if (!cropbox) return;
+
+            cropbox->min = settings.crop_min;
+            cropbox->max = settings.crop_max;
+            cropbox->inverse = settings.crop_inverse;
+            cropbox->color = settings.crop_color;
+            cropbox->line_width = settings.crop_line_width;
+            // Note: transform is stored in the node's local_transform, not in CropBoxData
         }
 
         glm::vec3 matrixToEulerDegrees(const glm::mat3& rot) {
@@ -185,6 +202,8 @@ namespace lfs::vis::gui::panels {
 
         if (changed) {
             rm->updateSettings(settings);
+            // Sync changes back to scene graph
+            syncToSceneGraph(ctx.viewer, settings);
         }
 
         if (any_deactivated && s_editing_active) {

@@ -65,11 +65,18 @@ namespace lfs::rendering {
             const Tensor* crop_box_max = nullptr;
             bool crop_inverse = false;
             bool crop_desaturate = false;
+            // Depth filter (Selection tool - separate from crop box, always desaturates outside)
+            const Tensor* depth_filter_transform = nullptr;
+            const Tensor* depth_filter_min = nullptr;
+            const Tensor* depth_filter_max = nullptr;
             const Tensor* deleted_mask = nullptr;  // Soft deletion mask [N], true = skip
             // Ring mode hover output
             unsigned long long* hovered_depth_id = nullptr;
             int highlight_gaussian_id = -1;
             float far_plane = 1e10f;
+            // Desaturate unselected nodes (when multiple PLYs visible)
+            // Mask: true = selected (don't desaturate), false = desaturate. Empty = no desaturation.
+            std::vector<bool> selected_node_mask;
         };
 
         struct RenderResult {

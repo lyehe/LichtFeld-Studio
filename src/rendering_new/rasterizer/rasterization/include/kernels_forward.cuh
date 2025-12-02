@@ -73,9 +73,14 @@ namespace lfs::rendering::kernels::forward {
         const float3* crop_box_max,
         const bool crop_inverse,
         const bool crop_desaturate,
+        const float* depth_filter_transform,
+        const float3* depth_filter_min,
+        const float3* depth_filter_max,
         const bool* deleted_mask,
         const int highlight_gaussian_id,
-        unsigned long long* hovered_depth_id) {
+        unsigned long long* hovered_depth_id,
+        const bool* selected_node_mask,
+        const int num_selected_nodes) {
         auto primitive_idx = cg::this_grid().thread_rank();
         bool active = true;
         if (primitive_idx >= n_primitives) {
@@ -129,6 +134,28 @@ namespace lfs::rendering::kernels::forward {
             outside_crop = inside == crop_inverse;
             if (outside_crop && !crop_desaturate)
                 active = false;
+        }
+
+        // Depth filter (desaturate only, no culling)
+        if (active && depth_filter_transform != nullptr) {
+            const float3 dmin = *depth_filter_min;
+            const float3 dmax = *depth_filter_max;
+            const float* const d = depth_filter_transform;
+            const float dx = d[0] * mean3d.x + d[1] * mean3d.y + d[2] * mean3d.z + d[3];
+            const float dy = d[4] * mean3d.x + d[5] * mean3d.y + d[6] * mean3d.z + d[7];
+            const float dz = d[8] * mean3d.x + d[9] * mean3d.y + d[10] * mean3d.z + d[11];
+            const bool inside = dx >= dmin.x && dx <= dmax.x &&
+                                dy >= dmin.y && dy <= dmax.y &&
+                                dz >= dmin.z && dz <= dmax.z;
+            if (!inside) outside_crop = true;
+        }
+
+        // Desaturate unselected nodes
+        if (active && selected_node_mask != nullptr && num_selected_nodes > 0 && transform_indices != nullptr) {
+            const int node_idx = transform_indices[primitive_idx];
+            if (node_idx >= 0 && node_idx < num_selected_nodes && !selected_node_mask[node_idx]) {
+                outside_crop = true;
+            }
         }
 
         // z culling

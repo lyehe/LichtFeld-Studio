@@ -101,8 +101,13 @@ namespace lfs::rendering {
         const float3* crop_box_max = nullptr,
         bool crop_inverse = false,
         bool crop_desaturate = false,
+        const float* depth_filter_transform = nullptr,
+        const float3* depth_filter_min = nullptr,
+        const float3* depth_filter_max = nullptr,
         const bool* deleted_mask = nullptr,
         unsigned long long* hovered_depth_id = nullptr,
-        int highlight_gaussian_id = -1);
+        int highlight_gaussian_id = -1,
+        const bool* selected_node_mask = nullptr,
+        int num_selected_nodes = 0);
 
 }

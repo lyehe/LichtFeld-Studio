@@ -311,9 +311,14 @@ void lfs::rendering::forward(
     const float3* crop_box_max,
     bool crop_inverse,
     bool crop_desaturate,
+    const float* depth_filter_transform,
+    const float3* depth_filter_min,
+    const float3* depth_filter_max,
     const bool* deleted_mask,
     unsigned long long* hovered_depth_id,
-    int highlight_gaussian_id) {
+    int highlight_gaussian_id,
+    const bool* selected_node_mask,
+    int num_selected_nodes) {
 
     const dim3 grid(div_round_up(width, config::tile_width), div_round_up(height, config::tile_height), 1);
     const dim3 block(config::tile_width, config::tile_height, 1);
@@ -399,9 +404,14 @@ void lfs::rendering::forward(
         crop_box_max,
         crop_inverse,
         crop_desaturate,
+        depth_filter_transform,
+        depth_filter_min,
+        depth_filter_max,
         deleted_mask,
         highlight_gaussian_id,
-        hovered_depth_id);
+        hovered_depth_id,
+        selected_node_mask,
+        num_selected_nodes);
     CHECK_CUDA(config::debug, "preprocess")
 
 
@@ -411,7 +421,9 @@ void lfs::rendering::forward(
                    sizeof(float2) * n_primitives, cudaMemcpyDeviceToDevice);
 
         // In desaturate mode, invalidate screen positions for outside gaussians
-        if (crop_desaturate) {
+        // Check both crop box desaturate and depth filter
+        const bool has_depth_filter = (depth_filter_transform != nullptr);
+        if (crop_desaturate || has_depth_filter) {
             constexpr int BLOCK = 256;
             const int grid = (n_primitives + BLOCK - 1) / BLOCK;
             invalidate_outside_crop_kernel<<<grid, BLOCK>>>(

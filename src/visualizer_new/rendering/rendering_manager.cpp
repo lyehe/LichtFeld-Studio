@@ -555,14 +555,10 @@ namespace lfs::vis {
             .size = render_size,
             .fov = settings_.fov};
 
-        // Get transforms and indices from scene for kernel-based transform
-        std::vector<glm::mat4> model_transforms;
-        std::shared_ptr<lfs::core::Tensor> transform_indices;
-        std::shared_ptr<lfs::core::Tensor> selection_mask;
+        // Build render state from scene (single source of truth)
+        lfs::vis::SceneRenderState scene_state;
         if (scene_manager) {
-            model_transforms = scene_manager->getScene().getVisibleNodeTransforms();
-            transform_indices = scene_manager->getScene().getTransformIndices();
-            selection_mask = scene_manager->getScene().getSelectionMask();
+            scene_state = scene_manager->buildRenderState();
         }
 
         lfs::rendering::RenderRequest request{
@@ -578,9 +574,9 @@ namespace lfs::vis {
             .show_rings = settings_.show_rings,
             .ring_width = settings_.ring_width,
             .show_center_markers = settings_.show_center_markers,
-            .model_transforms = std::move(model_transforms),
-            .transform_indices = transform_indices,
-            .selection_mask = selection_mask,
+            .model_transforms = std::move(scene_state.model_transforms),
+            .transform_indices = scene_state.transform_indices,
+            .selection_mask = scene_state.selection_mask,
             .output_screen_positions = output_screen_positions_,
             .brush_active = brush_active_,
             .brush_x = brush_x_,
@@ -591,6 +587,8 @@ namespace lfs::vis {
             .brush_saturation_mode = brush_saturation_mode_,
             .brush_saturation_amount = brush_saturation_amount_,
             .selection_mode_rings = (selection_mode_ == lfs::rendering::SelectionMode::Rings),
+            // Selected node mask for desaturation - empty if feature disabled
+            .selected_node_mask = settings_.desaturate_unselected ? std::move(scene_state.selected_node_mask) : std::vector<bool>{},
             .hovered_depth_id = nullptr,
             .highlight_gaussian_id = (selection_mode_ == lfs::rendering::SelectionMode::Rings) ? hovered_gaussian_id_ : -1,
             .far_plane = settings_.depth_clip_enabled ? settings_.depth_clip_far : 1e10f};
@@ -607,7 +605,9 @@ namespace lfs::vis {
             request.hovered_depth_id = d_hovered_depth_id_;
         }
 
-        // Add crop box if enabled (for filtering) or if showing (for visualization)
+        // Add crop box for both preview (show_crop_box) and actual filtering (use_crop_box)
+        // - show_crop_box = true: preview mode with desaturation (don't actually filter)
+        // - use_crop_box = true: actually filter the model
         if (settings_.use_crop_box || settings_.show_crop_box) {
             auto transform = settings_.crop_transform;
             request.crop_box = lfs::rendering::BoundingBox{
@@ -615,7 +615,18 @@ namespace lfs::vis {
                 .max = settings_.crop_max,
                 .transform = transform.inv().toMat4()};
             request.crop_inverse = settings_.crop_inverse;
-            request.crop_desaturate = settings_.crop_desaturate;
+            // Desaturate (preview mode) when show_crop_box is on but not actually cropping
+            // When use_crop_box is true, we want to actually filter, not desaturate
+            request.crop_desaturate = settings_.show_crop_box && !settings_.use_crop_box;
+        }
+
+        // Add depth filter (Selection tool only - separate from crop box)
+        // Depth filter always desaturates outside, never actually filters
+        if (settings_.depth_filter_enabled) {
+            request.depth_filter = lfs::rendering::BoundingBox{
+                .min = settings_.depth_filter_min,
+                .max = settings_.depth_filter_max,
+                .transform = settings_.depth_filter_transform.inv().toMat4()};
         }
 
         // Render the gaussians
@@ -890,7 +901,7 @@ namespace lfs::vis {
             .size = render_size,
             .fov = settings_.fov};
 
-        // Create crop box if enabled (for filtering) or if showing (for visualization)
+        // Create crop box for both preview (show_crop_box) and actual filtering (use_crop_box)
         std::optional<lfs::rendering::BoundingBox> crop_box;
         if (settings_.use_crop_box || settings_.show_crop_box) {
             auto transform = settings_.crop_transform;
@@ -1058,26 +1069,76 @@ namespace lfs::vis {
             }
         }
 
-        // Crop box wireframe
+        // Crop box wireframes - render from scene graph
         if (settings_.show_crop_box && engine_) {
-            const auto transform = settings_.crop_transform;
+            bool rendered_from_scene_graph = false;
 
-            const lfs::rendering::BoundingBox box{
-                .min = settings_.crop_min,
-                .max = settings_.crop_max,
-                .transform = transform.inv().toMat4()};
+            // Try to render from scene graph cropboxes
+            if (context.scene_manager) {
+                const auto visible_cropboxes = context.scene_manager->getScene().getVisibleCropBoxes();
+                // Get the selected node's cropbox ID - only flash this one
+                const NodeId selected_cropbox_id = context.scene_manager->getSelectedNodeCropBoxId();
 
-            const glm::vec3 base_color = settings_.crop_inverse
-                ? glm::vec3(1.0f, 0.2f, 0.2f)
-                : settings_.crop_color;
-            const float flash = settings_.crop_flash_intensity;
-            const glm::vec3 color = glm::mix(base_color, glm::vec3(1.0f), flash);
-            constexpr float FLASH_LINE_BOOST = 4.0f;
-            const float line_width = settings_.crop_line_width + flash * FLASH_LINE_BOOST;
+                for (const auto& rcb : visible_cropboxes) {
+                    if (!rcb.data) continue;
 
-            auto bbox_result = engine_->renderBoundingBox(box, viewport, color, line_width);
-            if (!bbox_result) {
-                LOG_WARN("Failed to render bounding box: {}", bbox_result.error());
+                    // Apply world transform from scene graph
+                    const auto transform = lfs::geometry::EuclideanTransform(rcb.world_transform);
+
+                    const lfs::rendering::BoundingBox box{
+                        .min = rcb.data->min,
+                        .max = rcb.data->max,
+                        .transform = transform.inv().toMat4()};
+
+                    const glm::vec3 base_color = rcb.data->inverse
+                        ? glm::vec3(1.0f, 0.2f, 0.2f)
+                        : rcb.data->color;
+                    // Only flash the selected cropbox, not all of them
+                    const bool is_selected = (rcb.node_id == selected_cropbox_id);
+                    const float flash = is_selected ? settings_.crop_flash_intensity : 0.0f;
+                    const glm::vec3 color = glm::mix(base_color, glm::vec3(1.0f), flash);
+                    constexpr float FLASH_LINE_BOOST = 4.0f;
+                    const float line_width = rcb.data->line_width + flash * FLASH_LINE_BOOST;
+
+                    auto bbox_result = engine_->renderBoundingBox(box, viewport, color, line_width);
+                    if (!bbox_result) {
+                        LOG_WARN("Failed to render bounding box: {}", bbox_result.error());
+                    }
+                    rendered_from_scene_graph = true;
+                }
+
+                // Check if scene has ANY cropbox nodes (even if hidden)
+                // If so, don't use fallback - the user intentionally hid them
+                const auto& scene = context.scene_manager->getScene();
+                for (const auto* node : scene.getNodes()) {
+                    if (node->type == NodeType::CROPBOX) {
+                        rendered_from_scene_graph = true;  // Scene has cropboxes, don't fallback
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: only if NO scene graph cropboxes exist at all (legacy/dataset mode)
+            if (!rendered_from_scene_graph) {
+                const auto transform = settings_.crop_transform;
+
+                const lfs::rendering::BoundingBox box{
+                    .min = settings_.crop_min,
+                    .max = settings_.crop_max,
+                    .transform = transform.inv().toMat4()};
+
+                const glm::vec3 base_color = settings_.crop_inverse
+                    ? glm::vec3(1.0f, 0.2f, 0.2f)
+                    : settings_.crop_color;
+                const float flash = settings_.crop_flash_intensity;
+                const glm::vec3 color = glm::mix(base_color, glm::vec3(1.0f), flash);
+                constexpr float FLASH_LINE_BOOST = 4.0f;
+                const float line_width = settings_.crop_line_width + flash * FLASH_LINE_BOOST;
+
+                auto bbox_result = engine_->renderBoundingBox(box, viewport, color, line_width);
+                if (!bbox_result) {
+                    LOG_WARN("Failed to render bounding box: {}", bbox_result.error());
+                }
             }
         }
 
