@@ -6,24 +6,31 @@
 
 #include "core_new/events.hpp"
 #include "gui/ui_context.hpp"
-#include <filesystem>
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
-
+#include "scene/scene.hpp"
 #include "training/training_manager.hpp"
 
+#include <filesystem>
+#include <functional>
+#include <map>
+#include <memory>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
 namespace lfs::vis {
+
+    class SceneManager;
+
     namespace gui {
 
         // Scene panel that integrates with existing GUI
+        // Queries Scene and SceneManager directly - no duplicate state
         class ScenePanel {
         public:
-            ScenePanel(std::shared_ptr<const TrainerManager> trainer_manager);
+            explicit ScenePanel(std::shared_ptr<const TrainerManager> trainer_manager);
             ~ScenePanel();
 
-            void render(bool* p_open, const UIContext* ctx = nullptr);
+            void render(bool* p_open, const UIContext* ctx);
             void setOnDatasetLoad(std::function<void(const std::filesystem::path&)> callback);
 
         private:
@@ -32,33 +39,19 @@ namespace lfs::vis {
 
             // Image list data for dataset mode
             std::vector<std::filesystem::path> m_imagePaths;
-            typedef int CamId;
-            // cam path to cam id
-            std::map<std::filesystem::path, CamId> m_PathToCamId;
+            using CamId = int;
+            std::map<std::filesystem::path, CamId> m_pathToCamId;
             int m_selectedImageIndex = -1;
             std::filesystem::path m_currentDatasetPath;
             bool m_needsScrollToSelection = false;
 
-            // PLY scene graph data for PLY mode
-            struct PLYNode {
-                std::string name;
-                std::string parent_name;  // Empty = root level
-                bool is_group = false;    // GROUP vs SPLAT
-                bool visible = true;
-                bool selected = false;
-                size_t gaussian_count = 0;
-                int node_type = 0;  // 0=SPLAT, 1=GROUP, 2=CROPBOX
-            };
-            std::vector<PLYNode> m_plyNodes;
-            int m_selectedPLYIndex = -1;
-
             // Drag-drop state
-            std::string m_dragPayload;  // Name of node being dragged
+            std::string m_dragPayload;
 
             // Rename state
             struct RenameState {
                 bool is_renaming = false;
-                int renaming_index = -1;
+                std::string renaming_node_name;
                 char buffer[256] = {};
                 bool focus_input = false;
                 bool input_was_active = false;
@@ -66,19 +59,8 @@ namespace lfs::vis {
             } m_renameState;
 
             // Tab management
-            enum class TabType {
-                Images,
-                PLYs
-            };
-            TabType m_activeTab = TabType::PLYs; // Default to PLYs tab (prioritize PLYs if available)
-
-            // Current mode
-            enum class DisplayMode {
-                Empty,
-                PLYSceneGraph,
-                DatasetImages
-            };
-            DisplayMode m_currentMode = DisplayMode::Empty;
+            enum class TabType { Images, PLYs };
+            TabType m_activeTab = TabType::PLYs;
 
             // Callbacks
             std::function<void(const std::filesystem::path&)> m_onDatasetLoad;
@@ -87,38 +69,33 @@ namespace lfs::vis {
             std::unique_ptr<class ImagePreview> m_imagePreview;
             bool m_showImagePreview = false;
 
-            // for loading training cameras in scene panel
-            std::shared_ptr<const TrainerManager> m_trainer_manager;
+            // For loading training cameras in scene panel
+            std::shared_ptr<const TrainerManager> m_trainerManager;
 
-            // Helper methods for tab management
-            void updateModeFromTab();
-            bool hasImages() const;
-            bool hasPLYs() const;
-
-            // Event handlers
+            // Helper methods
             void setupEventHandlers();
-            void handleSceneLoaded(const lfs::core::events::state::SceneLoaded& event);
-            void handleSceneCleared();
-            void handlePLYAdded(const lfs::core::events::state::PLYAdded& event);
-            void handlePLYRemoved(const lfs::core::events::state::PLYRemoved& event);
-            void handlePLYRenamed(const lfs::core::events::cmd::RenamePLY& event);
+            bool hasImages() const;
+            bool hasPLYs(const UIContext* ctx) const;
+
+            // Event handlers for images
             void handleGoToCamView(const lfs::core::events::cmd::GoToCamView& event);
             void loadImageCams(const std::filesystem::path& path);
             void onImageSelected(const std::filesystem::path& imagePath);
             void onImageDoubleClicked(size_t imageIndex);
 
-            // PLY scene graph rendering
-            void renderPLYSceneGraph();
-            void renderModelsFolder();
-            void renderModelNode(size_t index);
-            void renderNodeChildren(const std::string& parent_name);
+            // PLY scene graph rendering - queries Scene directly
+            void renderPLYSceneGraph(const UIContext* ctx);
+            void renderModelsFolder(const Scene& scene, const std::unordered_set<std::string>& selected_names);
+            void renderModelNode(const SceneNode& node, const Scene& scene,
+                                 const std::unordered_set<std::string>& selected_names);
+            void renderNodeChildren(NodeId parent_id, const Scene& scene,
+                                    const std::unordered_set<std::string>& selected_names);
             void renderImageList();
-            void updatePLYNodes();
             bool handleDragDrop(const std::string& target_name, bool is_folder);
 
             // Rename functionality
-            void startRenaming(int nodeIndex);
-            void finishRenaming();
+            void startRenaming(const std::string& node_name);
+            void finishRenaming(SceneManager* scene_manager);
             void cancelRenaming();
         };
 

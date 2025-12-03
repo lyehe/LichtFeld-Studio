@@ -419,11 +419,6 @@ namespace lfs::vis {
     }
 
     void SceneManager::selectNodes(const std::vector<std::string>& names) {
-        std::string first_name;
-        size_t num_selected = 0;
-        size_t gaussians = 0;
-        bool visible = false;
-
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             selected_nodes_.clear();
@@ -432,28 +427,10 @@ namespace lfs::vis {
                     selected_nodes_.insert(name);
                 }
             }
-            if (!selected_nodes_.empty()) {
-                first_name = *selected_nodes_.begin();
-                num_selected = selected_nodes_.size();
-                const auto* node = scene_.getNode(first_name);
-                if (node) {
-                    gaussians = node->model ? node->model->size() : 0;
-                    visible = node->visible;
-                }
-            }
         }
-
-        if (!first_name.empty()) {
-            ui::NodeSelected{
-                .path = first_name,
-                .type = "PLY",
-                .metadata = {
-                    {"name", first_name},
-                    {"gaussians", std::to_string(gaussians)},
-                    {"visible", visible ? "true" : "false"},
-                    {"multi_select", std::to_string(num_selected)}
-                }
-            }.emit();
+        // Trigger re-render to update viewport highlighting
+        if (rendering_manager_) {
+            rendering_manager_->markDirty();
         }
     }
 
