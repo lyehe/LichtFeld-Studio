@@ -171,27 +171,19 @@ namespace lfs::rendering {
         // Use GLLineGuard for line width management
         GLLineGuard line_guard(line_width_);
 
-        // Bind shader and setup uniforms
         ShaderScope s(shader_);
 
-        auto box2World = world2BBox_.inv().toMat4();
-        // Set uniforms
-        glm::mat4 mvp = projection * view * box2World;
+        const glm::mat4 box2world = use_mat4_transform_ ? box2world_mat4_ : world2BBox_.inv().toMat4();
+        const glm::mat4 mvp = projection * view * box2world;
 
-        // Calculate view direction from inverse view matrix
-        glm::mat4 inv_view = glm::inverse(view);
-        glm::vec3 camera_pos = glm::vec3(inv_view[3]);
+        const glm::mat4 inv_view = glm::inverse(view);
+        const glm::vec3 camera_pos = glm::vec3(inv_view[3]);
+        const glm::vec3 local_center = (min_bounds_ + max_bounds_) * 0.5f;
+        const glm::vec3 world_center = glm::vec3(box2world * glm::vec4(local_center, 1.0f));
+        const glm::vec3 view_dir = glm::normalize(world_center - camera_pos);
 
-        // Transform box center to world space
-        glm::vec3 local_center = (min_bounds_ + max_bounds_) * 0.5f;
-        glm::vec3 world_center = glm::vec3(box2World * glm::vec4(local_center, 1.0f));
-
-        // View direction from camera to box center (normalized)
-        glm::vec3 view_dir = glm::normalize(world_center - camera_pos);
-
-        // Transform view direction to box local space for shader
-        glm::mat3 world2Box_rot = glm::mat3(world2BBox_.toMat4());
-        glm::vec3 local_view_dir = world2Box_rot * view_dir;
+        const glm::mat4 world2box = use_mat4_transform_ ? glm::inverse(box2world_mat4_) : world2BBox_.toMat4();
+        const glm::vec3 local_view_dir = glm::mat3(world2box) * view_dir;
 
         LOG_TRACE("Rendering bounding box with color ({}, {}, {})", color_.r, color_.g, color_.b);
 

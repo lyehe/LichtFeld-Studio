@@ -1076,19 +1076,16 @@ namespace lfs::vis {
             // Try to render from scene graph cropboxes
             if (context.scene_manager) {
                 const auto visible_cropboxes = context.scene_manager->getScene().getVisibleCropBoxes();
-                // Get the selected node's cropbox ID - only flash this one
                 const NodeId selected_cropbox_id = context.scene_manager->getSelectedNodeCropBoxId();
 
                 for (const auto& rcb : visible_cropboxes) {
                     if (!rcb.data) continue;
 
-                    // Apply world transform from scene graph
-                    const auto transform = lfs::geometry::EuclideanTransform(rcb.world_transform);
-
+                    // Use full mat4 to preserve scale from parent nodes
                     const lfs::rendering::BoundingBox box{
                         .min = rcb.data->min,
                         .max = rcb.data->max,
-                        .transform = transform.inv().toMat4()};
+                        .transform = glm::inverse(rcb.world_transform)};
 
                     const glm::vec3 base_color = rcb.data->inverse
                         ? glm::vec3(1.0f, 0.2f, 0.2f)

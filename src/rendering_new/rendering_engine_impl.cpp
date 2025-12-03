@@ -346,9 +346,7 @@ namespace lfs::rendering {
         bbox_renderer_.setColor(color);
         bbox_renderer_.setLineWidth(line_width);
 
-        // Set the transform from the box
-        lfs::geometry::EuclideanTransform transform(box.transform);
-        bbox_renderer_.setworld2BBox(transform);
+        bbox_renderer_.setWorld2BBoxMat4(box.transform);
 
         auto view = createViewMatrix(viewport);
         auto proj = createProjectionMatrix(viewport);
