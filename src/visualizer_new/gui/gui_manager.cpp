@@ -1433,79 +1433,72 @@ namespace lfs::vis::gui {
     }
 
     void GuiManager::renderNodeTransformGizmo(const UIContext& ctx) {
-        // Don't render gizmo over modal windows
-        if (isModalWindowOpen())
-            return;
-
-        // Only show gizmo if enabled
-        if (!show_node_gizmo_)
-            return;
+        if (isModalWindowOpen()) return;
+        if (!show_node_gizmo_) return;
 
         auto* scene_manager = ctx.viewer->getSceneManager();
-        if (!scene_manager || !scene_manager->hasSelectedNode())
-            return;
+        if (!scene_manager || !scene_manager->hasSelectedNode()) return;
+        if (scene_manager->isSelectedNodeLocked()) return;
 
-        // Don't allow transform gizmo on locked nodes
-        if (scene_manager->isSelectedNodeLocked())
-            return;
-
-        // Don't show gizmo if selected node is not visible
+        // Check visibility of at least one selected node
         const auto& scene = scene_manager->getScene();
-        const auto* selected_node = scene.getNode(scene_manager->getSelectedNodeName());
-        if (!selected_node || !scene.isNodeEffectivelyVisible(selected_node->id))
-            return;
+        const auto selected_names = scene_manager->getSelectedNodeNames();
+        bool any_visible = false;
+        for (const auto& name : selected_names) {
+            if (const auto* node = scene.getNode(name)) {
+                if (scene.isNodeEffectivelyVisible(node->id)) {
+                    any_visible = true;
+                    break;
+                }
+            }
+        }
+        if (!any_visible) return;
 
         auto* render_manager = ctx.viewer->getRenderingManager();
-        if (!render_manager)
-            return;
+        if (!render_manager) return;
 
-        auto settings = render_manager->getSettings();
+        const auto& settings = render_manager->getSettings();
+        const bool is_multi_selection = (selected_names.size() > 1);
 
         // Camera matrices
         auto& viewport = ctx.viewer->getViewport();
         const glm::mat4 view = viewport.getViewMatrix();
         const float aspect = viewport_size_.x / viewport_size_.y;
-        const float fov_rad = glm::radians(settings.fov);
-        const glm::mat4 projection = glm::perspective(fov_rad, aspect,
+        const glm::mat4 projection = glm::perspective(
+            glm::radians(settings.fov), aspect,
             lfs::rendering::DEFAULT_NEAR_PLANE, lfs::rendering::DEFAULT_FAR_PLANE);
 
-        const glm::vec3 center = scene_manager->getSelectedNodeCenter();
-        const glm::mat4 node_transform = scene_manager->getSelectedNodeTransform();
-        const glm::mat3 rotation_scale(node_transform);
-        const glm::vec3 gizmo_position = glm::vec3(node_transform * glm::vec4(center, 1.0f));
         const bool use_world_space =
-            (gizmo_toolbar_state_.transform_space == panels::TransformSpace::World);
+            (gizmo_toolbar_state_.transform_space == panels::TransformSpace::World) || is_multi_selection;
 
-        // Trace log when gizmo position changes
-        constexpr float LOG_THRESHOLD = 0.01f;
-        static glm::vec3 s_last_logged_pos{0.0f};
-        static std::string s_last_logged_node;
-        const std::string& current_node = scene_manager->getSelectedNodeName();
-        if (current_node != s_last_logged_node || glm::distance(gizmo_position, s_last_logged_pos) > LOG_THRESHOLD) {
-            LOG_TRACE("Gizmo: node='{}' pos=({:.2f},{:.2f},{:.2f})",
-                      current_node, gizmo_position.x, gizmo_position.y, gizmo_position.z);
-            s_last_logged_pos = gizmo_position;
-            s_last_logged_node = current_node;
+        // During active drag, keep gizmo at fixed pivot position
+        glm::vec3 gizmo_position;
+        if (node_gizmo_active_) {
+            gizmo_position = gizmo_pivot_;
+        } else if (is_multi_selection) {
+            gizmo_position = scene_manager->getSelectionWorldCenter();
+        } else {
+            gizmo_position = glm::vec3(scene_manager->getSelectedNodeTransform() *
+                                       glm::vec4(scene_manager->getSelectionCenter(), 1.0f));
         }
 
         glm::mat4 gizmo_matrix(1.0f);
         gizmo_matrix[3] = glm::vec4(gizmo_position, 1.0f);
-        if (!use_world_space) {
+
+        // For single selection in local mode, include node's rotation/scale
+        if (!is_multi_selection && !use_world_space) {
+            const glm::mat4 node_transform = scene_manager->getSelectedNodeTransform();
+            const glm::mat3 rotation_scale(node_transform);
             gizmo_matrix[0] = glm::vec4(rotation_scale[0], 0.0f);
             gizmo_matrix[1] = glm::vec4(rotation_scale[1], 0.0f);
             gizmo_matrix[2] = glm::vec4(rotation_scale[2], 0.0f);
         }
 
         ImGuizmo::SetOrthographic(false);
-
-        // viewport_pos_ already includes WorkPos offset, use directly
         ImGuizmo::SetRect(viewport_pos_.x, viewport_pos_.y, viewport_size_.x, viewport_size_.y);
-
         ImGuizmo::SetAxisLimit(GIZMO_AXIS_LIMIT);
         ImGuizmo::SetPlaneLimit(GIZMO_AXIS_LIMIT);
 
-        // SetAxisMask: true = HIDE axis, false = SHOW axis (counterintuitive)
-        // Show all axes when idle, hide during single-axis drag for clarity
         static bool s_node_hovered_axis = false;
         const bool is_using = ImGuizmo::IsUsing();
 
@@ -1518,62 +1511,114 @@ namespace lfs::vis::gui {
             ImGuizmo::SetAxisMask(s_node_hovered_axis, s_node_hovered_axis, s_node_hovered_axis);
         }
 
-        // Clip ImGuizmo rendering to viewport so it doesn't draw over GUI panels
         ImDrawList* overlay_drawlist = ImGui::GetForegroundDrawList();
-        ImVec2 clip_min(viewport_pos_.x, viewport_pos_.y);
-        ImVec2 clip_max(clip_min.x + viewport_size_.x, clip_min.y + viewport_size_.y);
+        const ImVec2 clip_min(viewport_pos_.x, viewport_pos_.y);
+        const ImVec2 clip_max(clip_min.x + viewport_size_.x, clip_min.y + viewport_size_.y);
         overlay_drawlist->PushClipRect(clip_min, clip_max, true);
-
         ImGuizmo::SetDrawlist(overlay_drawlist);
 
         const ImGuizmo::MODE gizmo_mode = use_world_space ? ImGuizmo::WORLD : ImGuizmo::LOCAL;
 
         glm::mat4 delta_matrix;
         const bool gizmo_changed = ImGuizmo::Manipulate(
-            glm::value_ptr(view),
-            glm::value_ptr(projection),
-            node_gizmo_operation_,
-            gizmo_mode,
-            glm::value_ptr(gizmo_matrix),
-            glm::value_ptr(delta_matrix),
-            nullptr);
+            glm::value_ptr(view), glm::value_ptr(projection),
+            node_gizmo_operation_, gizmo_mode,
+            glm::value_ptr(gizmo_matrix), glm::value_ptr(delta_matrix), nullptr);
 
         // Capture state for undo when drag starts
         if (is_using && !node_gizmo_active_) {
             node_gizmo_active_ = true;
-            node_gizmo_node_name_ = scene_manager->getSelectedNodeName();
-            node_transform_before_drag_ = node_transform;
+            gizmo_pivot_ = gizmo_position;
+            gizmo_cumulative_rotation_ = glm::mat3(1.0f);
+            node_gizmo_node_names_ = selected_names;
+            node_transforms_before_drag_.clear();
+            node_transforms_before_drag_.reserve(selected_names.size());
+            for (const auto& name : selected_names) {
+                node_transforms_before_drag_.push_back(scene_manager->getNodeTransform(name));
+            }
         }
 
         if (gizmo_changed) {
-            const glm::vec3 new_gizmo_pos = glm::vec3(gizmo_matrix[3]);
+            if (is_multi_selection) {
+                // Accumulate delta rotation
+                const glm::mat3 delta_rot(delta_matrix);
+                gizmo_cumulative_rotation_ = delta_rot * gizmo_cumulative_rotation_;
 
-            glm::mat4 new_transform;
-            if (use_world_space) {
-                const glm::mat3 old_rs(node_transform);
-                const glm::mat3 delta_rs(delta_matrix);
-                const glm::mat3 new_rs = delta_rs * old_rs;
-                new_transform = glm::mat4(new_rs);
-                new_transform[3] = glm::vec4(new_gizmo_pos - new_rs * center, 1.0f);
+                // Compute total translation from gizmo movement
+                const glm::vec3 new_gizmo_pos(gizmo_matrix[3]);
+                const glm::vec3 total_translation = new_gizmo_pos - gizmo_pivot_;
+
+                for (size_t i = 0; i < node_gizmo_node_names_.size(); ++i) {
+                    const glm::mat4& original = node_transforms_before_drag_[i];
+                    const glm::vec3 original_pos(original[3]);
+                    const glm::mat3 original_rot(original);
+
+                    // Rotate position around pivot using cumulative rotation
+                    const glm::vec3 offset = original_pos - gizmo_pivot_;
+                    const glm::vec3 rotated_offset = gizmo_cumulative_rotation_ * offset;
+                    const glm::vec3 new_pos = gizmo_pivot_ + rotated_offset + total_translation;
+
+                    // Combine rotations
+                    const glm::mat3 new_rot = gizmo_cumulative_rotation_ * original_rot;
+
+                    glm::mat4 new_transform(new_rot);
+                    new_transform[3] = glm::vec4(new_pos, 1.0f);
+
+                    scene_manager->setNodeTransform(node_gizmo_node_names_[i], new_transform);
+                }
             } else {
-                const glm::mat3 new_rs(gizmo_matrix);
-                new_transform = gizmo_matrix;
-                new_transform[3] = glm::vec4(new_gizmo_pos - new_rs * center, 1.0f);
-            }
+                // Single selection: compute new transform from gizmo
+                const glm::vec3 center = scene_manager->getSelectionCenter();
+                const glm::mat4 node_transform = scene_manager->getSelectedNodeTransform();
+                const glm::vec3 new_gizmo_pos = glm::vec3(gizmo_matrix[3]);
 
-            scene_manager->setSelectedNodeTransform(new_transform);
-            // Cropbox child nodes automatically inherit parent transform via scene graph
+                glm::mat4 new_transform;
+                if (use_world_space) {
+                    const glm::mat3 old_rs(node_transform);
+                    const glm::mat3 delta_rs(delta_matrix);
+                    const glm::mat3 new_rs = delta_rs * old_rs;
+                    new_transform = glm::mat4(new_rs);
+                    new_transform[3] = glm::vec4(new_gizmo_pos - new_rs * center, 1.0f);
+                } else {
+                    const glm::mat3 new_rs(gizmo_matrix);
+                    new_transform = gizmo_matrix;
+                    new_transform[3] = glm::vec4(new_gizmo_pos - new_rs * center, 1.0f);
+                }
+                scene_manager->setSelectedNodeTransform(new_transform);
+            }
         }
 
         // Create undo command when drag ends
         if (!is_using && node_gizmo_active_) {
             node_gizmo_active_ = false;
-            const glm::mat4 final_transform = scene_manager->getSelectedNodeTransform();
-            if (node_transform_before_drag_ != final_transform) {
-                auto cmd = std::make_unique<command::TransformCommand>(
-                    scene_manager, node_gizmo_node_name_,
-                    node_transform_before_drag_, final_transform);
-                viewer_->getCommandHistory().execute(std::move(cmd));
+
+            const size_t count = node_gizmo_node_names_.size();
+            std::vector<glm::mat4> final_transforms;
+            final_transforms.reserve(count);
+            for (const auto& name : node_gizmo_node_names_) {
+                final_transforms.push_back(scene_manager->getNodeTransform(name));
+            }
+
+            bool any_changed = false;
+            for (size_t i = 0; i < count; ++i) {
+                if (node_transforms_before_drag_[i] != final_transforms[i]) {
+                    any_changed = true;
+                    break;
+                }
+            }
+
+            if (any_changed) {
+                if (count == 1) {
+                    auto cmd = std::make_unique<command::TransformCommand>(
+                        scene_manager, node_gizmo_node_names_[0],
+                        node_transforms_before_drag_[0], final_transforms[0]);
+                    viewer_->getCommandHistory().execute(std::move(cmd));
+                } else {
+                    auto cmd = std::make_unique<command::MultiTransformCommand>(
+                        scene_manager, node_gizmo_node_names_,
+                        node_transforms_before_drag_, std::move(final_transforms));
+                    viewer_->getCommandHistory().execute(std::move(cmd));
+                }
             }
         }
 

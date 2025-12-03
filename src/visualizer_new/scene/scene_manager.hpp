@@ -137,12 +137,16 @@ namespace lfs::vis {
         glm::mat4 getNodeTransform(const std::string& name) const;
         void setSelectedNodeTranslation(const glm::vec3& translation);
         glm::vec3 getSelectedNodeTranslation() const;
-        glm::vec3 getSelectedNodeCentroid() const; // Get centroid (average position) of selected node's splat data
-        glm::vec3 getSelectedNodeCenter() const;   // Get bounding box center of selected node's splat data
+        glm::vec3 getSelectedNodeCentroid() const;
+        glm::vec3 getSelectedNodeCenter() const;
 
         // Full transform for selected node (includes rotation and scale)
         void setSelectedNodeTransform(const glm::mat4& transform);
         glm::mat4 getSelectedNodeTransform() const;
+
+        // Multi-selection support
+        [[nodiscard]] glm::vec3 getSelectionCenter() const;
+        [[nodiscard]] glm::vec3 getSelectionWorldCenter() const;
 
         // Cropbox operations for selected node
         NodeId getSelectedNodeCropBoxId() const;

@@ -773,6 +773,75 @@ namespace lfs::vis {
         return scene_.getNodeTransform(node_name);
     }
 
+    glm::vec3 SceneManager::getSelectionCenter() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (selected_nodes_.empty()) return glm::vec3(0.0f);
+
+        // Single selection - use node's local bounds center
+        if (selected_nodes_.size() == 1) {
+            const auto* node = scene_.getNode(*selected_nodes_.begin());
+            if (!node) return glm::vec3(0.0f);
+            return scene_.getNodeBoundsCenter(node->id);
+        }
+
+        // Multi-selection - compute combined bounds center in local space
+        glm::vec3 total_min(std::numeric_limits<float>::max());
+        glm::vec3 total_max(std::numeric_limits<float>::lowest());
+        bool has_bounds = false;
+
+        for (const auto& name : selected_nodes_) {
+            const auto* node = scene_.getNode(name);
+            if (!node) continue;
+
+            glm::vec3 node_min, node_max;
+            if (scene_.getNodeBounds(node->id, node_min, node_max)) {
+                total_min = glm::min(total_min, node_min);
+                total_max = glm::max(total_max, node_max);
+                has_bounds = true;
+            }
+        }
+
+        return has_bounds ? (total_min + total_max) * 0.5f : glm::vec3(0.0f);
+    }
+
+    glm::vec3 SceneManager::getSelectionWorldCenter() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (selected_nodes_.empty()) return glm::vec3(0.0f);
+
+        glm::vec3 total_min(std::numeric_limits<float>::max());
+        glm::vec3 total_max(std::numeric_limits<float>::lowest());
+        bool has_bounds = false;
+
+        for (const auto& name : selected_nodes_) {
+            const auto* node = scene_.getNode(name);
+            if (!node) continue;
+
+            glm::vec3 local_min, local_max;
+            if (!scene_.getNodeBounds(node->id, local_min, local_max)) continue;
+
+            const glm::mat4 world_transform = scene_.getWorldTransform(node->id);
+            const glm::vec3 corners[8] = {
+                {local_min.x, local_min.y, local_min.z},
+                {local_max.x, local_min.y, local_min.z},
+                {local_min.x, local_max.y, local_min.z},
+                {local_max.x, local_max.y, local_min.z},
+                {local_min.x, local_min.y, local_max.z},
+                {local_max.x, local_min.y, local_max.z},
+                {local_min.x, local_max.y, local_max.z},
+                {local_max.x, local_max.y, local_max.z}
+            };
+
+            for (const auto& corner : corners) {
+                const glm::vec3 world_corner = glm::vec3(world_transform * glm::vec4(corner, 1.0f));
+                total_min = glm::min(total_min, world_corner);
+                total_max = glm::max(total_max, world_corner);
+            }
+            has_bounds = true;
+        }
+
+        return has_bounds ? (total_min + total_max) * 0.5f : glm::vec3(0.0f);
+    }
+
     // ========== Cropbox Operations ==========
 
     NodeId SceneManager::getSelectedNodeCropBoxId() const {

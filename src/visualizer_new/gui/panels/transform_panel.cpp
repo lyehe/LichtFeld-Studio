@@ -53,8 +53,10 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
     auto* const render_manager = ctx.viewer->getRenderingManager();
     if (!scene_manager || !render_manager) return;
 
-    const std::string& node_name = scene_manager->getSelectedNodeName();
-    if (node_name.empty()) return;
+    const auto selected_names = scene_manager->getSelectedNodeNames();
+    if (selected_names.empty()) return;
+
+    const bool is_multi_selection = (selected_names.size() > 1);
 
     const char* header_label = nullptr;
     switch (current_tool) {
@@ -66,6 +68,31 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
 
     if (!ImGui::CollapsingHeader(header_label, ImGuiTreeNodeFlags_DefaultOpen)) return;
 
+    // Multi-selection: show info only, use gizmo to transform
+    if (is_multi_selection) {
+        ImGui::Text("%zu nodes selected", selected_names.size());
+        ImGui::TextDisabled("Use gizmo to transform");
+        ImGui::Separator();
+        if (ImGui::Button("Reset All Transforms")) {
+            static const glm::mat4 IDENTITY(1.0f);
+            const size_t count = selected_names.size();
+            std::vector<glm::mat4> old_transforms;
+            std::vector<glm::mat4> new_transforms;
+            old_transforms.reserve(count);
+            new_transforms.reserve(count);
+            for (const auto& name : selected_names) {
+                old_transforms.push_back(scene_manager->getNodeTransform(name));
+                new_transforms.push_back(IDENTITY);
+                scene_manager->setNodeTransform(name, IDENTITY);
+            }
+            auto cmd = std::make_unique<command::MultiTransformCommand>(
+                scene_manager, selected_names, std::move(old_transforms), std::move(new_transforms));
+            ctx.viewer->getCommandHistory().execute(std::move(cmd));
+        }
+        return;
+    }
+
+    const std::string& node_name = selected_names[0];
     const bool use_world_space = (transform_space == TransformSpace::World);
     const glm::mat4 current_transform = scene_manager->getSelectedNodeTransform();
     auto [translation, rotation, scale] = decompose(current_transform);
