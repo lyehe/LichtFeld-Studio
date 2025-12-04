@@ -699,7 +699,7 @@ namespace lfs::vis {
 
                 case input::Action::CYCLE_SELECTION_VIS:
                     if (gui_manager_ &&
-                        gui_manager_->getCurrentToolMode() == gui::panels::ToolMode::Selection) {
+                        gui_manager_->getCurrentToolMode() == gui::panels::ToolType::Selection) {
                         cmd::CycleSelectionVisualization{}.emit();
                     }
                     return;
@@ -1259,10 +1259,10 @@ namespace lfs::vis {
         // Check GUI tool mode for CropBox (and transform tools)
         if (gui_manager_) {
             const auto gui_tool = gui_manager_->getCurrentToolMode();
-            if (gui_tool == gui::panels::ToolMode::CropBox) return input::ToolMode::CROP_BOX;
-            if (gui_tool == gui::panels::ToolMode::Translate) return input::ToolMode::TRANSLATE;
-            if (gui_tool == gui::panels::ToolMode::Rotate) return input::ToolMode::ROTATE;
-            if (gui_tool == gui::panels::ToolMode::Scale) return input::ToolMode::SCALE;
+            if (gui_tool == gui::panels::ToolType::CropBox) return input::ToolMode::CROP_BOX;
+            if (gui_tool == gui::panels::ToolType::Translate) return input::ToolMode::TRANSLATE;
+            if (gui_tool == gui::panels::ToolType::Rotate) return input::ToolMode::ROTATE;
+            if (gui_tool == gui::panels::ToolType::Scale) return input::ToolMode::SCALE;
         }
         return input::ToolMode::GLOBAL;
     }

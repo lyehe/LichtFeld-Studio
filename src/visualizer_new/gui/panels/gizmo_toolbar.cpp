@@ -8,9 +8,6 @@
 #include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
 #include "internal/resource_paths.hpp"
-#include "scene/scene_manager.hpp"
-#include "training/training_manager.hpp"
-#include "visualizer_impl.hpp"
 #include <imgui.h>
 
 namespace lfs::vis::gui::panels {
@@ -156,27 +153,21 @@ namespace lfs::vis::gui::panels {
             InitGizmoToolbar(state);
         }
 
-        // Check if training is active - if so, hide the toolbar entirely
-        bool is_training = false;
-        if (ctx.viewer) {
-            if (auto* sm = ctx.viewer->getSceneManager()) {
-                if (auto tm = sm->getTrainerManager()) {
-                    is_training = tm->isRunning() || tm->isPaused();
-                }
-            }
+        // EditorContext is the single source of truth
+        auto* editor = ctx.editor;
+        if (!editor) return;
+
+        // During training, don't show toolbar
+        if (editor->isTrainingOrPaused()) {
+            return;
         }
 
-        // During training, force tool mode to None and don't show toolbar
-        if (is_training) {
-            if (state.current_tool != ToolMode::None) {
-                state.current_tool = ToolMode::None;
-            }
-            return;  // Don't draw toolbar during training
-        }
+        // Validate and auto-deselect unavailable tools
+        editor->validateActiveTool();
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
-        constexpr ImGuiWindowFlags flags =
+        constexpr ImGuiWindowFlags FLAGS =
             ImGuiWindowFlags_NoTitleBar |
             ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoMove |
@@ -196,28 +187,28 @@ namespace lfs::vis::gui::panels {
 
         {
             const ToolbarStyle style;
-            if (ImGui::Begin("##GizmoToolbar", nullptr, flags)) {
+            if (ImGui::Begin("##GizmoToolbar", nullptr, FLAGS)) {
                 const ImVec2 btn_size(BUTTON_SIZE, BUTTON_SIZE);
 
-                const auto IconButton = [&](const char* id, const unsigned int texture,
-                                            const ToolMode tool, const ImGuizmo::OPERATION op,
-                                            const char* fallback, const char* tooltip,
-                                            const bool enabled = true) {
-                    const bool is_selected = (state.current_tool == tool);
+                // Helper lambda for tool buttons - uses EditorContext for availability
+                const auto ToolButton = [&](const char* id, unsigned int texture,
+                                            ToolType tool, ImGuizmo::OPERATION op,
+                                            const char* fallback, const char* tooltip) {
+                    const bool is_selected = (editor->getActiveTool() == tool);
+                    const bool enabled = editor->isToolAvailable(tool);
+                    const char* disabled_reason = editor->getToolUnavailableReason(tool);
 
                     if (!enabled) {
                         ImGui::BeginDisabled();
                     }
 
-                    ImGui::PushStyleColor(ImGuiCol_Button, is_selected ?
-                        ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_selected ?
-                        ImVec4(0.4f, 0.6f, 0.9f, 1.0f) : ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Button, is_selected ? BTN_SELECTED : BTN_NORMAL);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_selected ? BTN_SELECTED_HOVER : BTN_NORMAL_HOVER);
 
-                    const bool clicked = texture ?
-                        ImGui::ImageButton(id, (ImTextureID)(intptr_t)texture, btn_size,
-                                           ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0)) :
-                        ImGui::Button(fallback, btn_size);
+                    const bool clicked = texture
+                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(texture),
+                                             btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
+                        : ImGui::Button(fallback, btn_size);
 
                     ImGui::PopStyleColor(2);
 
@@ -226,75 +217,65 @@ namespace lfs::vis::gui::panels {
                     }
 
                     if (clicked && enabled) {
-                        state.current_tool = is_selected ? ToolMode::None : tool;
+                        editor->setActiveTool(is_selected ? ToolType::None : tool);
                         if (!is_selected) state.current_operation = op;
                     }
+
                     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
                         if (enabled) {
                             ImGui::SetTooltip("%s", tooltip);
-                        } else {
-                            ImGui::SetTooltip("%s (disabled - no gaussians)", tooltip);
+                        } else if (disabled_reason) {
+                            ImGui::SetTooltip("%s (%s)", tooltip, disabled_reason);
                         }
                     }
-                    return clicked && enabled;
                 };
 
-                // Selection and Brush tools require gaussians (disabled in dataset mode)
-                const bool has_gaussians = !state.dataset_mode;
-
-                IconButton("##selection", state.selection_texture, ToolMode::Selection,
-                           ImGuizmo::TRANSLATE, "S", "Selection", has_gaussians);
+                ToolButton("##selection", state.selection_texture, ToolType::Selection, ImGuizmo::TRANSLATE, "S", "Selection");
                 ImGui::SameLine();
-                IconButton("##translate", state.translation_texture, ToolMode::Translate,
-                           ImGuizmo::TRANSLATE, "T", "Translate");
+                ToolButton("##translate", state.translation_texture, ToolType::Translate, ImGuizmo::TRANSLATE, "T", "Translate");
                 ImGui::SameLine();
-                IconButton("##rotate", state.rotation_texture, ToolMode::Rotate,
-                           ImGuizmo::ROTATE, "R", "Rotate");
+                ToolButton("##rotate", state.rotation_texture, ToolType::Rotate, ImGuizmo::ROTATE, "R", "Rotate");
                 ImGui::SameLine();
-                IconButton("##scale", state.scaling_texture, ToolMode::Scale,
-                           ImGuizmo::SCALE, "S", "Scale");
+                ToolButton("##scale", state.scaling_texture, ToolType::Scale, ImGuizmo::SCALE, "S", "Scale");
                 ImGui::SameLine();
-                IconButton("##brush", state.brush_texture, ToolMode::Brush,
-                           ImGuizmo::TRANSLATE, "B", "Brush Selection", has_gaussians);
+                ToolButton("##brush", state.brush_texture, ToolType::Brush, ImGuizmo::TRANSLATE, "B", "Brush Selection");
                 ImGui::SameLine();
-                IconButton("##align", state.align_texture, ToolMode::Align,
-                           ImGuizmo::TRANSLATE, "A", "3-Point Align");
+                ToolButton("##align", state.align_texture, ToolType::Align, ImGuizmo::TRANSLATE, "A", "3-Point Align");
                 ImGui::SameLine();
-                IconButton("##cropbox", state.cropbox_texture, ToolMode::CropBox,
-                           ImGuizmo::BOUNDS, "C", "Crop Box");
+                ToolButton("##cropbox", state.cropbox_texture, ToolType::CropBox, ImGuizmo::BOUNDS, "C", "Crop Box");
             }
             ImGui::End();
         }
 
+        const ToolType active_tool = editor->getActiveTool();
+
         // Secondary toolbar for selection mode
-        if (state.current_tool == ToolMode::Selection) {
+        if (active_tool == ToolType::Selection) {
             constexpr int NUM_SEL_BUTTONS = 5;
             const ImVec2 sub_size = ComputeToolbarSize(NUM_SEL_BUTTONS);
 
             const float sub_pos_x = viewport->WorkPos.x + viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
-            const float sub_pos_y = viewport->WorkPos.y + viewport_pos.y + toolbar_size.y + 8.0f;
+            const float sub_pos_y = viewport->WorkPos.y + viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
 
             ImGui::SetNextWindowPos(ImVec2(sub_pos_x, sub_pos_y), ImGuiCond_Always);
             ImGui::SetNextWindowSize(sub_size, ImGuiCond_Always);
 
             {
                 const SubToolbarStyle style;
-                if (ImGui::Begin("##SelectionModeToolbar", nullptr, flags)) {
+                if (ImGui::Begin("##SelectionModeToolbar", nullptr, FLAGS)) {
                     const ImVec2 btn_size(BUTTON_SIZE, BUTTON_SIZE);
 
-                    const auto SelectionModeButton = [&](const char* id, const unsigned int texture,
-                                                         const SelectionSubMode mode, const char* fallback,
+                    const auto SelectionModeButton = [&](const char* id, unsigned int texture,
+                                                         SelectionSubMode mode, const char* fallback,
                                                          const char* tooltip) {
                         const bool is_selected = (state.selection_mode == mode);
-                        ImGui::PushStyleColor(ImGuiCol_Button, is_selected ?
-                            ImVec4(0.3f, 0.5f, 0.8f, 1.0f) : ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_selected ?
-                            ImVec4(0.4f, 0.6f, 0.9f, 1.0f) : ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Button, is_selected ? BTN_SELECTED : BTN_NORMAL);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_selected ? BTN_SELECTED_HOVER : BTN_NORMAL_HOVER);
 
-                        const bool clicked = texture ?
-                            ImGui::ImageButton(id, (ImTextureID)(intptr_t)texture, btn_size,
-                                               ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0)) :
-                            ImGui::Button(fallback, btn_size);
+                        const bool clicked = texture
+                            ? ImGui::ImageButton(id, static_cast<ImTextureID>(texture),
+                                                 btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
+                            : ImGui::Button(fallback, btn_size);
 
                         ImGui::PopStyleColor(2);
                         if (clicked) state.selection_mode = mode;
@@ -321,9 +302,9 @@ namespace lfs::vis::gui::panels {
         }
 
         // Transform space toolbar (Local/World toggle)
-        const bool is_transform_tool = (state.current_tool == ToolMode::Translate ||
-                                        state.current_tool == ToolMode::Rotate ||
-                                        state.current_tool == ToolMode::Scale);
+        const bool is_transform_tool = (active_tool == ToolType::Translate ||
+                                        active_tool == ToolType::Rotate ||
+                                        active_tool == ToolType::Scale);
         if (is_transform_tool) {
             constexpr int NUM_BUTTONS = 2;
             const ImVec2 sub_size = ComputeToolbarSize(NUM_BUTTONS);
@@ -334,11 +315,11 @@ namespace lfs::vis::gui::panels {
             ImGui::SetNextWindowSize(sub_size, ImGuiCond_Always);
 
             const SubToolbarStyle style;
-            if (ImGui::Begin("##TransformSpaceToolbar", nullptr, flags)) {
+            if (ImGui::Begin("##TransformSpaceToolbar", nullptr, FLAGS)) {
                 const ImVec2 btn_size(BUTTON_SIZE, BUTTON_SIZE);
 
-                const auto SpaceButton = [&](const char* id, const unsigned int tex,
-                                             const TransformSpace space, const char* fallback,
+                const auto SpaceButton = [&](const char* id, unsigned int tex,
+                                             TransformSpace space, const char* fallback,
                                              const char* tooltip) {
                     const bool selected = (state.transform_space == space);
                     ImGui::PushStyleColor(ImGuiCol_Button, selected ? BTN_SELECTED : BTN_NORMAL);
@@ -362,7 +343,7 @@ namespace lfs::vis::gui::panels {
         }
 
         // Cropbox operations toolbar
-        if (state.current_tool == ToolMode::CropBox) {
+        if (active_tool == ToolType::CropBox) {
             constexpr int NUM_CROP_BUTTONS = 5;
             const ImVec2 sub_size = ComputeToolbarSize(NUM_CROP_BUTTONS);
             const float sub_x = viewport->WorkPos.x + viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
@@ -372,19 +353,19 @@ namespace lfs::vis::gui::panels {
             ImGui::SetNextWindowSize(sub_size, ImGuiCond_Always);
 
             const SubToolbarStyle style;
-            if (ImGui::Begin("##CropBoxToolbar", nullptr, flags)) {
+            if (ImGui::Begin("##CropBoxToolbar", nullptr, FLAGS)) {
                 const ImVec2 btn_size(BUTTON_SIZE, BUTTON_SIZE);
 
-                const auto CropOpButton = [&](const char* id, const unsigned int tex,
-                                              const CropBoxOperation op, const char* fallback,
+                const auto CropOpButton = [&](const char* id, unsigned int tex,
+                                              CropBoxOperation op, const char* fallback,
                                               const char* tooltip) {
                     const bool selected = (state.cropbox_operation == op);
                     ImGui::PushStyleColor(ImGuiCol_Button, selected ? BTN_SELECTED : BTN_NORMAL);
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? BTN_SELECTED_HOVER : BTN_NORMAL_HOVER);
 
                     const bool clicked = tex
-                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(tex), btn_size,
-                                             ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
+                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(tex),
+                                             btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
                         : ImGui::Button(fallback, btn_size);
 
                     ImGui::PopStyleColor(2);

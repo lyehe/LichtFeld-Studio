@@ -15,12 +15,12 @@ namespace lfs::vis::gui::panels {
         auto* const gui_manager = ctx.viewer->getGuiManager();
         if (!gui_manager) return;
 
-        const ToolMode current_tool = gui_manager->getCurrentToolMode();
+        const ToolType current_tool = gui_manager->getCurrentToolMode();
         const TransformSpace transform_space = gui_manager->getGizmoToolbarState().transform_space;
 
         DrawTransformControls(ctx, current_tool, transform_space, gui_manager->getTransformPanelState());
 
-        if (current_tool == ToolMode::CropBox) {
+        if (current_tool == ToolType::CropBox) {
             DrawCropBoxControls(ctx);
         }
     }

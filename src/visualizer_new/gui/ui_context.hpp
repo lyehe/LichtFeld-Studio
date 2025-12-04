@@ -11,6 +11,7 @@
 namespace lfs::vis {
     // Forward declarations
     class VisualizerImpl;
+    class EditorContext;
 
     namespace gui {
         class FileBrowser;
@@ -20,6 +21,7 @@ namespace lfs::vis {
             VisualizerImpl* viewer;
             FileBrowser* file_browser;
             std::unordered_map<std::string, bool>* window_states;
+            EditorContext* editor;  // Centralized editor state
         };
     } // namespace gui
 } // namespace lfs::vis

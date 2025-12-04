@@ -25,7 +25,7 @@ namespace lfs::vis::gui::panels {
         glm::vec3 prev_world_euler{0.0f};
     };
 
-    void DrawTransformControls(const UIContext& ctx, ToolMode current_tool,
+    void DrawTransformControls(const UIContext& ctx, ToolType current_tool,
                                TransformSpace transform_space, TransformPanelState& state);
 
 } // namespace lfs::vis::gui::panels

@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "gui/panels/main_panel.hpp"
+#include "core/editor_context.hpp"
 #include "core_new/events.hpp"
 #include "gui/panels/tools_panel.hpp"
 #include "gui/panels/training_panel.hpp"
@@ -67,11 +68,22 @@ namespace lfs::vis::gui::panels {
         if (!render_manager)
             return;
 
+        // Use EditorContext to check pre-training mode
+        const bool force_point_cloud = ctx.editor && ctx.editor->forcePointCloudMode();
+
         // Get current render settings
         auto settings = render_manager->getSettings();
         bool settings_changed = false;
 
-        // Point Cloud Mode checkbox
+        // In pre-training mode, point cloud mode is always on
+        if (force_point_cloud && !settings.point_cloud_mode) {
+            settings.point_cloud_mode = true;
+            settings_changed = true;
+            ui::PointCloudModeChanged{.enabled = true, .voxel_size = settings.voxel_size}.emit();
+        }
+
+        // Point Cloud Mode checkbox (disabled in pre-training mode - always on)
+        ImGui::BeginDisabled(force_point_cloud);
         if (ImGui::Checkbox("Point Cloud Mode", &settings.point_cloud_mode)) {
             settings_changed = true;
 
@@ -79,6 +91,10 @@ namespace lfs::vis::gui::panels {
                 .enabled = settings.point_cloud_mode,
                 .voxel_size = settings.voxel_size}
                 .emit();
+        }
+        ImGui::EndDisabled();
+        if (force_point_cloud && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Always enabled in pre-training mode");
         }
 
         // Show voxel size slider only when in point cloud mode

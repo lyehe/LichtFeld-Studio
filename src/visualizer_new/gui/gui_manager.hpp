@@ -69,7 +69,7 @@ namespace lfs::vis {
             // Selection sub-mode shortcuts (Ctrl+1..5)
             void setSelectionSubMode(panels::SelectionSubMode mode);
             panels::SelectionSubMode getSelectionSubMode() const { return gizmo_toolbar_state_.selection_mode; }
-            panels::ToolMode getCurrentToolMode() const { return gizmo_toolbar_state_.current_tool; }
+            panels::ToolType getCurrentToolMode() const;  // Delegates to EditorContext
             const panels::GizmoToolbarState& getGizmoToolbarState() const { return gizmo_toolbar_state_; }
             panels::TransformPanelState& getTransformPanelState() { return transform_panel_state_; }
 
@@ -157,7 +157,7 @@ namespace lfs::vis {
             glm::mat3 gizmo_cumulative_rotation_{1.0f};
 
             // Previous tool/selection mode for detecting changes
-            panels::ToolMode previous_tool_ = panels::ToolMode::None;
+            panels::ToolType previous_tool_ = panels::ToolType::None;
             panels::SelectionSubMode previous_selection_mode_ = panels::SelectionSubMode::Centers;
 
             // Tool cleanup

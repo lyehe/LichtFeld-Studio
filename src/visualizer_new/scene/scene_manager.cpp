@@ -117,7 +117,8 @@ namespace lfs::vis {
                 return;
             }
 
-            if (event.type == "PLY" || event.type == "Group" || event.type == "Dataset") {
+            if (event.type == "PLY" || event.type == "Group" || event.type == "Dataset" ||
+                event.type == "PointCloud" || event.type == "CameraGroup") {
                 // Skip if this is a multi-select event (already handled by selectNodes)
                 auto it = event.metadata.find("multi_select");
                 if (it != event.metadata.end() && it->second != "1") {
@@ -260,7 +261,7 @@ namespace lfs::vis {
             emitSceneChanged();
             updateCropBoxToFitScene(true);
             selectNode(name);
-            tools::SetToolbarTool{.tool_mode = static_cast<int>(gui::panels::ToolMode::CropBox)}.emit();
+            tools::SetToolbarTool{.tool_mode = static_cast<int>(gui::panels::ToolType::CropBox)}.emit();
 
             LOG_INFO("Loaded '{}' with {} gaussians", name, gaussian_count);
 
@@ -480,6 +481,13 @@ namespace lfs::vis {
             if (scene_.getNode(name) != nullptr) return true;
         }
         return false;
+    }
+
+    NodeType SceneManager::getSelectedNodeType() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (selected_nodes_.empty()) { return NodeType::SPLAT; }
+        const auto* node = scene_.getNode(*selected_nodes_.begin());
+        return node ? node->type : NodeType::SPLAT;
     }
 
     int SceneManager::getSelectedNodeIndex() const {

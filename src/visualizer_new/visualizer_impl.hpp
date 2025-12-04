@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "core/editor_context.hpp"
 #include "core/main_loop.hpp"
 #include "core_new/parameters.hpp"
 #include "gui/gui_manager.hpp"
@@ -110,6 +111,9 @@ namespace lfs::vis {
             return input_controller_.get();
         }
 
+        EditorContext& getEditorContext() { return editor_context_; }
+        const EditorContext& getEditorContext() const { return editor_context_; }
+
         // Undo/Redo
         command::CommandHistory& getCommandHistory() { return command_history_; }
         void undo();
@@ -170,6 +174,9 @@ namespace lfs::vis {
 
         // Undo/Redo history
         command::CommandHistory command_history_;
+
+        // Centralized editor state
+        EditorContext editor_context_;
 
         // State tracking
         bool window_initialized_ = false;

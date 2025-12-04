@@ -4,22 +4,15 @@
 
 #pragma once
 
+#include "core/editor_context.hpp"
 #include "gui/ui_context.hpp"
 #include <imgui.h>
 #include <ImGuizmo.h>
 
 namespace lfs::vis::gui::panels {
 
-    enum class ToolMode {
-        None,
-        Selection,
-        Translate,
-        Rotate,
-        Scale,
-        Brush,
-        Align,
-        CropBox
-    };
+    // Re-export ToolType from EditorContext for convenience
+    using ToolType = lfs::vis::ToolType;
 
     enum class CropBoxOperation {
         Bounds,
@@ -43,13 +36,13 @@ namespace lfs::vis::gui::panels {
 
     struct GizmoToolbarState {
         ImGuizmo::OPERATION current_operation = ImGuizmo::TRANSLATE;
-        ToolMode current_tool = ToolMode::Translate;
         CropBoxOperation cropbox_operation = CropBoxOperation::Bounds;
         bool reset_cropbox_requested = false;
         SelectionSubMode selection_mode = SelectionSubMode::Centers;
         TransformSpace transform_space = TransformSpace::Local;
         bool initialized = false;
-        bool dataset_mode = false;  // When true, disable selection/brush tools (no gaussians yet)
+
+        // Icon textures
         unsigned int selection_texture = 0;
         unsigned int rectangle_texture = 0;
         unsigned int polygon_texture = 0;

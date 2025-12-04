@@ -120,6 +120,7 @@ namespace lfs::vis {
         [[nodiscard]] std::string getSelectedNodeName() const;
         [[nodiscard]] std::vector<std::string> getSelectedNodeNames() const;
         [[nodiscard]] bool hasSelectedNode() const;
+        [[nodiscard]] NodeType getSelectedNodeType() const;
         [[nodiscard]] int getSelectedNodeIndex() const;
         [[nodiscard]] std::vector<bool> getSelectedNodeMask() const;
         void ensureCropBoxForSelectedNode();

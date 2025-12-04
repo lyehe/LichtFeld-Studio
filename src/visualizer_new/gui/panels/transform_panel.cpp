@@ -41,11 +41,11 @@ namespace {
     }
 } // namespace
 
-void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
+void DrawTransformControls(const UIContext& ctx, const ToolType current_tool,
                            const TransformSpace transform_space, TransformPanelState& state) {
-    if (current_tool != ToolMode::Translate &&
-        current_tool != ToolMode::Rotate &&
-        current_tool != ToolMode::Scale) {
+    if (current_tool != ToolType::Translate &&
+        current_tool != ToolType::Rotate &&
+        current_tool != ToolType::Scale) {
         return;
     }
 
@@ -60,9 +60,9 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
 
     const char* header_label = nullptr;
     switch (current_tool) {
-        case ToolMode::Translate: header_label = "Translate"; break;
-        case ToolMode::Rotate:    header_label = "Rotate"; break;
-        case ToolMode::Scale:     header_label = "Scale"; break;
+        case ToolType::Translate: header_label = "Translate"; break;
+        case ToolType::Rotate:    header_label = "Rotate"; break;
+        case ToolType::Scale:     header_label = "Scale"; break;
         default: return;
     }
 
@@ -114,7 +114,7 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
     bool changed = false;
     bool any_active = false;
 
-    if (current_tool == ToolMode::Translate) {
+    if (current_tool == ToolType::Translate) {
         ImGui::Text("Position:");
         ImGui::Text("X:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(text_width);
@@ -132,7 +132,7 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
         any_active |= ImGui::IsItemActive();
     }
 
-    if (current_tool == ToolMode::Rotate) {
+    if (current_tool == ToolType::Rotate) {
         ImGui::Text("Rotation (degrees):");
         ImGui::Text("X:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(text_width);
@@ -154,7 +154,7 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
         }
     }
 
-    if (current_tool == ToolMode::Scale) {
+    if (current_tool == ToolType::Scale) {
         ImGui::Text("Scale:");
 
         float uniform = (scale.x + scale.y + scale.z) / 3.0f;
@@ -207,10 +207,10 @@ void DrawTransformControls(const UIContext& ctx, const ToolMode current_tool,
         glm::mat4 new_transform;
 
         if (use_world_space) {
-            if (current_tool == ToolMode::Translate) {
+            if (current_tool == ToolType::Translate) {
                 new_transform = state.transform_before_edit;
                 new_transform[3] = glm::vec4(translation, 1.0f);
-            } else if (current_tool == ToolMode::Rotate) {
+            } else if (current_tool == ToolType::Rotate) {
                 const glm::vec3 euler_delta = glm::radians(euler - state.prev_world_euler);
                 const glm::quat rot_x = glm::angleAxis(euler_delta.x, glm::vec3(1, 0, 0));
                 const glm::quat rot_y = glm::angleAxis(euler_delta.y, glm::vec3(0, 1, 0));

@@ -42,6 +42,9 @@
 
 namespace lfs::vis::gui {
 
+    // Import ToolType for convenience
+    using ToolType = lfs::vis::ToolType;
+
     // Gizmo axis/plane visibility threshold (near-zero to always show)
     constexpr float GIZMO_AXIS_LIMIT = 0.0001f;
 
@@ -315,11 +318,16 @@ namespace lfs::vis::gui {
 
         ImGui::End();
 
+        // Update editor context state for this frame
+        auto& editor_ctx = viewer_->getEditorContext();
+        editor_ctx.update(viewer_->getSceneManager(), viewer_->getTrainerManager());
+
         // Create context for this frame
         UIContext ctx{
             .viewer = viewer_,
             .file_browser = file_browser_.get(),
-            .window_states = &window_states_};
+            .window_states = &window_states_,
+            .editor = &editor_ctx};
 
         // Draw docked panels
         if (show_main_panel_) {
@@ -464,16 +472,14 @@ namespace lfs::vis::gui {
         // Render gizmo toolbar (only when a node is selected)
         auto* scene_manager = ctx.viewer->getSceneManager();
         if (scene_manager && scene_manager->hasSelectedNode()) {
-            // Check if we're in dataset mode (no training model/gaussians yet)
-            gizmo_toolbar_state_.dataset_mode = scene_manager->hasDataset() &&
-                                                 scene_manager->getScene().getTrainingModel() == nullptr;
-
+            // EditorContext is already updated at start of frame - just use it
             panels::DrawGizmoToolbar(ctx, gizmo_toolbar_state_, viewport_pos_, viewport_size_);
 
-            const auto current_tool = gizmo_toolbar_state_.current_tool;
-            const bool is_transform_tool = (current_tool == panels::ToolMode::Translate ||
-                                            current_tool == panels::ToolMode::Rotate ||
-                                            current_tool == panels::ToolMode::Scale);
+            // Get current tool from EditorContext (single source of truth)
+            const auto current_tool = ctx.editor->getActiveTool();
+            const bool is_transform_tool = (current_tool == ToolType::Translate ||
+                                            current_tool == ToolType::Rotate ||
+                                            current_tool == ToolType::Scale);
             show_node_gizmo_ = is_transform_tool;
             if (is_transform_tool) {
                 node_gizmo_operation_ = gizmo_toolbar_state_.current_operation;
@@ -482,14 +488,14 @@ namespace lfs::vis::gui {
             auto* brush_tool = ctx.viewer->getBrushTool();
             auto* align_tool = ctx.viewer->getAlignTool();
             auto* selection_tool = ctx.viewer->getSelectionTool();
-            const bool is_brush_mode = (current_tool == panels::ToolMode::Brush);
-            const bool is_align_mode = (current_tool == panels::ToolMode::Align);
-            const bool is_selection_mode = (current_tool == panels::ToolMode::Selection);
-            const bool is_cropbox_mode = (current_tool == panels::ToolMode::CropBox);
+            const bool is_brush_mode = (current_tool == ToolType::Brush);
+            const bool is_align_mode = (current_tool == ToolType::Align);
+            const bool is_selection_mode = (current_tool == ToolType::Selection);
+            const bool is_cropbox_mode = (current_tool == ToolType::CropBox);
 
             // Materialize deletions when switching away from selection or cropbox tools
-            const bool was_selection_mode = (previous_tool_ == panels::ToolMode::Selection);
-            const bool was_cropbox_mode = (previous_tool_ == panels::ToolMode::CropBox);
+            const bool was_selection_mode = (previous_tool_ == ToolType::Selection);
+            const bool was_cropbox_mode = (previous_tool_ == ToolType::CropBox);
             if ((was_selection_mode || was_cropbox_mode) && current_tool != previous_tool_) {
                 if (auto* sm = ctx.viewer->getSceneManager()) {
                     sm->applyDeleted();
@@ -1052,7 +1058,8 @@ namespace lfs::vis::gui {
             sm->applyDeleted();
         }
 
-        if (gizmo_toolbar_state_.current_tool == panels::ToolMode::CropBox) {
+        auto& editor = viewer_->getEditorContext();
+        if (editor.getActiveTool() == ToolType::CropBox) {
             if (auto* const rm = viewer_->getRenderingManager()) {
                 auto settings = rm->getSettings();
                 settings.show_crop_box = false;
@@ -1061,7 +1068,7 @@ namespace lfs::vis::gui {
             }
         }
 
-        gizmo_toolbar_state_.current_tool = panels::ToolMode::Translate;
+        editor.setActiveTool(ToolType::None);
         gizmo_toolbar_state_.current_operation = ImGuizmo::TRANSLATE;
     }
 
@@ -1096,15 +1103,16 @@ namespace lfs::vis::gui {
         });
 
         lfs::core::events::tools::SetToolbarTool::when([this](const auto& e) {
-            gizmo_toolbar_state_.current_tool = static_cast<panels::ToolMode>(e.tool_mode);
-            if (gizmo_toolbar_state_.current_tool == panels::ToolMode::CropBox) {
+            auto& editor = viewer_->getEditorContext();
+            editor.setActiveTool(static_cast<ToolType>(e.tool_mode));
+            if (editor.getActiveTool() == ToolType::CropBox) {
                 gizmo_toolbar_state_.cropbox_operation = panels::CropBoxOperation::Bounds;
                 crop_gizmo_operation_ = ImGuizmo::BOUNDS;
             }
         });
 
         cmd::ApplyCropBox::when([this](const auto&) {
-            if (gizmo_toolbar_state_.current_tool != panels::ToolMode::CropBox) {
+            if (viewer_->getEditorContext().getActiveTool() != ToolType::CropBox) {
                 return;
             }
             auto* const sm = viewer_->getSceneManager();
@@ -1127,7 +1135,7 @@ namespace lfs::vis::gui {
 
         // Handle Ctrl+T to toggle crop inverse mode
         cmd::ToggleCropInverse::when([this](const auto&) {
-            if (gizmo_toolbar_state_.current_tool != panels::ToolMode::CropBox) {
+            if (viewer_->getEditorContext().getActiveTool() != ToolType::CropBox) {
                 return;
             }
             auto* const sm = viewer_->getSceneManager();
@@ -1173,7 +1181,7 @@ namespace lfs::vis::gui {
 
         // Cycle: normal -> center markers -> rings -> normal
         cmd::CycleSelectionVisualization::when([this](const auto&) {
-            if (gizmo_toolbar_state_.current_tool != panels::ToolMode::Selection) return;
+            if (viewer_->getEditorContext().getActiveTool() != ToolType::Selection) return;
             auto* const rm = viewer_->getRenderingManager();
             if (!rm) return;
 
@@ -1188,9 +1196,13 @@ namespace lfs::vis::gui {
     }
 
     void GuiManager::setSelectionSubMode(panels::SelectionSubMode mode) {
-        if (gizmo_toolbar_state_.current_tool == panels::ToolMode::Selection) {
+        if (viewer_->getEditorContext().getActiveTool() == ToolType::Selection) {
             gizmo_toolbar_state_.selection_mode = mode;
         }
+    }
+
+    panels::ToolType GuiManager::getCurrentToolMode() const {
+        return viewer_->getEditorContext().getActiveTool();
     }
 
     bool GuiManager::isCapturingInput() const {

@@ -326,6 +326,7 @@ namespace lfs::vis::gui {
                     if (is_group) type_str = "Group";
                     else if (is_dataset) type_str = "Dataset";
                     else if (is_camera_group) type_str = "CameraGroup";
+                    else if (is_pointcloud) type_str = "PointCloud";
 
                     ui::NodeSelected{
                         .path = node.name,
