@@ -107,7 +107,7 @@ namespace lfs::vis {
 
         // Operations - Generic splat file loading
         void loadSplatFile(const std::filesystem::path& path);
-        void addSplatFile(const std::filesystem::path& path, const std::string& name = "", bool is_visible = true);
+        std::string addSplatFile(const std::filesystem::path& path, const std::string& name = "", bool is_visible = true);
 
         void removePLY(const std::string& name, bool keep_children = false);
         void setPLYVisibility(const std::string& name, bool visible);

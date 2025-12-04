@@ -34,8 +34,8 @@ namespace lfs::vis {
             // Determine file type and load appropriately
             if (isSOGFile(path) || isPLYFile(path)) {
                 std::string ply_name = path.stem().string();
-                scene_manager_->addSplatFile(path, ply_name);
-                scene_manager_->getProject()->addPly(true, path, -1, ply_name);
+                std::string actual_name = scene_manager_->addSplatFile(path, ply_name);
+                scene_manager_->getProject()->addPly(true, path, -1, actual_name);
             } else {
                 // Let scene manager determine the type
                 scene_manager_->addSplatFile(path);

@@ -208,8 +208,17 @@ namespace lfs::project {
         }
 
         if (!std::filesystem::is_directory(targetPath.parent_path())) {
-            LOG_ERROR("LichtFeldProjectFile: {} parent directory does not exist {}", targetPath.parent_path().string(), targetPath.string());
-            return false;
+            // Create the directory if it doesn't exist
+            try {
+                if (!std::filesystem::create_directories(targetPath.parent_path())) {
+                    LOG_ERROR("LichtFeldProjectFile: failed to create parent directory {}", targetPath.parent_path().string());
+                    return false;
+                }
+                LOG_INFO("Created project directory: {}", targetPath.parent_path().string());
+            } catch (const std::filesystem::filesystem_error& e) {
+                LOG_ERROR("LichtFeldProjectFile: failed to create parent directory {}: {}", targetPath.parent_path().string(), e.what());
+                return false;
+            }
         }
 
         if (targetPath.extension() != EXTENSION) {

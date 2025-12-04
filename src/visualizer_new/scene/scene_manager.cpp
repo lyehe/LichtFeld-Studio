@@ -271,8 +271,8 @@ namespace lfs::vis {
         }
     }
 
-    void SceneManager::addSplatFile(const std::filesystem::path& path, const std::string& name_hint,
-                                    bool is_visible) {
+    std::string SceneManager::addSplatFile(const std::filesystem::path& path, const std::string& name_hint,
+                                           bool is_visible) {
         LOG_TIMER_TRACE("SceneManager::addSplatFile");
 
         try {
@@ -280,7 +280,7 @@ namespace lfs::vis {
             if (content_type_ != ContentType::SplatFiles) {
                 LOG_DEBUG("Not in splat mode, switching to splat mode and loading");
                 loadSplatFile(path);
-                return;
+                return path.stem().string();
             }
 
             LOG_INFO("Adding splat file to scene: {}", path.string());
@@ -369,6 +369,8 @@ namespace lfs::vis {
             selectNode(name);
 
             LOG_INFO("Added '{}' ({} gaussians)", name, gaussian_count);
+
+            return name;
 
         } catch (const std::exception& e) {
             LOG_ERROR("Failed to add splat file: {} (path: {})", e.what(), path.string());
