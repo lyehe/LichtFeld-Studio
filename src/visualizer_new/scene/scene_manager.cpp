@@ -1532,53 +1532,69 @@ namespace lfs::vis {
     }
 
     void SceneManager::updateCropBoxToFitScene(const bool use_percentile) {
-        if (!rendering_manager_) {
+        if (!rendering_manager_) return;
+
+        // Find selected cropbox or parent with cropbox child
+        const SceneNode* cropbox = nullptr;
+        const SceneNode* parent = nullptr;
+
+        for (const auto& name : selected_nodes_) {
+            const auto* node = scene_.getNode(name);
+            if (!node) continue;
+
+            if (node->type == NodeType::CROPBOX) {
+                cropbox = node;
+                parent = scene_.getNodeById(node->parent_id);
+                break;
+            }
+
+            if (node->type == NodeType::SPLAT || node->type == NodeType::POINTCLOUD) {
+                for (const NodeId child_id : node->children) {
+                    if (const auto* child = scene_.getNodeById(child_id);
+                        child && child->type == NodeType::CROPBOX) {
+                        cropbox = child;
+                        parent = node;
+                        break;
+                    }
+                }
+                if (cropbox) break;
+            }
+        }
+
+        if (!cropbox || !parent) {
+            LOG_WARN("No cropbox found in selection");
             return;
         }
 
         glm::vec3 min_bounds, max_bounds;
+        bool bounds_valid = false;
 
-        // Try SplatData first (combined model)
-        const auto* combined_model = scene_.getCombinedModel();
-        if (combined_model && combined_model->size() > 0) {
-            if (!lfs::core::compute_bounds(*combined_model, min_bounds, max_bounds, 0.0f, use_percentile)) {
-                return;
-            }
-        } else {
-            // Fall back to PointCloud (pre-training data)
-            const auto* point_cloud = scene_.getVisiblePointCloud();
-            if (!point_cloud || point_cloud->size() == 0) {
-                LOG_WARN("No splat data or point cloud available for fit to scene");
-                return;
-            }
-            if (!lfs::core::compute_bounds(*point_cloud, min_bounds, max_bounds, 0.0f, use_percentile)) {
-                return;
-            }
+        if (parent->type == NodeType::SPLAT && parent->model && parent->model->size() > 0) {
+            bounds_valid = lfs::core::compute_bounds(*parent->model, min_bounds, max_bounds, 0.0f, use_percentile);
+        } else if (parent->type == NodeType::POINTCLOUD && parent->point_cloud && parent->point_cloud->size() > 0) {
+            bounds_valid = lfs::core::compute_bounds(*parent->point_cloud, min_bounds, max_bounds, 0.0f, use_percentile);
+        }
+
+        if (!bounds_valid) {
+            LOG_WARN("Cannot compute bounds for '{}'", parent->name);
+            return;
         }
 
         const glm::vec3 center = (min_bounds + max_bounds) * 0.5f;
-        const glm::vec3 size = max_bounds - min_bounds;
-        const glm::vec3 half_size = size * 0.5f;
+        const glm::vec3 half_size = (max_bounds - min_bounds) * 0.5f;
 
-        // Update all scene graph cropboxes (single source of truth)
-        for (const auto* node : scene_.getNodes()) {
-            if (node->type == NodeType::CROPBOX && node->cropbox) {
-                auto* mutable_node = scene_.getMutableNode(node->name);
-                if (mutable_node && mutable_node->cropbox) {
-                    mutable_node->cropbox->min = -half_size;
-                    mutable_node->cropbox->max = half_size;
-                    mutable_node->local_transform = glm::translate(glm::mat4(1.0f), center);
-                    mutable_node->transform_dirty = true;
-                }
-            }
+        if (auto* node = scene_.getMutableNode(cropbox->name); node && node->cropbox) {
+            node->cropbox->min = -half_size;
+            node->cropbox->max = half_size;
+            node->local_transform = glm::translate(glm::mat4(1.0f), center);
+            node->transform_dirty = true;
         }
 
-        if (rendering_manager_) {
-            rendering_manager_->markDirty();
-        }
+        rendering_manager_->markDirty();
 
-        LOG_INFO("Cropbox reset: center({:.2f},{:.2f},{:.2f}) size({:.2f},{:.2f},{:.2f})",
-                 center.x, center.y, center.z, size.x, size.y, size.z);
+        LOG_INFO("Fit '{}' to '{}': center({:.2f},{:.2f},{:.2f}) size({:.2f},{:.2f},{:.2f})",
+                 cropbox->name, parent->name, center.x, center.y, center.z,
+                 half_size.x * 2, half_size.y * 2, half_size.z * 2);
     }
 
     SceneManager::ClipboardEntry::HierarchyNode SceneManager::copyNodeHierarchy(const SceneNode* node) {
