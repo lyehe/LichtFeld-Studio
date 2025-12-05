@@ -798,6 +798,16 @@ namespace lfs::vis {
         return scene_.getNodeTransform(node_name);
     }
 
+    glm::mat4 SceneManager::getSelectedNodeWorldTransform() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (selected_nodes_.empty()) return glm::mat4(1.0f);
+
+        const auto* node = scene_.getNode(*selected_nodes_.begin());
+        if (!node) return glm::mat4(1.0f);
+
+        return scene_.getWorldTransform(node->id);
+    }
+
     glm::vec3 SceneManager::getSelectionCenter() const {
         std::lock_guard<std::mutex> lock(state_mutex_);
         if (selected_nodes_.empty()) return glm::vec3(0.0f);
@@ -881,8 +891,8 @@ namespace lfs::vis {
             return node->id;
         }
 
-        // If selected node is a splat, return its cropbox child
-        if (node->type == NodeType::SPLAT) {
+        // If selected node is a splat or pointcloud, return its cropbox child
+        if (node->type == NodeType::SPLAT || node->type == NodeType::POINTCLOUD) {
             return scene_.getCropBoxForSplat(node->id);
         }
 
@@ -1201,17 +1211,56 @@ namespace lfs::vis {
             }
         }
 
-        // Enable cropbox for POINTCLOUD nodes (deferred filtering at training start)
+        // Crop point cloud data (GPU-accelerated)
         for (const auto& node_name : pointcloud_node_names) {
-            const auto* node = scene_.getNode(node_name);
-            if (!node) continue;
+            auto* node = scene_.getMutableNode(node_name);
+            if (!node || !node->point_cloud) continue;
 
             const NodeId cropbox_id = scene_.getCropBoxForSplat(node->id);
-            if (cropbox_id != NULL_NODE) {
-                if (auto* cropbox_data = scene_.getCropBoxData(cropbox_id)) {
-                    cropbox_data->enabled = true;
-                    cropbox_data->inverse = inverse;
-                    LOG_DEBUG("CropBox enabled for PointCloud '{}'", node_name);
+            if (cropbox_id == NULL_NODE) continue;
+
+            const auto* cropbox_node = scene_.getNodeById(cropbox_id);
+            if (!cropbox_node || !cropbox_node->cropbox) continue;
+
+            const auto& cb = *cropbox_node->cropbox;
+            const glm::mat4 m = glm::inverse(cropbox_node->local_transform.get());
+            const auto& means = node->point_cloud->means;
+            const auto& colors = node->point_cloud->colors;
+            const size_t num_points = node->point_cloud->size();
+            const auto device = means.device();
+
+            // GLM column-major -> row-major for tensor matmul
+            const auto transform = lfs::core::Tensor::from_vector({
+                m[0][0], m[1][0], m[2][0], m[3][0],
+                m[0][1], m[1][1], m[2][1], m[3][1],
+                m[0][2], m[1][2], m[2][2], m[3][2],
+                m[0][3], m[1][3], m[2][3], m[3][3]}, {4, 4}, device);
+
+            // Transform and filter on GPU
+            const auto ones = lfs::core::Tensor::ones({num_points, 1}, device);
+            const auto local_pos = transform.mm(means.cat(ones, 1).t()).t();
+
+            const auto x = local_pos.slice(1, 0, 1).squeeze(1);
+            const auto y = local_pos.slice(1, 1, 2).squeeze(1);
+            const auto z = local_pos.slice(1, 2, 3).squeeze(1);
+
+            auto mask = (x >= cb.min.x) && (x <= cb.max.x) &&
+                        (y >= cb.min.y) && (y <= cb.max.y) &&
+                        (z >= cb.min.z) && (z <= cb.max.z);
+            if (inverse) mask = mask.logical_not();
+
+            const auto indices = mask.nonzero().squeeze(1);
+            const size_t filtered_count = indices.size(0);
+
+            if (filtered_count > 0 && filtered_count < num_points) {
+                node->point_cloud = std::make_shared<lfs::core::PointCloud>(
+                    means.index_select(0, indices), colors.index_select(0, indices));
+                node->gaussian_count = filtered_count;
+
+                LOG_INFO("Cropped PointCloud '{}': {} -> {} points", node_name, num_points, filtered_count);
+
+                if (auto* cb_mutable = scene_.getMutableNode(cropbox_node->name)) {
+                    if (cb_mutable->cropbox) cb_mutable->cropbox->enabled = false;
                 }
             }
         }

@@ -122,6 +122,7 @@ set(OPTIONAL_TEST_FILES
     test_relocate_gs_edge_cases.cpp # Comprehensive edge case tests for relocate_gs(): logit, Int32 ops, logical ops, indexing, division
     test_bool_reduction.cpp  # Bool reduction tests for cropping bug investigation
     test_tensor_index_select_bool.cpp  # Tests for index_select with boolean masks
+    test_tensor_index_select_uint8.cpp # Tests for index_select with UInt8 (colors)
     test_tensor_uint8_inversion.cpp    # Tests for UInt8 mask inversion
     test_tensor_serialization.cpp      # Tests for tensor serialization with << and >> operators
     test_tensor_cat_reduction_bug.cpp  # Tests for cat+reduction bug (min/max on concatenated tensors)

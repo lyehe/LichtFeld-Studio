@@ -188,6 +188,11 @@ namespace lfs::core {
                                                 result.ptr<int32_t>(), shape_.dims().data(),
                                                 shape_.rank(), dim, indices.numel(),
                                                 static_cast<int>(mode), stream_);
+            } else if (dtype_ == DataType::UInt8 || dtype_ == DataType::Bool) {
+                tensor_ops::launch_index_select(ptr<uint8_t>(), idx_ptr,
+                                                result.ptr<uint8_t>(), shape_.dims().data(),
+                                                shape_.rank(), dim, indices.numel(),
+                                                static_cast<int>(mode), stream_);
             } else {
                 throw std::runtime_error("index_select: unsupported dtype for CUDA");
             }
@@ -235,7 +240,7 @@ namespace lfs::core {
                 copy_selected(ptr<int64_t>(), result.ptr<int64_t>());
             } else if (dtype_ == DataType::Int32) {
                 copy_selected(ptr<int32_t>(), result.ptr<int32_t>());
-            } else if (dtype_ == DataType::Bool) {
+            } else if (dtype_ == DataType::Bool || dtype_ == DataType::UInt8) {
                 copy_selected(ptr<unsigned char>(), result.ptr<unsigned char>());
             } else {
                 throw std::runtime_error("index_select: unsupported dtype for CPU");

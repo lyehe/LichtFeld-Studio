@@ -260,6 +260,10 @@ namespace lfs::core::tensor_ops {
                              const size_t* shape, size_t rank, int dim,
                              size_t index_size, int boundary_mode, cudaStream_t stream);
 
+    void launch_index_select(const uint8_t* input, const int* indices, uint8_t* output,
+                             const size_t* shape, size_t rank, int dim,
+                             size_t index_size, int boundary_mode, cudaStream_t stream);
+
     void launch_gather(const float* input, const int* indices, float* output,
                        const size_t* input_shape, const size_t* index_shape,
                        size_t rank, int dim, size_t total_elements,

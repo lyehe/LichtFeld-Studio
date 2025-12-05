@@ -890,90 +890,67 @@ namespace lfs::vis {
             }
 
             if (scene_state.point_cloud && scene_state.point_cloud->size() > 0) {
-                // Check for enabled cropbox and filter points if needed
                 const lfs::core::PointCloud* point_cloud_to_render = scene_state.point_cloud;
 
-                // Find enabled cropbox and use cached filtered result if available
+                // Apply cropbox filter (GPU-accelerated, cached)
                 for (const auto& cb : scene_state.cropboxes) {
-                    if (cb.data && cb.data->enabled) {
-                        // Check if cache is valid
-                        const bool cache_valid = cached_filtered_point_cloud_ &&
-                            cached_source_point_cloud_ == scene_state.point_cloud &&
-                            cached_cropbox_transform_ == cb.world_transform &&
-                            cached_cropbox_min_ == cb.data->min &&
-                            cached_cropbox_max_ == cb.data->max &&
-                            cached_cropbox_inverse_ == cb.data->inverse;
+                    if (!cb.data || (!cb.data->enabled && !settings_.show_crop_box)) continue;
 
-                        if (!cache_valid) {
-                            // Recompute filtered point cloud
-                            const auto& means = scene_state.point_cloud->means;
-                            const auto& colors = scene_state.point_cloud->colors;
-                            const size_t num_points = scene_state.point_cloud->size();
-                            const glm::mat4 world_to_cropbox = glm::inverse(cb.world_transform);
+                    const bool cache_valid = cached_filtered_point_cloud_ &&
+                        cached_source_point_cloud_ == scene_state.point_cloud &&
+                        cached_cropbox_transform_ == cb.local_transform &&
+                        cached_cropbox_min_ == cb.data->min &&
+                        cached_cropbox_max_ == cb.data->max &&
+                        cached_cropbox_inverse_ == cb.data->inverse;
 
-                            auto means_cpu = means.cpu();
-                            auto colors_cpu = colors.cpu();
-                            const float* means_ptr = means_cpu.ptr<float>();
-                            const uint8_t* colors_ptr = colors_cpu.ptr<uint8_t>();
+                    if (!cache_valid) {
+                        const auto& means = scene_state.point_cloud->means;
+                        const auto& colors = scene_state.point_cloud->colors;
+                        const size_t num_points = scene_state.point_cloud->size();
+                        const glm::mat4 m = glm::inverse(cb.local_transform);
+                        const auto device = means.device();
 
-                            std::vector<float> filtered_means;
-                            std::vector<uint8_t> filtered_colors;
-                            filtered_means.reserve(num_points * 3);
-                            filtered_colors.reserve(num_points * 3);
+                        // GLM column-major -> row-major for tensor matmul
+                        const auto transform = lfs::core::Tensor::from_vector({
+                            m[0][0], m[1][0], m[2][0], m[3][0],
+                            m[0][1], m[1][1], m[2][1], m[3][1],
+                            m[0][2], m[1][2], m[2][2], m[3][2],
+                            m[0][3], m[1][3], m[2][3], m[3][3]}, {4, 4}, device);
 
-                            for (size_t i = 0; i < num_points; ++i) {
-                                const glm::vec3 pos(means_ptr[i * 3], means_ptr[i * 3 + 1], means_ptr[i * 3 + 2]);
-                                const glm::vec4 local_pos = world_to_cropbox * glm::vec4(pos, 1.0f);
-                                const glm::vec3 local = glm::vec3(local_pos) / local_pos.w;
+                        // Transform and filter on GPU
+                        const auto ones = lfs::core::Tensor::ones({num_points, 1}, device);
+                        const auto local_pos = transform.mm(means.cat(ones, 1).t()).t();
 
-                                bool inside = local.x >= cb.data->min.x && local.x <= cb.data->max.x &&
-                                              local.y >= cb.data->min.y && local.y <= cb.data->max.y &&
-                                              local.z >= cb.data->min.z && local.z <= cb.data->max.z;
+                        const auto x = local_pos.slice(1, 0, 1).squeeze(1);
+                        const auto y = local_pos.slice(1, 1, 2).squeeze(1);
+                        const auto z = local_pos.slice(1, 2, 3).squeeze(1);
 
-                                if (cb.data->inverse) inside = !inside;
+                        auto mask = (x >= cb.data->min.x) && (x <= cb.data->max.x) &&
+                                    (y >= cb.data->min.y) && (y <= cb.data->max.y) &&
+                                    (z >= cb.data->min.z) && (z <= cb.data->max.z);
+                        if (cb.data->inverse) mask = mask.logical_not();
 
-                                if (inside) {
-                                    filtered_means.push_back(means_ptr[i * 3]);
-                                    filtered_means.push_back(means_ptr[i * 3 + 1]);
-                                    filtered_means.push_back(means_ptr[i * 3 + 2]);
-                                    filtered_colors.push_back(colors_ptr[i * 3]);
-                                    filtered_colors.push_back(colors_ptr[i * 3 + 1]);
-                                    filtered_colors.push_back(colors_ptr[i * 3 + 2]);
-                                }
-                            }
-
-                            if (!filtered_means.empty()) {
-                                const size_t filtered_count = filtered_means.size() / 3;
-
-                                auto filtered_means_tensor = lfs::core::Tensor::from_vector(
-                                    filtered_means, {filtered_count, 3}, lfs::core::Device::CUDA);
-                                auto filtered_colors_cpu = lfs::core::Tensor::zeros(
-                                    {filtered_count, 3}, lfs::core::Device::CPU, lfs::core::DataType::UInt8);
-                                std::memcpy(filtered_colors_cpu.data_ptr(), filtered_colors.data(),
-                                           filtered_colors.size() * sizeof(uint8_t));
-                                auto filtered_colors_tensor = filtered_colors_cpu.to(lfs::core::Device::CUDA);
-
-                                cached_filtered_point_cloud_ = std::make_unique<lfs::core::PointCloud>(
-                                    std::move(filtered_means_tensor), std::move(filtered_colors_tensor));
-                            } else {
-                                cached_filtered_point_cloud_.reset();
-                            }
-
-                            // Update cache keys
-                            cached_source_point_cloud_ = scene_state.point_cloud;
-                            cached_cropbox_transform_ = cb.world_transform;
-                            cached_cropbox_min_ = cb.data->min;
-                            cached_cropbox_max_ = cb.data->max;
-                            cached_cropbox_inverse_ = cb.data->inverse;
-                        }
-
-                        if (cached_filtered_point_cloud_) {
-                            point_cloud_to_render = cached_filtered_point_cloud_.get();
+                        const auto indices = mask.nonzero().squeeze(1);
+                        if (indices.size(0) > 0) {
+                            cached_filtered_point_cloud_ = std::make_unique<lfs::core::PointCloud>(
+                                means.index_select(0, indices), colors.index_select(0, indices));
                         } else {
-                            return;  // All points filtered out
+                            cached_filtered_point_cloud_.reset();
                         }
-                        break;
+
+                        cached_source_point_cloud_ = scene_state.point_cloud;
+                        cached_cropbox_transform_ = cb.local_transform;
+                        cached_cropbox_min_ = cb.data->min;
+                        cached_cropbox_max_ = cb.data->max;
+                        cached_cropbox_inverse_ = cb.data->inverse;
                     }
+
+                    if (cached_filtered_point_cloud_) {
+                        point_cloud_to_render = cached_filtered_point_cloud_.get();
+                    } else {
+                        return;
+                    }
+                    break;
                 }
 
                 LOG_TRACE("Rendering point cloud with {} points", point_cloud_to_render->size());

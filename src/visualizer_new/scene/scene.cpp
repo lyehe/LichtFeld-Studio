@@ -1519,6 +1519,11 @@ namespace lfs::vis {
             expand_bounds(pc_min, pc_max);
         }
 
+        // If this node is a CROPBOX, include its bounds
+        if (node->type == NodeType::CROPBOX && node->cropbox) {
+            expand_bounds(node->cropbox->min, node->cropbox->max);
+        }
+
         // Recursively include children bounds
         for (const NodeId child_id : node->children) {
             glm::vec3 child_min, child_max;
@@ -1639,6 +1644,7 @@ namespace lfs::vis {
             rcb.parent_splat_id = node->parent_id;
             rcb.data = node->cropbox.get();
             rcb.world_transform = getWorldTransform(node->id);
+            rcb.local_transform = node->local_transform.get();
             result.push_back(rcb);
         }
 

@@ -181,6 +181,7 @@ namespace lfs::vis {
             NodeId parent_splat_id = NULL_NODE;
             const CropBoxData* data = nullptr;
             glm::mat4 world_transform{1.0f};
+            glm::mat4 local_transform{1.0f};  // Cropbox's local transform (relative to parent)
         };
         [[nodiscard]] std::vector<RenderableCropBox> getVisibleCropBoxes() const;
 

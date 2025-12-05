@@ -1488,22 +1488,16 @@ namespace lfs::vis::gui {
         const bool use_world_space =
             (gizmo_toolbar_state_.transform_space == panels::TransformSpace::World) || is_multi_selection;
 
-        // Compute gizmo position from current selection
-        glm::vec3 gizmo_position;
-        if (is_multi_selection) {
-            gizmo_position = scene_manager->getSelectionWorldCenter();
-        } else {
-            gizmo_position = glm::vec3(scene_manager->getSelectedNodeTransform() *
-                                       glm::vec4(scene_manager->getSelectionCenter(), 1.0f));
-        }
+        const glm::vec3 gizmo_position = is_multi_selection
+            ? scene_manager->getSelectionWorldCenter()
+            : glm::vec3(scene_manager->getSelectedNodeWorldTransform() *
+                        glm::vec4(scene_manager->getSelectionCenter(), 1.0f));
 
         glm::mat4 gizmo_matrix(1.0f);
         gizmo_matrix[3] = glm::vec4(gizmo_position, 1.0f);
 
-        // For single selection in local mode, include node's rotation/scale
         if (!is_multi_selection && !use_world_space) {
-            const glm::mat4 node_transform = scene_manager->getSelectedNodeTransform();
-            const glm::mat3 rotation_scale(node_transform);
+            const glm::mat3 rotation_scale(scene_manager->getSelectedNodeWorldTransform());
             gizmo_matrix[0] = glm::vec4(rotation_scale[0], 0.0f);
             gizmo_matrix[1] = glm::vec4(rotation_scale[1], 0.0f);
             gizmo_matrix[2] = glm::vec4(rotation_scale[2], 0.0f);
@@ -1582,10 +1576,18 @@ namespace lfs::vis::gui {
                     scene_manager->setNodeTransform(node_gizmo_node_names_[i], new_transform);
                 }
             } else {
-                // Single selection: compute new transform from gizmo
+                // Single selection
                 const glm::vec3 center = scene_manager->getSelectionCenter();
                 const glm::mat4 node_transform = scene_manager->getSelectedNodeTransform();
-                const glm::vec3 new_gizmo_pos = glm::vec3(gizmo_matrix[3]);
+                const glm::vec3 new_gizmo_pos_world = glm::vec3(gizmo_matrix[3]);
+
+                // Convert world position to parent space
+                const auto& scene = scene_manager->getScene();
+                const auto* node = scene.getNode(*selected_names.begin());
+                const glm::mat4 parent_world_inv = (node && node->parent_id != NULL_NODE)
+                    ? glm::inverse(scene.getWorldTransform(node->parent_id))
+                    : glm::mat4(1.0f);
+                const glm::vec3 new_gizmo_pos = glm::vec3(parent_world_inv * glm::vec4(new_gizmo_pos_world, 1.0f));
 
                 glm::mat4 new_transform;
                 if (use_world_space) {

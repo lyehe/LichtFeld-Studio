@@ -616,6 +616,39 @@ namespace lfs::core::tensor_ops {
         }
     }
 
+    // UInt8 overload
+    void launch_index_select(const uint8_t* in, const int* idx, uint8_t* out,
+                             const size_t* shape, size_t rank, int dim,
+                             size_t idx_size, int boundary, cudaStream_t stream) {
+        if (idx_size == 0) {
+            return;
+        }
+
+        size_t outer = 1, inner = 1;
+        for (int i = 0; i < dim; ++i)
+            outer *= shape[i];
+        for (size_t i = dim + 1; i < rank; ++i)
+            inner *= shape[i];
+        size_t total = outer * idx_size * inner;
+
+        if (total == 0) {
+            return;
+        }
+
+        size_t num_blocks = (total + 255) / 256;
+        const size_t max_blocks_x = 65535;
+
+        if (num_blocks <= max_blocks_x) {
+            index_select_kernel<uint8_t><<<num_blocks, 256, 0, stream>>>(
+                in, idx, out, outer, shape[dim], inner, idx_size, boundary);
+        } else {
+            dim3 grid(std::min(num_blocks, max_blocks_x),
+                      (num_blocks + max_blocks_x - 1) / max_blocks_x);
+            index_select_kernel<uint8_t><<<grid, 256, 0, stream>>>(
+                in, idx, out, outer, shape[dim], inner, idx_size, boundary);
+        }
+    }
+
     template<typename T>
     __global__ void gather_kernel(const T* in, const int* idx, T* out,
                                   const size_t* in_shape, const size_t* idx_shape,
