@@ -464,6 +464,62 @@ namespace lfs::vis::gui {
         }
 #endif
 
+        // Save All Merged dialog
+        if (show_save_merged_dialog_) {
+            if (auto* const sm = viewer_->getSceneManager()) {
+                sm->applyDeleted();
+            }
+
+#ifdef WIN32
+            const std::filesystem::path save_path = SavePlyFileDialog("merged");
+            if (!save_path.empty()) {
+                if (auto* const sm = viewer_->getSceneManager()) {
+                    if (const auto merged = sm->getScene().createMergedModelWithTransforms()) {
+                        lfs::core::save_ply(*merged, save_path.parent_path(), 0, true, save_path.stem().string());
+                    }
+                }
+            }
+            show_save_merged_dialog_ = false;
+#else
+            ImGui::OpenPopup("Save All Merged");
+#endif
+        }
+
+#ifndef WIN32
+        if (ImGui::BeginPopupModal("Save All Merged", &show_save_merged_dialog_, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Save all models merged as:");
+            ImGui::Separator();
+
+            char path_buf[512];
+            strncpy(path_buf, save_ply_path_.c_str(), sizeof(path_buf) - 1);
+            path_buf[sizeof(path_buf) - 1] = '\0';
+
+            ImGui::SetNextItemWidth(400);
+            if (ImGui::InputText("##path", path_buf, sizeof(path_buf))) {
+                save_ply_path_ = path_buf;
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::Button("Save", ImVec2(120, 0))) {
+                if (auto* const sm = viewer_->getSceneManager()) {
+                    if (const auto merged = sm->getScene().createMergedModelWithTransforms()) {
+                        const std::filesystem::path save_path(save_ply_path_);
+                        lfs::core::save_ply(*merged, save_path.parent_path(), 0, true, save_path.stem().string());
+                    }
+                }
+                show_save_merged_dialog_ = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                show_save_merged_dialog_ = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+#endif
+
         if (menu_bar_ && viewer_) {
             auto project = viewer_->getProject();
             menu_bar_->setIsProjectTemp(project ? project->getIsTempProject() : false);
@@ -1177,6 +1233,11 @@ namespace lfs::vis::gui {
             save_ply_node_name_ = e.name;
             save_ply_path_ = (std::filesystem::current_path() / (e.name + ".ply")).string();
             show_save_ply_dialog_ = true;
+        });
+
+        cmd::SaveAllMergedAs::when([this](const auto&) {
+            save_ply_path_ = (std::filesystem::current_path() / "merged.ply").string();
+            show_save_merged_dialog_ = true;
         });
 
         // Cycle: normal -> center markers -> rings -> normal

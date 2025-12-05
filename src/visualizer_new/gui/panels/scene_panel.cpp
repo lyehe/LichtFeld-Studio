@@ -208,6 +208,10 @@ namespace lfs::vis::gui {
             if (ImGui::MenuItem("Add Group")) {
                 cmd::AddGroup{.name = "New Group", .parent_name = ""}.emit();
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Save All Merged...", nullptr, false, splat_count > 0)) {
+                cmd::SaveAllMergedAs{}.emit();
+            }
             ImGui::EndPopup();
         }
 

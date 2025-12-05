@@ -171,6 +171,7 @@ namespace lfs::vis {
 
             // Save PLY dialog state
             bool show_save_ply_dialog_ = false;
+            bool show_save_merged_dialog_ = false;
             std::string save_ply_node_name_;
             std::string save_ply_path_;
         };

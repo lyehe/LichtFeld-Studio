@@ -185,8 +185,15 @@ namespace lfs::vis {
         };
         [[nodiscard]] std::vector<RenderableCropBox> getVisibleCropBoxes() const;
 
-        // Get combined model for rendering
+        // Get combined model for rendering (transforms NOT baked, applied at render time)
         const lfs::core::SplatData* getCombinedModel() const;
+
+        // Create merged model with transforms baked in (for saving)
+        [[nodiscard]] std::unique_ptr<lfs::core::SplatData> createMergedModelWithTransforms() const;
+
+        // Merge splats with transforms baked in (shared implementation)
+        [[nodiscard]] static std::unique_ptr<lfs::core::SplatData> mergeSplatsWithTransforms(
+            const std::vector<std::pair<const lfs::core::SplatData*, glm::mat4>>& splats);
 
         // Get visible point cloud for rendering (before training starts)
         // Returns first visible POINTCLOUD node's data, or nullptr
