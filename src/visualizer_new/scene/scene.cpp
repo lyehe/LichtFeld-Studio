@@ -1593,19 +1593,17 @@ namespace lfs::vis {
     }
 
     lfs::core::SplatData* Scene::getTrainingModel() {
-        if (training_model_node_.empty()) {
-            return nullptr;
-        }
+        if (training_model_node_.empty()) return nullptr;
         auto* node = getMutableNode(training_model_node_);
-        return node ? node->model.get() : nullptr;
+        if (!node || !isNodeEffectivelyVisible(node->id)) return nullptr;
+        return node->model.get();
     }
 
     const lfs::core::SplatData* Scene::getTrainingModel() const {
-        if (training_model_node_.empty()) {
-            return nullptr;
-        }
+        if (training_model_node_.empty()) return nullptr;
         const auto* node = getNode(training_model_node_);
-        return node ? node->model.get() : nullptr;
+        if (!node || !isNodeEffectivelyVisible(node->id)) return nullptr;
+        return node->model.get();
     }
 
     std::shared_ptr<const lfs::core::Camera> Scene::getCameraByUid(int uid) const {
