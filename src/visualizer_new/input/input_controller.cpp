@@ -736,6 +736,10 @@ namespace lfs::vis {
                     cmd::DeselectAll{}.emit();
                     return;
 
+                case input::Action::SELECT_ALL:
+                    cmd::SelectAll{}.emit();
+                    return;
+
                 case input::Action::COPY_SELECTION:
                     cmd::CopySelection{}.emit();
                     return;

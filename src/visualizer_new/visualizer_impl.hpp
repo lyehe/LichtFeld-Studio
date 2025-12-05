@@ -123,6 +123,7 @@ namespace lfs::vis {
         void deleteSelectedGaussians();
         void invertSelection();
         void deselectAll();
+        void selectAll();
         void copySelection();
         void pasteSelection();
 

@@ -59,6 +59,7 @@ namespace lfs::vis::input {
         REDO,
         INVERT_SELECTION,
         DESELECT_ALL,
+        SELECT_ALL,
         COPY_SELECTION,
         PASTE_SELECTION,
         // Depth filter

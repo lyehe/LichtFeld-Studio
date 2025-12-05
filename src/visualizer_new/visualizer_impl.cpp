@@ -199,6 +199,7 @@ namespace lfs::vis {
         cmd::DeleteSelected::when([this](const auto&) { deleteSelectedGaussians(); });
         cmd::InvertSelection::when([this](const auto&) { invertSelection(); });
         cmd::DeselectAll::when([this](const auto&) { deselectAll(); });
+        cmd::SelectAll::when([this](const auto&) { selectAll(); });
         cmd::CopySelection::when([this](const auto&) { copySelection(); });
         cmd::PasteSelection::when([this](const auto&) { pasteSelection(); });
 
@@ -624,6 +625,52 @@ namespace lfs::vis {
             scene_manager_.get(),
             old_mask ? std::make_shared<lfs::core::Tensor>(old_mask->clone()) : nullptr,
             nullptr));
+        if (rendering_manager_) rendering_manager_->markDirty();
+    }
+
+    void VisualizerImpl::selectAll() {
+        if (!scene_manager_) return;
+
+        const auto tool = editor_context_.getActiveTool();
+        const bool is_selection_tool = (tool == ToolType::Selection || tool == ToolType::Brush);
+
+        if (is_selection_tool) {
+            // Select all gaussians for the active node
+            auto& scene = scene_manager_->getScene();
+            const size_t total = scene.getTotalGaussianCount();
+            if (total == 0) return;
+
+            const auto& selected_name = scene_manager_->getSelectedNodeName();
+            if (selected_name.empty()) return;
+
+            const int node_index = scene.getVisibleNodeIndex(selected_name);
+            if (node_index < 0) return;
+
+            const auto transform_indices = scene.getTransformIndices();
+            if (!transform_indices || transform_indices->numel() != total) return;
+
+            const auto old_mask = scene.getSelectionMask();
+            auto new_mask = std::make_shared<lfs::core::Tensor>(transform_indices->eq(node_index));
+            scene.setSelectionMask(new_mask);
+            command_history_.execute(std::make_unique<command::SelectionCommand>(
+                scene_manager_.get(),
+                old_mask ? std::make_shared<lfs::core::Tensor>(old_mask->clone()) : nullptr,
+                new_mask));
+        } else {
+            // Select all SPLAT nodes
+            const auto& scene = scene_manager_->getScene();
+            const auto nodes = scene.getNodes();
+            std::vector<std::string> splat_names;
+            splat_names.reserve(nodes.size());
+            for (const auto* node : nodes) {
+                if (node->type == NodeType::SPLAT) {
+                    splat_names.push_back(node->name);
+                }
+            }
+            if (!splat_names.empty()) {
+                scene_manager_->selectNodes(splat_names);
+            }
+        }
         if (rendering_manager_) rendering_manager_->markDirty();
     }
 

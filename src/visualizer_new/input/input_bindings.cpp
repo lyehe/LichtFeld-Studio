@@ -390,6 +390,7 @@ namespace lfs::vis::input {
             {KeyTrigger{GLFW_KEY_Y, MODIFIER_CTRL}, Action::REDO, "Redo"},
             {KeyTrigger{GLFW_KEY_I, MODIFIER_CTRL}, Action::INVERT_SELECTION, "Invert"},
             {KeyTrigger{GLFW_KEY_D, MODIFIER_CTRL}, Action::DESELECT_ALL, "Deselect"},
+            {KeyTrigger{GLFW_KEY_A, MODIFIER_CTRL}, Action::SELECT_ALL, "Select all"},
             {KeyTrigger{GLFW_KEY_C, MODIFIER_CTRL}, Action::COPY_SELECTION, "Copy"},
             {KeyTrigger{GLFW_KEY_V, MODIFIER_CTRL}, Action::PASTE_SELECTION, "Paste"},
             // Tools
