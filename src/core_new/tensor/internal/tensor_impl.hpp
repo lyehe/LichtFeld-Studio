@@ -513,8 +513,20 @@ namespace lfs::core {
         // Generic functor-based in-place binary operation (zero enum overhead)
         template <typename SrcT = float, typename Op>
         Tensor& binary_op_inplace_generic(const Tensor& other, Op op) {
-            if (!validate_binary_op(other, true)) {
-                return *this;
+            // CRITICAL: In-place operations MUST have matching shapes - throw on mismatch!
+            if (!is_valid() || !other.is_valid()) {
+                throw std::runtime_error("In-place binary op on invalid tensor");
+            }
+            if (shape_ != other.shape()) {
+                throw std::runtime_error(fmt::format(
+                    "In-place binary op shape mismatch: {} vs {} (in-place ops require exact shape match)",
+                    shape_.str(), other.shape_.str()));
+            }
+            if (device_ != other.device()) {
+                throw std::runtime_error(fmt::format(
+                    "In-place binary op device mismatch: {} vs {}",
+                    device_ == Device::CUDA ? "CUDA" : "CPU",
+                    other.device() == Device::CUDA ? "CUDA" : "CPU"));
             }
 
             if (device_ == Device::CUDA) {
@@ -2000,10 +2012,6 @@ namespace lfs::core {
 
             if (device_ == Device::CUDA) {
                 cudaMemcpy(&value, data_ptr, sizeof(T), cudaMemcpyDeviceToHost);
-                // DEBUG: Log for int type
-                if constexpr (std::is_same_v<T, int> || std::is_same_v<T, int32_t>) {
-                    printf("[item<int>] dtype=%d, value=%d\n", static_cast<int>(dtype_), static_cast<int>(value));
-                }
             } else {
                 value = *static_cast<const T*>(static_cast<const void*>(data_ptr));
             }

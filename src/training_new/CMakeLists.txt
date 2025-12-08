@@ -5,6 +5,9 @@
 # Add fastlfs backend
 add_subdirectory(fastgs)
 
+# Add LibTorch-free gsplat backend
+add_subdirectory(rasterization/gsplat)
+
 # LibTorch-free CUDA kernels
 set(LFS_TRAINING_KERNEL_SOURCES
     kernels/ssim.cu
@@ -69,6 +72,7 @@ set(TRAINING_NEW_SOURCES
     strategies/default_strategy.cpp
     strategies/mcmc.cpp
     rasterization/fast_rasterizer.cpp
+    rasterization/gsplat_rasterizer.cpp
     components/bilateral_grid.cpp
     # components/sparsity_optimizer.cpp       # Temporarily disabled - requires LibTorch
     metrics/metrics.cpp
@@ -92,6 +96,7 @@ target_include_directories(lfs_training
         ${CMAKE_CURRENT_SOURCE_DIR}/fastgs/rasterization/include  # For rasterization_api.h
         ${CMAKE_CURRENT_SOURCE_DIR}/fastgs/optimizer/include
         ${CMAKE_CURRENT_SOURCE_DIR}/fastgs/utils
+        ${CMAKE_CURRENT_SOURCE_DIR}/rasterization  # For gsplat headers
 )
 
 # Link dependencies
@@ -100,6 +105,7 @@ target_link_libraries(lfs_training
         lfs_core                # Depends on new core module (SplatData, Tensor)
         lfs_training_kernels    # LibTorch-free SSIM kernels
         fastlfs_backend         # For adam_step_raw CUDA kernel (LibTorch-free)
+        gsplat_backend_lfs      # LibTorch-free gsplat rasterization backend
 )
 
 # Set C++ standard

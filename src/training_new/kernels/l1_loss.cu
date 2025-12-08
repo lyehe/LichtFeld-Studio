@@ -32,7 +32,10 @@ __global__ void fused_l1_kernel(
         local_sum += abs_diff;
 
         // Store gradient: sign(diff) * grad_scale
-        grad_out[idx] = copysignf(grad_scale, diff);
+        // NOTE: sign(0) = 0 to match PyTorch behavior
+        // copysignf returns ±grad_scale even for 0.0, which is wrong
+        float grad = (diff > 0.0f) ? grad_scale : ((diff < 0.0f) ? -grad_scale : 0.0f);
+        grad_out[idx] = grad;
     }
 
     // Block-level warp reduction (tiny-cuda-nn style - much faster!)

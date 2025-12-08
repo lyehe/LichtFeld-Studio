@@ -12,7 +12,10 @@
 // ---------------------------------------------------------------------------------------------
 
 // Camera-specific types (camera model parameters and returns)
+// Guards added for compatibility when both Legacy and LFS gsplat headers are included
 
+#ifndef _GSPLAT_SHUTTER_TYPE_DEFINED
+#define _GSPLAT_SHUTTER_TYPE_DEFINED
 enum class ShutterType {
     ROLLING_TOP_TO_BOTTOM,
     ROLLING_LEFT_TO_RIGHT,
@@ -20,10 +23,13 @@ enum class ShutterType {
     ROLLING_RIGHT_TO_LEFT,
     GLOBAL
 };
+#endif
 
 // ---------------------------------------------------------------------------------------------
 
 // Gaussian-specific types
+#ifndef _GSPLAT_UNSCENTED_TRANSFORM_PARAMS_DEFINED
+#define _GSPLAT_UNSCENTED_TRANSFORM_PARAMS_DEFINED
 struct UnscentedTransformParameters {
     // See Gustafsson and Hendeby 2012 for sigma point parameterization - this
     // default parameter choice is based on
@@ -59,3 +65,4 @@ struct UnscentedTransformParameters {
             tensor[4].item<bool>()};
     }
 };
+#endif

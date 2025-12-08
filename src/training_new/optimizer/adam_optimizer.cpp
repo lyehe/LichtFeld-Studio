@@ -213,7 +213,26 @@ namespace lfs::training {
         const auto name = param_name(type);
         if (!states_.contains(name)) return;
 
+        // Skip ShN when not initialized (sh_degree=0 case)
+        if (type == ParamType::ShN) {
+            const auto& param = get_param(type);
+            if (!param.is_valid() || (param.ndim() >= 2 && param.shape()[1] == 0)) {
+                return;  // ShN is empty at sh-degree 0, nothing to reset
+            }
+        }
+
         auto& state = states_[name];
+
+        // Validate tensors before accessing
+        if (!state.exp_avg.is_valid() || state.exp_avg.ptr<float>() == nullptr) {
+            LOG_WARN("reset_state_at_indices: {} exp_avg tensor is invalid or null", name);
+            return;
+        }
+        if (!state.exp_avg_sq.is_valid() || state.exp_avg_sq.ptr<float>() == nullptr) {
+            LOG_WARN("reset_state_at_indices: {} exp_avg_sq tensor is invalid or null", name);
+            return;
+        }
+
         const auto& shape = state.exp_avg.shape();
         int row_size = 1;
         for (size_t i = 1; i < shape.rank(); i++) {
@@ -338,13 +357,47 @@ namespace lfs::training {
     void AdamOptimizer::add_new_params_gather(ParamType type, const lfs::core::Tensor& indices) {
         auto& param = get_param(type);
 
+        // Special case: ShN with 0 higher-order SH coefficients (sh_degree=0)
+        // The tensor may be either:
+        // 1. Completely uninitialized (ndim=0) - need to create [new_size, 0, 3]
+        // 2. Exists with shape [N, 0, 3] - need to resize to [new_size, 0, 3]
+        // We still need to resize dim 0 to match the new number of gaussians for cat() in get_shs()
+        if (type == ParamType::ShN) {
+            const bool is_uninitialized = (param.ndim() == 0);
+            const bool has_zero_sh_coeffs = (param.ndim() >= 2 && param.shape()[1] == 0);
+
+            if (is_uninitialized || has_zero_sh_coeffs) {
+                // sh0 is already updated at this point, so just match its size
+                // (don't add n_new again - that would double-count)
+                const auto& sh0 = splat_data_.sh0();
+                const size_t new_size = sh0.shape()[0];
+
+                LOG_DEBUG("add_new_params_gather: ShN resize to {} (uninitialized={})",
+                    new_size, is_uninitialized);
+
+                // Create new tensor with correct shape [new_size, 0, 3]
+                auto new_tensor = lfs::core::Tensor::empty(
+                    {static_cast<int64_t>(new_size), 0, 3},
+                    lfs::core::Device::CUDA, lfs::core::DataType::Float32);
+
+                // Assign to the reference (this updates splat_data_._shN)
+                param = std::move(new_tensor);
+                // No optimizer state to extend for empty tensors
+                return;
+            }
+        }
+
         if (!param.is_valid()) {
             if (type == ParamType::ShN) return;  // ShN may not be initialized at sh-degree 0
             LOG_ERROR("add_new_params_gather: {} not initialized", param_name(type));
             return;
         }
 
-        if (param.ndim() >= 2 && param.shape()[1] == 0) return;
+        // Regular case for tensors with data
+        if (param.ndim() >= 2 && param.shape()[1] == 0) {
+            // This shouldn't happen for non-ShN tensors, but handle gracefully
+            return;
+        }
 
         if (indices.device() != param.device()) {
             LOG_ERROR("add_new_params_gather: device mismatch");
@@ -379,7 +432,26 @@ namespace lfs::training {
         const auto name = param_name(type);
         if (!states_.contains(name)) return;
 
+        // Skip ShN when not initialized (sh_degree=0 case)
+        if (type == ParamType::ShN) {
+            const auto& param = get_param(type);
+            if (!param.is_valid() || (param.ndim() >= 2 && param.shape()[1] == 0)) {
+                return;  // ShN is empty at sh-degree 0, nothing to relocate
+            }
+        }
+
         auto& state = states_[name];
+
+        // Validate tensors before accessing
+        if (!state.exp_avg.is_valid() || state.exp_avg.ptr<float>() == nullptr) {
+            LOG_WARN("relocate_params_at_indices_gpu: {} exp_avg tensor is invalid or null", name);
+            return;
+        }
+        if (!state.exp_avg_sq.is_valid() || state.exp_avg_sq.ptr<float>() == nullptr) {
+            LOG_WARN("relocate_params_at_indices_gpu: {} exp_avg_sq tensor is invalid or null", name);
+            return;
+        }
+
         const auto& shape = state.exp_avg.shape();
         int row_size = 1;
         for (size_t i = 1; i < shape.rank(); i++) {

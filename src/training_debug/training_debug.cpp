@@ -377,13 +377,8 @@ std::expected<NewInitializationResult, std::string> initialize_new() {
             }
             spdlog::debug("[NEW] Camera cache initialized with {} cameras", cam_id_to_cam.size());
 
-            // Update CacheLoader with dataset size
-            cache_loader.update_cache_params(
-                params.dataset.loading_params.use_cpu_memory,
-                params.dataset.loading_params.use_fs_cache,
-                static_cast<int>(data.cameras->size())
-            );
-            spdlog::debug("[NEW] Updated CacheLoader with {} expected images", data.cameras->size());
+            // CacheLoader is already initialized with the right params
+            spdlog::debug("[NEW] CacheLoader initialized for {} cameras", data.cameras->size());
 
             // Report success
             spdlog::info("[NEW] ✓ Initialization complete");
@@ -488,7 +483,7 @@ std::expected<void, std::string> render_and_save_comparison(
         new_init.strategy->get_model(),
         new_init.background);
 
-    spdlog::info("[NEW] Rendered {}x{} image", new_result.first.width, new_result.first.height);
+    spdlog::info("[NEW] Rendered {}x{} image", new_result.value().first.width, new_result.value().first.height);
 
     // Get ground truth images
     auto legacy_gt = legacy_cam->load_and_get_image(legacy_init.params.dataset.resize_factor,
@@ -513,8 +508,8 @@ std::expected<void, std::string> render_and_save_comparison(
 
     // Compare values
     auto legacy_gt_cpu = legacy_gt.cpu();
-    float max_diff = (legacy_gt_cpu - new_gt_torch).abs().max().template item<float>();
-    float mean_diff = (legacy_gt_cpu - new_gt_torch).abs().mean().template item<float>();
+    float max_diff = (legacy_gt_cpu - new_gt_torch).abs().max().item<float>();
+    float mean_diff = (legacy_gt_cpu - new_gt_torch).abs().mean().item<float>();
 
     spdlog::info("[GT COMPARISON] Max difference: {}", max_diff);
     spdlog::info("[GT COMPARISON] Mean difference: {}", mean_diff);
@@ -522,14 +517,14 @@ std::expected<void, std::string> render_and_save_comparison(
     if (max_diff > 1e-5) {
         spdlog::warn("[GT COMPARISON] GT images differ significantly!");
         // Sample some values for debugging
-        spdlog::info("[GT COMPARISON] Legacy GT [0,0,0] = {}", legacy_gt_cpu[0][0][0].template item<float>());
-        spdlog::info("[GT COMPARISON] New GT [0,0,0] = {}", new_gt_torch[0][0][0].template item<float>());
-        spdlog::info("[GT COMPARISON] Legacy GT [0,0,1] = {}", legacy_gt_cpu[0][0][1].template item<float>());
-        spdlog::info("[GT COMPARISON] New GT [0,0,1] = {}", new_gt_torch[0][0][1].template item<float>());
-        spdlog::info("[GT COMPARISON] Legacy GT [1,0,0] = {}", legacy_gt_cpu[1][0][0].template item<float>());
-        spdlog::info("[GT COMPARISON] New GT [1,0,0] = {}", new_gt_torch[1][0][0].template item<float>());
-        spdlog::info("[GT COMPARISON] Legacy GT [0,100,100] = {}", legacy_gt_cpu[0][100][100].template item<float>());
-        spdlog::info("[GT COMPARISON] New GT [0,100,100] = {}", new_gt_torch[0][100][100].template item<float>());
+        spdlog::info("[GT COMPARISON] Legacy GT [0,0,0] = {}", legacy_gt_cpu[0][0][0].item<float>());
+        spdlog::info("[GT COMPARISON] New GT [0,0,0] = {}", new_gt_torch[0][0][0].item<float>());
+        spdlog::info("[GT COMPARISON] Legacy GT [0,0,1] = {}", legacy_gt_cpu[0][0][1].item<float>());
+        spdlog::info("[GT COMPARISON] New GT [0,0,1] = {}", new_gt_torch[0][0][1].item<float>());
+        spdlog::info("[GT COMPARISON] Legacy GT [1,0,0] = {}", legacy_gt_cpu[1][0][0].item<float>());
+        spdlog::info("[GT COMPARISON] New GT [1,0,0] = {}", new_gt_torch[1][0][0].item<float>());
+        spdlog::info("[GT COMPARISON] Legacy GT [0,100,100] = {}", legacy_gt_cpu[0][100][100].item<float>());
+        spdlog::info("[GT COMPARISON] New GT [0,100,100] = {}", new_gt_torch[0][100][100].item<float>());
 
         // Check tensor strides
         spdlog::info("[GT COMPARISON] Legacy GT strides: [{}, {}, {}]",
@@ -552,16 +547,16 @@ std::expected<void, std::string> render_and_save_comparison(
 
     spdlog::info("[NEW] Creating side-by-side comparison: rendered + GT");
     spdlog::info("[NEW] Rendered image shape: [{}, {}, {}]",
-                 new_result.first.image.shape()[0],
-                 new_result.first.image.shape()[1],
-                 new_result.first.image.shape()[2]);
+                 new_result.value().first.image.shape()[0],
+                 new_result.value().first.image.shape()[1],
+                 new_result.value().first.image.shape()[2]);
     spdlog::info("[NEW] GT image shape: [{}, {}, {}]",
                  new_gt.shape()[0],
                  new_gt.shape()[1],
                  new_gt.shape()[2]);
 
     // Save new pipeline comparison (rendered + GT) - horizontal 1x2 grid
-    lfs::core::save_image(new_path, {new_result.first.image, new_gt}, true, 5);
+    lfs::core::save_image(new_path, {new_result.value().first.image, new_gt}, true, 5);
     spdlog::info("[NEW] Saved comparison to: {}", new_path.string());
 
     spdlog::info("=== Rendering comparison complete ===");
@@ -618,7 +613,7 @@ std::expected<void, std::string> run_training_loop_comparison(
         auto new_opacity_cpu = new_model.opacity_raw().to(lfs::core::Device::CPU);
         torch::Tensor new_opacity_torch = torch::empty({static_cast<long>(new_opacity_cpu.shape()[0]),
                                                          static_cast<long>(new_opacity_cpu.shape()[1])}, torch::kFloat32);
-        std::memcpy(new_opacity_torch.template data_ptr<float>(), new_opacity_cpu.ptr<float>(),
+        std::memcpy(new_opacity_torch.data_ptr<float>(), new_opacity_cpu.ptr<float>(),
                     new_opacity_cpu.numel() * sizeof(float));
 
         auto opacity_diff = (legacy_opacity - new_opacity_torch).abs();
@@ -631,7 +626,7 @@ std::expected<void, std::string> run_training_loop_comparison(
         auto new_scaling_cpu = new_model.scaling_raw().to(lfs::core::Device::CPU);
         torch::Tensor new_scaling_torch = torch::empty({static_cast<long>(new_scaling_cpu.shape()[0]),
                                                          static_cast<long>(new_scaling_cpu.shape()[1])}, torch::kFloat32);
-        std::memcpy(new_scaling_torch.template data_ptr<float>(), new_scaling_cpu.ptr<float>(),
+        std::memcpy(new_scaling_torch.data_ptr<float>(), new_scaling_cpu.ptr<float>(),
                     new_scaling_cpu.numel() * sizeof(float));
 
         auto scaling_diff = (legacy_scaling - new_scaling_torch).abs();
@@ -644,7 +639,7 @@ std::expected<void, std::string> run_training_loop_comparison(
         auto new_means_cpu = new_model.means().to(lfs::core::Device::CPU);
         torch::Tensor new_means_torch = torch::empty({static_cast<long>(new_means_cpu.shape()[0]),
                                                        static_cast<long>(new_means_cpu.shape()[1])}, torch::kFloat32);
-        std::memcpy(new_means_torch.template data_ptr<float>(), new_means_cpu.ptr<float>(),
+        std::memcpy(new_means_torch.data_ptr<float>(), new_means_cpu.ptr<float>(),
                     new_means_cpu.numel() * sizeof(float));
 
         auto means_diff = (legacy_means - new_means_torch).abs();
@@ -690,7 +685,10 @@ std::expected<void, std::string> run_training_loop_comparison(
             *new_cam,
             new_init.strategy->get_model(),
             new_init.background);
-        auto [new_output, new_ctx] = new_render_result;
+        if (!new_render_result) {
+            return std::unexpected(new_render_result.error());
+        }
+        auto [new_output, new_ctx] = new_render_result.value();
 
         spdlog::info("[{}] Rendered - Legacy: {}x{}, New: {}x{}",
                      iter,
@@ -727,8 +725,8 @@ std::expected<void, std::string> run_training_loop_comparison(
 
             // Compute differences
             auto img_diff = (legacy_img - new_img_torch).abs();
-            float img_max_diff = img_diff.max().template item<float>();
-            float img_mean_diff = img_diff.mean().template item<float>();
+            float img_max_diff = img_diff.max().item<float>();
+            float img_mean_diff = img_diff.mean().item<float>();
 
             spdlog::info("[{}] Rendered Image - Max diff: {:.6e}, Mean diff: {:.6e}",
                         iter, img_max_diff, img_mean_diff);
@@ -737,8 +735,8 @@ std::expected<void, std::string> run_training_loop_comparison(
             if (legacy_img.size(0) == 3) {
                 // [3, H, W] layout
                 for (int c = 0; c < 3; ++c) {
-                    float ch_max = img_diff[c].max().template item<float>();
-                    float ch_mean = img_diff[c].mean().template item<float>();
+                    float ch_max = img_diff[c].max().item<float>();
+                    float ch_mean = img_diff[c].mean().item<float>();
                     const char* ch_name = (c == 0) ? "R" : (c == 1) ? "G" : "B";
                     spdlog::info("[{}]   Channel {} - Max diff: {:.6e}, Mean diff: {:.6e}",
                                 iter, ch_name, ch_max, ch_mean);
@@ -751,19 +749,19 @@ std::expected<void, std::string> run_training_loop_comparison(
                     auto new_pixel = new_img_torch.index({torch::indexing::Slice(), 0, i});
                     spdlog::info("[{}]   Pixel (0,{}): Legacy=[{:.6f}, {:.6f}, {:.6f}], New=[{:.6f}, {:.6f}, {:.6f}]",
                                 iter, i,
-                                legacy_pixel[0].template item<float>(),
-                                legacy_pixel[1].template item<float>(),
-                                legacy_pixel[2].template item<float>(),
-                                new_pixel[0].template item<float>(),
-                                new_pixel[1].template item<float>(),
-                                new_pixel[2].template item<float>());
+                                legacy_pixel[0].item<float>(),
+                                legacy_pixel[1].item<float>(),
+                                legacy_pixel[2].item<float>(),
+                                new_pixel[0].item<float>(),
+                                new_pixel[1].item<float>(),
+                                new_pixel[2].item<float>());
                 }
             } else {
                 // [H, W, 3] layout
                 for (int c = 0; c < 3; ++c) {
                     auto ch_diff = img_diff.index({torch::indexing::Slice(), torch::indexing::Slice(), c});
-                    float ch_max = ch_diff.max().template item<float>();
-                    float ch_mean = ch_diff.mean().template item<float>();
+                    float ch_max = ch_diff.max().item<float>();
+                    float ch_mean = ch_diff.mean().item<float>();
                     const char* ch_name = (c == 0) ? "R" : (c == 1) ? "G" : "B";
                     spdlog::info("[{}]   Channel {} - Max diff: {:.6e}, Mean diff: {:.6e}",
                                 iter, ch_name, ch_max, ch_mean);
@@ -776,12 +774,12 @@ std::expected<void, std::string> run_training_loop_comparison(
                     auto new_pixel = new_img_torch.index({0, i, torch::indexing::Slice()});
                     spdlog::info("[{}]   Pixel (0,{}): Legacy=[{:.6f}, {:.6f}, {:.6f}], New=[{:.6f}, {:.6f}, {:.6f}]",
                                 iter, i,
-                                legacy_pixel[0].template item<float>(),
-                                legacy_pixel[1].template item<float>(),
-                                legacy_pixel[2].template item<float>(),
-                                new_pixel[0].template item<float>(),
-                                new_pixel[1].template item<float>(),
-                                new_pixel[2].template item<float>());
+                                legacy_pixel[0].item<float>(),
+                                legacy_pixel[1].item<float>(),
+                                legacy_pixel[2].item<float>(),
+                                new_pixel[0].item<float>(),
+                                new_pixel[1].item<float>(),
+                                new_pixel[2].item<float>());
                 }
             }
             } catch (const std::exception& e) {
@@ -803,19 +801,20 @@ std::expected<void, std::string> run_training_loop_comparison(
         auto legacy_ssim_loss = 1.f - fused_ssim(legacy_rendered, legacy_gt_4d, "valid", /*train=*/true);
         torch::Tensor legacy_loss_tensor = (1.f - legacy_init.params.optimization.lambda_dssim) * legacy_l1_loss +
                                             legacy_init.params.optimization.lambda_dssim * legacy_ssim_loss;
-        float legacy_loss_value = legacy_loss_tensor.template item<float>();
+        float legacy_loss_value = legacy_loss_tensor.item<float>();
 
-        // New loss
+        // New loss - PhotometricLoss has state so needs an instance
+        static lfs::training::losses::PhotometricLoss new_loss;  // Static to reuse workspace
         lfs::training::losses::PhotometricLoss::Params new_loss_params{
             .lambda_dssim = new_init.params.optimization.lambda_dssim
         };
-        auto new_loss_result = lfs::training::losses::PhotometricLoss::forward(
+        auto new_loss_result = new_loss.forward(
             new_output.image, new_gt, new_loss_params);
         if (!new_loss_result) {
             return std::unexpected(std::format("New loss computation failed: {}", new_loss_result.error()));
         }
         auto [new_loss_tensor, new_loss_ctx] = *new_loss_result;
-        float new_loss_value = new_loss_tensor.template item<float>();  // Extract scalar from tensor
+        float new_loss_value = new_loss_tensor.item();  // LFS Tensor uses .item() not .item<T>()
 
         spdlog::info("[{}] Loss - Legacy: {:.6f}, New: {:.6f}, Diff: {:.6f}",
                      iter,
@@ -834,7 +833,7 @@ std::expected<void, std::string> run_training_loop_comparison(
 
             // Legacy SH0
             auto legacy_sh0_pre = legacy_model_pre.sh0();
-            const float* legacy_sh0_ptr = legacy_sh0_pre.template data_ptr<float>();
+            const float* legacy_sh0_ptr = legacy_sh0_pre.data_ptr<float>();
 
             // New SH0
             auto& new_sh0_pre = new_model_pre.sh0();
@@ -847,7 +846,7 @@ std::expected<void, std::string> run_training_loop_comparison(
             auto new_sh0_cpu_check = new_sh0_flat_check.to(lfs::core::Device::CPU);
             size_t N_check = new_sh0_cpu_check.shape()[0];
             torch::Tensor new_sh0_torch_check = torch::empty({static_cast<long>(N_check), 3}, torch::kFloat32);
-            std::memcpy(new_sh0_torch_check.template data_ptr<float>(), new_sh0_cpu_check.ptr<float>(), N_check * 3 * sizeof(float));
+            std::memcpy(new_sh0_torch_check.data_ptr<float>(), new_sh0_cpu_check.ptr<float>(), N_check * 3 * sizeof(float));
 
             for (int i = 0; i < 3; ++i) {
                 auto legacy_row = legacy_sh0_cpu_check[i];
@@ -873,7 +872,7 @@ std::expected<void, std::string> run_training_loop_comparison(
             size_t N = new_sh0_cpu.shape()[0];
             size_t C = new_sh0_cpu.shape()[1];
             torch::Tensor new_sh0_torch = torch::empty({static_cast<long>(N), static_cast<long>(C)}, torch::kFloat32);
-            std::memcpy(new_sh0_torch.template data_ptr<float>(), new_sh0_cpu.ptr<float>(), N * C * sizeof(float));
+            std::memcpy(new_sh0_torch.data_ptr<float>(), new_sh0_cpu.ptr<float>(), N * C * sizeof(float));
 
             float sh0_diff_before = (legacy_sh0_cpu - new_sh0_torch).abs().max().item().toFloat();
             spdlog::info("[{}] SH0 max difference BEFORE backward: {:.6f}", iter, sh0_diff_before);
@@ -938,8 +937,8 @@ std::expected<void, std::string> run_training_loop_comparison(
 
         if (legacy_means_grad.defined() && legacy_means_grad.numel() > 0) {
             auto legacy_means_grad_cpu = legacy_means_grad.cpu();
-            float means_grad_max_diff = (legacy_means_grad_cpu - new_means_grad_torch).abs().max().template item<float>();
-            float means_grad_mean_diff = (legacy_means_grad_cpu - new_means_grad_torch).abs().mean().template item<float>();
+            float means_grad_max_diff = (legacy_means_grad_cpu - new_means_grad_torch).abs().max().item<float>();
+            float means_grad_mean_diff = (legacy_means_grad_cpu - new_means_grad_torch).abs().mean().item<float>();
 
             spdlog::info("[{}] Means Gradient - Max diff: {:.2e}, Mean diff: {:.2e}",
                          iter, means_grad_max_diff, means_grad_mean_diff);
@@ -966,8 +965,8 @@ std::expected<void, std::string> run_training_loop_comparison(
                      static_cast<long>(new_opacity_grad_cpu.shape()[1])},
                     torch::kFloat32).clone();
 
-                float opacity_grad_max_diff = (legacy_opacity_grad_cpu - new_opacity_grad_torch).abs().max().template item<float>();
-                float opacity_grad_mean_diff = (legacy_opacity_grad_cpu - new_opacity_grad_torch).abs().mean().template item<float>();
+                float opacity_grad_max_diff = (legacy_opacity_grad_cpu - new_opacity_grad_torch).abs().max().item<float>();
+                float opacity_grad_mean_diff = (legacy_opacity_grad_cpu - new_opacity_grad_torch).abs().mean().item<float>();
 
                 spdlog::info("[{}] Opacity Gradient - Max diff: {:.2e}, Mean diff: {:.2e}",
                              iter, opacity_grad_max_diff, opacity_grad_mean_diff);
@@ -975,8 +974,8 @@ std::expected<void, std::string> run_training_loop_comparison(
                 // Log first 5 gradients
                 spdlog::info("[{}] First 5 Opacity Gradients:", iter);
                 for (int i = 0; i < std::min(5, static_cast<int>(legacy_opacity_grad_cpu.size(0))); ++i) {
-                    float legacy_val = legacy_opacity_grad_cpu[i][0].template item<float>();
-                    float new_val = new_opacity_grad_torch[i][0].template item<float>();
+                    float legacy_val = legacy_opacity_grad_cpu[i][0].item<float>();
+                    float new_val = new_opacity_grad_torch[i][0].item<float>();
                     spdlog::info("[{}]   Gaussian {}: Legacy={:.6e}, New={:.6e}, Diff={:.6e}",
                                  iter, i, legacy_val, new_val, std::abs(legacy_val - new_val));
                 }
@@ -995,8 +994,8 @@ std::expected<void, std::string> run_training_loop_comparison(
                      static_cast<long>(new_scaling_grad_cpu.shape()[1])},
                     torch::kFloat32).clone();
 
-                float scaling_grad_max_diff = (legacy_scaling_grad_cpu - new_scaling_grad_torch).abs().max().template item<float>();
-                float scaling_grad_mean_diff = (legacy_scaling_grad_cpu - new_scaling_grad_torch).abs().mean().template item<float>();
+                float scaling_grad_max_diff = (legacy_scaling_grad_cpu - new_scaling_grad_torch).abs().max().item<float>();
+                float scaling_grad_mean_diff = (legacy_scaling_grad_cpu - new_scaling_grad_torch).abs().mean().item<float>();
 
                 spdlog::info("[{}] Scaling Gradient - Max diff: {:.2e}, Mean diff: {:.2e}",
                              iter, scaling_grad_max_diff, scaling_grad_mean_diff);
@@ -1008,8 +1007,8 @@ std::expected<void, std::string> run_training_loop_comparison(
                     auto new_row = new_scaling_grad_torch[i];
                     spdlog::info("[{}]   Gaussian {}: Legacy=[{:.6e}, {:.6e}, {:.6e}], New=[{:.6e}, {:.6e}, {:.6e}]",
                                  iter, i,
-                                 legacy_row[0].template item<float>(), legacy_row[1].template item<float>(), legacy_row[2].template item<float>(),
-                                 new_row[0].template item<float>(), new_row[1].template item<float>(), new_row[2].template item<float>());
+                                 legacy_row[0].item<float>(), legacy_row[1].item<float>(), legacy_row[2].item<float>(),
+                                 new_row[0].item<float>(), new_row[1].item<float>(), new_row[2].item<float>());
                 }
             }
         }
@@ -1041,8 +1040,8 @@ std::expected<void, std::string> run_training_loop_comparison(
         if (iter <= 2) {
             spdlog::info("[{}] === Adam Momentum State Comparison (AFTER step) ===", iter);
 
-            // Get optimizers
-            auto* new_opt = dynamic_cast<lfs::training::MCMC*>(new_init.strategy.get())->get_optimizer();
+            // Get optimizers - LFS returns reference, Legacy returns pointer
+            auto& new_opt = dynamic_cast<lfs::training::MCMC*>(new_init.strategy.get())->get_optimizer();
             auto* legacy_opt = dynamic_cast<gs::training::MCMC*>(legacy_init.strategy.get())->get_optimizer();
 
             // Get legacy model to find which param group is opacity
@@ -1090,7 +1089,7 @@ std::expected<void, std::string> run_training_loop_comparison(
                             spdlog::info("[{}]   exp_avg_sq shape: [{}]", iter, legacy_exp_avg_sq.numel());
 
                             // Get new state
-                            auto* new_opacity_state = new_opt->get_state(lfs::training::ParamType::Opacity);
+                            auto* new_opacity_state = new_opt.get_state(lfs::training::ParamType::Opacity);
                             if (new_opacity_state) {
                                 spdlog::info("[{}] New Opacity State:", iter);
                                 spdlog::info("[{}]   Step count: {}", iter, new_opacity_state->step_count);
@@ -1100,7 +1099,7 @@ std::expected<void, std::string> run_training_loop_comparison(
 
                                 // Compare first 5 values side by side
                                 spdlog::info("[{}] First 5 Opacity exp_avg (Legacy vs New):", iter);
-                                const float* legacy_avg_ptr = legacy_exp_avg.template data_ptr<float>();
+                                const float* legacy_avg_ptr = legacy_exp_avg.data_ptr<float>();
                                 const float* new_avg_ptr = new_exp_avg_cpu.ptr<float>();
 
                                 for (int i = 0; i < std::min(5, static_cast<int>(legacy_exp_avg.numel())); ++i) {
@@ -1112,7 +1111,7 @@ std::expected<void, std::string> run_training_loop_comparison(
                                 }
 
                                 spdlog::info("[{}] First 5 Opacity exp_avg_sq (Legacy vs New):", iter);
-                                const float* legacy_sq_ptr = legacy_exp_avg_sq.template data_ptr<float>();
+                                const float* legacy_sq_ptr = legacy_exp_avg_sq.data_ptr<float>();
                                 const float* new_sq_ptr = new_exp_avg_sq_cpu.ptr<float>();
 
                                 for (int i = 0; i < std::min(5, static_cast<int>(legacy_exp_avg_sq.numel())); ++i) {
@@ -1124,9 +1123,10 @@ std::expected<void, std::string> run_training_loop_comparison(
                                 }
 
                                 // Compute overall statistics
+                                std::vector<int64_t> exp_avg_shape = {static_cast<int64_t>(new_opacity_state->exp_avg.numel())};
                                 torch::Tensor new_exp_avg_torch = torch::from_blob(
                                     const_cast<float*>(new_avg_ptr),
-                                    {static_cast<long>(new_opacity_state->exp_avg.numel())},
+                                    at::IntArrayRef(exp_avg_shape),
                                     torch::kFloat32
                                 ).clone();
 
@@ -1155,7 +1155,7 @@ std::expected<void, std::string> run_training_loop_comparison(
 
             // Legacy SH0
             auto legacy_sh0_post = legacy_model_post.sh0();
-            const float* legacy_sh0_ptr_post = legacy_sh0_post.template data_ptr<float>();
+            const float* legacy_sh0_ptr_post = legacy_sh0_post.data_ptr<float>();
 
             // New SH0
             auto& new_sh0_post = new_model_post.sh0();
@@ -1168,7 +1168,7 @@ std::expected<void, std::string> run_training_loop_comparison(
             auto new_sh0_cpu_post_check = new_sh0_flat_post_check.to(lfs::core::Device::CPU);
             size_t N_post_check = new_sh0_cpu_post_check.shape()[0];
             torch::Tensor new_sh0_torch_post_check = torch::empty({static_cast<long>(N_post_check), 3}, torch::kFloat32);
-            std::memcpy(new_sh0_torch_post_check.template data_ptr<float>(), new_sh0_cpu_post_check.ptr<float>(), N_post_check * 3 * sizeof(float));
+            std::memcpy(new_sh0_torch_post_check.data_ptr<float>(), new_sh0_cpu_post_check.ptr<float>(), N_post_check * 3 * sizeof(float));
 
             for (int i = 0; i < 3; ++i) {
                 auto legacy_row = legacy_sh0_cpu_post_check[i];
@@ -1192,7 +1192,7 @@ std::expected<void, std::string> run_training_loop_comparison(
             size_t N_post = new_sh0_cpu_post.shape()[0];
             size_t C_post = new_sh0_cpu_post.shape()[1];
             torch::Tensor new_sh0_torch_post = torch::empty({static_cast<long>(N_post), static_cast<long>(C_post)}, torch::kFloat32);
-            std::memcpy(new_sh0_torch_post.template data_ptr<float>(), new_sh0_cpu_post.ptr<float>(), N_post * C_post * sizeof(float));
+            std::memcpy(new_sh0_torch_post.data_ptr<float>(), new_sh0_cpu_post.ptr<float>(), N_post * C_post * sizeof(float));
 
             float sh0_diff_after = (legacy_sh0_cpu_post - new_sh0_torch_post).abs().max().item().toFloat();
             float sh0_mean_diff_after = (legacy_sh0_cpu_post - new_sh0_torch_post).abs().mean().item().toFloat();
@@ -1204,9 +1204,9 @@ std::expected<void, std::string> run_training_loop_comparison(
         // ============================================================
         spdlog::info("[{}] === Optimizer State Comparison ===", iter);
 
-        // Get optimizer instances
+        // Get optimizer instances - LFS returns reference, Legacy returns pointer
         auto* legacy_opt = legacy_init.strategy->get_optimizer();
-        auto* new_opt = new_init.strategy->get_optimizer();
+        auto& new_opt = new_init.strategy->get_optimizer();
 
         // Compare learning rates for each parameter group
         spdlog::info("[{}] Learning Rates:", iter);
@@ -1221,7 +1221,7 @@ std::expected<void, std::string> run_training_loop_comparison(
         };
         for (size_t i = 0; i < 6; ++i) {
             double legacy_lr = legacy_init.strategy->get_lr(i);
-            float new_lr = new_opt->get_param_lr(param_types[i]);  // Get per-parameter LR
+            float new_lr = new_opt.get_param_lr(param_types[i]);  // Get per-parameter LR
 
             spdlog::info("[{}]   {}: Legacy={:.2e}, New={:.2e}",
                          iter, param_names[i], legacy_lr, new_lr);
@@ -1261,8 +1261,8 @@ std::expected<void, std::string> run_training_loop_comparison(
                 torch::IntArrayRef(shape_vec),
                 torch::kFloat32).clone();
 
-            float max_diff = (legacy_t.cpu() - new_torch).abs().max().template item<float>();
-            float mean_diff = (legacy_t.cpu() - new_torch).abs().mean().template item<float>();
+            float max_diff = (legacy_t.cpu() - new_torch).abs().max().item<float>();
+            float mean_diff = (legacy_t.cpu() - new_torch).abs().mean().item<float>();
 
             spdlog::info("[{}]   {} - Max diff: {:.2e}, Mean diff: {:.2e}",
                          iter, name, max_diff, mean_diff);
@@ -1298,7 +1298,7 @@ std::expected<void, std::string> run_training_loop_comparison(
 
             // Manually create flattened torch tensor with shape [N, 45]
             torch::Tensor shN_torch = torch::empty({static_cast<long>(N), 45}, torch::kFloat32);
-            float* dst = shN_torch.template data_ptr<float>();
+            float* dst = shN_torch.data_ptr<float>();
             const float* src = shN_cpu.ptr<float>();
             // Copy data in row-major order
             std::memcpy(dst, src, N * 45 * sizeof(float));
@@ -1309,8 +1309,8 @@ std::expected<void, std::string> run_training_loop_comparison(
                 legacy_shN = legacy_shN.reshape({static_cast<long>(N), 45});
             }
 
-            float max_diff = (legacy_shN - shN_torch).abs().max().template item<float>();
-            float mean_diff = (legacy_shN - shN_torch).abs().mean().template item<float>();
+            float max_diff = (legacy_shN - shN_torch).abs().max().item<float>();
+            float mean_diff = (legacy_shN - shN_torch).abs().mean().item<float>();
             spdlog::info("[{}]   ShN - Max diff: {:.2e}, Mean diff: {:.2e}",
                          iter, max_diff, mean_diff);
         }
@@ -1337,7 +1337,7 @@ std::expected<void, std::string> run_training_loop_comparison(
             size_t C = new_sh0_grad_cpu.shape()[1];
             torch::Tensor new_sh0_grad_torch = torch::empty({static_cast<long>(N), static_cast<long>(C)}, torch::kFloat32);
             const float* src_ptr = new_sh0_grad_cpu.ptr<float>();
-            float* dst_ptr = new_sh0_grad_torch.template data_ptr<float>();
+            float* dst_ptr = new_sh0_grad_torch.data_ptr<float>();
             std::memcpy(dst_ptr, src_ptr, N * C * sizeof(float));
 
             // Reshape legacy if needed

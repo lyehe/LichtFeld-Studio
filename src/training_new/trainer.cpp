@@ -23,9 +23,8 @@
 // #include "kernels/regularization.cuh"
 #include "loader_new/cache_image_loader.hpp"
 #include "rasterization/fast_rasterizer.hpp"
+#include "rasterization/gsplat_rasterizer.hpp"  // For GUT mode
 #include "core_new/cuda/memory_arena.hpp"
-// TODO: Port 3DGUT rasterizer to LibTorch-free implementation
-// #include "rasterization/rasterizer.hpp"
 #include "losses/losses.hpp"
 
 #include <atomic>
@@ -607,20 +606,20 @@ namespace lfs::training {
         RenderMode render_mode,
         std::stop_token stop_token) {
         try {
-            // TODO: Port 3DGUT rasterizer to LibTorch-free implementation
-            // if (params_.optimization.gut) {
-            //     if (cam->camera_model_type() == gsplat::CameraModelType::ORTHO) {
-            //         return std::unexpected("Training on cameras with ortho model is not supported yet.");
-            //     }
-            // } else {
+            // GUT mode enables Gaussian Unscented Transform for lens distortion handling
+            if (params_.optimization.gut) {
+                if (cam->camera_model_type() == ::gsplat::CameraModelType::ORTHO) {
+                    return std::unexpected("Training on cameras with ortho model is not supported yet.");
+                }
+            } else {
                 if (cam->radial_distortion().numel() != 0 ||
                     cam->tangential_distortion().numel() != 0) {
                     return std::unexpected("Distorted images detected.  You can use --gut option to train on cameras with distortion.");
                 }
-                if (cam->camera_model_type() != gsplat::CameraModelType::PINHOLE) {
+                if (cam->camera_model_type() != ::gsplat::CameraModelType::PINHOLE) {
                     return std::unexpected("You must use --gut option to train on cameras with non-pinhole model.");
                 }
-            // }
+            }
 
             current_iteration_ = iter;
 
@@ -703,45 +702,70 @@ namespace lfs::training {
 
                 // Render the tile
                 nvtxRangePush("rasterize_forward");
-                auto rasterize_result = fast_rasterize_forward(
-                    *cam, strategy_->get_model(), bg,
-                    tile_x_offset, tile_y_offset,
-                    (num_tiles > 1) ? tile_width : 0,   // 0 means full image
-                    (num_tiles > 1) ? tile_height : 0);
 
-                // Check for OOM error
-                if (!rasterize_result) {
-                    const std::string& error = rasterize_result.error();
-                    if (error.find("OUT_OF_MEMORY") != std::string::npos) {
+                // Storage for render output (used by both paths)
+                RenderOutput output;
+                std::optional<FastRasterizeContext> fast_ctx;
+                std::optional<GsplatRasterizeContext> gsplat_ctx;
+
+                if (params_.optimization.gut) {
+                    // GUT mode: use gsplat rasterizer (no tiling support yet)
+                    auto rasterize_result = gsplat_rasterize_forward(
+                        *cam, strategy_->get_model(), bg,
+                        1.0f, false, GsplatRenderMode::RGB, true /* use_gut */);
+
+                    if (!rasterize_result) {
                         nvtxRangePop();  // rasterize_forward
                         nvtxRangePop();  // tile
-
-                        // Handle OOM by switching tile mode
-                        if (tile_mode == TileMode::Four) {
-                            // Already at maximum tiling - can't tile further, stop gracefully
-                            LOG_ERROR("OUT OF MEMORY at maximum tile mode (2x2). Stopping training gracefully.");
-                            LOG_ERROR("Arena error: {}", error);
-                            return StepResult::Stop;
-                        } else {
-                            // Upgrade to next tile mode
-                            TileMode new_mode = (tile_mode == TileMode::One) ? TileMode::Two : TileMode::Four;
-                            LOG_WARN("OUT OF MEMORY detected. Switching tile mode from {} to {}",
-                                     static_cast<int>(tile_mode), static_cast<int>(new_mode));
-                            LOG_WARN("Arena error: {}", error);
-                            params_.optimization.tile_mode = static_cast<int>(new_mode);
-
-                            // Retry this step with new tile mode
-                            return std::unexpected("OOM_RETRY");  // Signal to retry the step
-                        }
-                    } else {
-                        // Non-OOM error - propagate
-                        nvtxRangePop();
-                        nvtxRangePop();
-                        return std::unexpected(error);
+                        return std::unexpected(rasterize_result.error());
                     }
+
+                    output = std::move(rasterize_result->first);
+                    gsplat_ctx.emplace(std::move(rasterize_result->second));
+                } else {
+                    // Standard mode: use fast rasterizer with tiling support
+                    auto rasterize_result = fast_rasterize_forward(
+                        *cam, strategy_->get_model(), bg,
+                        tile_x_offset, tile_y_offset,
+                        (num_tiles > 1) ? tile_width : 0,   // 0 means full image
+                        (num_tiles > 1) ? tile_height : 0);
+
+                    // Check for OOM error
+                    if (!rasterize_result) {
+                        const std::string& error = rasterize_result.error();
+                        if (error.find("OUT_OF_MEMORY") != std::string::npos) {
+                            nvtxRangePop();  // rasterize_forward
+                            nvtxRangePop();  // tile
+
+                            // Handle OOM by switching tile mode
+                            if (tile_mode == TileMode::Four) {
+                                // Already at maximum tiling - can't tile further, stop gracefully
+                                LOG_ERROR("OUT OF MEMORY at maximum tile mode (2x2). Stopping training gracefully.");
+                                LOG_ERROR("Arena error: {}", error);
+                                return StepResult::Stop;
+                            } else {
+                                // Upgrade to next tile mode
+                                TileMode new_mode = (tile_mode == TileMode::One) ? TileMode::Two : TileMode::Four;
+                                LOG_WARN("OUT OF MEMORY detected. Switching tile mode from {} to {}",
+                                         static_cast<int>(tile_mode), static_cast<int>(new_mode));
+                                LOG_WARN("Arena error: {}", error);
+                                params_.optimization.tile_mode = static_cast<int>(new_mode);
+
+                                // Retry this step with new tile mode
+                                return std::unexpected("OOM_RETRY");  // Signal to retry the step
+                            }
+                        } else {
+                            // Non-OOM error - propagate
+                            nvtxRangePop();
+                            nvtxRangePop();
+                            return std::unexpected(error);
+                        }
+                    }
+
+                    output = std::move(rasterize_result->first);
+                    fast_ctx.emplace(std::move(rasterize_result->second));
                 }
 
-                auto& [output, ctx] = *rasterize_result;
                 r_output = output;  // Save last tile for densification
                 nvtxRangePop();
 
@@ -781,7 +805,15 @@ namespace lfs::training {
                 }
 
                 nvtxRangePush("rasterize_backward");
-                fast_rasterize_backward(ctx, raster_grad, strategy_->get_model(), strategy_->get_optimizer());
+                if (gsplat_ctx) {
+                    // GUT mode: use gsplat backward (needs grad_alpha too)
+                    auto grad_alpha = lfs::core::Tensor::zeros_like(output.alpha);
+                    gsplat_rasterize_backward(*gsplat_ctx, raster_grad, grad_alpha,
+                                              strategy_->get_model(), strategy_->get_optimizer());
+                } else {
+                    // Standard mode: use fast rasterizer backward
+                    fast_rasterize_backward(*fast_ctx, raster_grad, strategy_->get_model(), strategy_->get_optimizer());
+                }
                 nvtxRangePop();
 
                 nvtxRangePop();  // End tile

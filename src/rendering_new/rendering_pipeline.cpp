@@ -7,6 +7,7 @@
 #include "core_new/point_cloud.hpp"
 #include "core_new/splat_data.hpp"
 #include "gs_rasterizer_tensor.hpp"
+#include "training_new/rasterization/gsplat_rasterizer.hpp"
 
 #include <cstring>
 #include <print>
@@ -128,35 +129,43 @@ namespace lfs::rendering {
                 const_cast<lfs::core::SplatData&>(model).set_active_sh_degree(request.sh_degree);
 
                 RenderResult result;
-                if (request.gut) {
-                    throw std::runtime_error("GUT rendering mode not yet implemented for tensor backend");
-                }
 
-                LOG_TRACE("Using TENSOR_NATIVE backend (sh_degree temporarily changed from {} to {})",
-                         original_sh_degree, request.sh_degree);
-                Tensor screen_positions;
-                auto [image, depth] = rasterize_tensor(cam, const_cast<lfs::core::SplatData&>(model), background_,
-                                                request.show_rings, request.ring_width,
-                                                model_transforms_tensor.get(), transform_indices_ptr,
-                                                selection_mask_ptr,
-                                                request.output_screen_positions ? &screen_positions : nullptr,
-                                                request.brush_active, request.brush_x, request.brush_y, request.brush_radius,
-                                                request.brush_add_mode, request.brush_selection_tensor,
-                                                request.brush_saturation_mode, request.brush_saturation_amount,
-                                                request.selection_mode_rings,
-                                                request.show_center_markers,
-                                                request.crop_box_transform, request.crop_box_min, request.crop_box_max,
-                                                request.crop_inverse, request.crop_desaturate,
-                                                request.depth_filter_transform, request.depth_filter_min, request.depth_filter_max,
-                                                request.deleted_mask,
-                                                request.hovered_depth_id,
-                                                request.highlight_gaussian_id,
-                                                request.far_plane,
-                                                request.selected_node_mask);
-                result.image = std::move(image);
-                result.depth = std::move(depth);
-                if (request.output_screen_positions) {
-                    result.screen_positions = std::move(screen_positions);
+                if (request.gut) {
+                    // Use gsplat rasterizer for GUT mode (simpler, no brush/selection features)
+                    LOG_TRACE("Using gsplat rasterizer for GUT mode (sh_degree temporarily changed from {} to {})",
+                             original_sh_degree, request.sh_degree);
+                    auto render_output = lfs::training::gsplat_rasterize(
+                        cam, const_cast<lfs::core::SplatData&>(model), background_,
+                        request.scaling_modifier, request.antialiasing);
+                    result.image = std::move(render_output.image);
+                    result.depth = std::move(render_output.depth);
+                } else {
+                    LOG_TRACE("Using TENSOR_NATIVE backend (sh_degree temporarily changed from {} to {})",
+                             original_sh_degree, request.sh_degree);
+                    Tensor screen_positions;
+                    auto [image, depth] = rasterize_tensor(cam, const_cast<lfs::core::SplatData&>(model), background_,
+                                                    request.show_rings, request.ring_width,
+                                                    model_transforms_tensor.get(), transform_indices_ptr,
+                                                    selection_mask_ptr,
+                                                    request.output_screen_positions ? &screen_positions : nullptr,
+                                                    request.brush_active, request.brush_x, request.brush_y, request.brush_radius,
+                                                    request.brush_add_mode, request.brush_selection_tensor,
+                                                    request.brush_saturation_mode, request.brush_saturation_amount,
+                                                    request.selection_mode_rings,
+                                                    request.show_center_markers,
+                                                    request.crop_box_transform, request.crop_box_min, request.crop_box_max,
+                                                    request.crop_inverse, request.crop_desaturate,
+                                                    request.depth_filter_transform, request.depth_filter_min, request.depth_filter_max,
+                                                    request.deleted_mask,
+                                                    request.hovered_depth_id,
+                                                    request.highlight_gaussian_id,
+                                                    request.far_plane,
+                                                    request.selected_node_mask);
+                    result.image = std::move(image);
+                    result.depth = std::move(depth);
+                    if (request.output_screen_positions) {
+                        result.screen_positions = std::move(screen_positions);
+                    }
                 }
 
                 // IMMEDIATELY restore original sh_degree
@@ -172,7 +181,16 @@ namespace lfs::rendering {
             RenderResult result;
 
             if (request.gut) {
-                throw std::runtime_error("GUT rendering mode not yet implemented for tensor backend");
+                // Use gsplat rasterizer for GUT mode (simpler, no brush/selection features)
+                LOG_TRACE("Using gsplat rasterizer for GUT mode");
+                auto render_output = lfs::training::gsplat_rasterize(
+                    cam, mutable_model, background_,
+                    request.scaling_modifier, request.antialiasing);
+                result.image = std::move(render_output.image);
+                result.depth = std::move(render_output.depth);
+                result.valid = true;
+                LOG_TRACE("Rasterization completed successfully");
+                return result;
             }
 
             // Use libtorch-free tensor-based rasterizer
@@ -683,7 +701,7 @@ namespace lfs::rendering {
                 request.viewport_size.y / 2.0f,
                 Tensor::empty({0}, lfs::core::Device::CPU, lfs::core::DataType::Float32),
                 Tensor::empty({0}, lfs::core::Device::CPU, lfs::core::DataType::Float32),
-                gsplat::CameraModelType::PINHOLE,
+                ::gsplat::CameraModelType::PINHOLE,  // Use global gsplat namespace
                 "render_camera",
                 "none",
                 request.viewport_size.x,
