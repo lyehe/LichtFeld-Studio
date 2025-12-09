@@ -4,13 +4,11 @@
 
 #include "trainer.hpp"
 #include "loader_new/filesystem_utils.hpp"
-#include "visualizer_new/scene/scene.hpp"  // For Scene-based constructor
+#include "visualizer_new/scene/scene.hpp"
 #include "strategies/mcmc.hpp"
 #include "strategies/default_strategy.hpp"
 #include "components/bilateral_grid.hpp"
 #include "components/sparsity_optimizer.hpp"
-// TODO: Port pose optimization to LibTorch-free implementation
-// #include "components/poseopt.hpp"
 #include "core_new/events.hpp"
 #include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
@@ -18,12 +16,9 @@
 #include "core_new/splat_data_transform.hpp"
 #include "core_new/tensor/internal/memory_pool.hpp"
 #include "optimizer/adam_optimizer.hpp"
-// TODO: Fused SSIM kernels not needed - using lfs::training::losses::PhotometricLoss
-// #include "kernels/fused_ssim.cuh"
-// #include "kernels/regularization.cuh"
 #include "loader_new/cache_image_loader.hpp"
 #include "rasterization/fast_rasterizer.hpp"
-#include "rasterization/gsplat_rasterizer.hpp"  // For GUT mode
+#include "rasterization/gsplat_rasterizer.hpp"
 #include "core_new/cuda/memory_arena.hpp"
 #include "losses/losses.hpp"
 
@@ -58,8 +53,6 @@ namespace lfs::training {
         // Reset all components
         progress_.reset();
         bilateral_grid_.reset();
-        // poseopt_module_.reset();
-        // poseopt_optimizer_.reset();
         sparsity_optimizer_.reset();
         evaluator_.reset();
 
@@ -352,28 +345,6 @@ namespace lfs::training {
 
             // Initialize background color tensor [3] = [0, 0, 0]
             background_ = lfs::core::Tensor::zeros({3}, lfs::core::Device::CUDA, lfs::core::DataType::Float32);
-
-            // TODO: Port pose optimization to LibTorch-free implementation
-            // if (params.optimization.pose_optimization != "none") {
-            //     if (params.optimization.enable_eval) {
-            //         return std::unexpected("Evaluating with pose optimization is not supported yet. "
-            //                                "Please disable pose optimization or evaluation.");
-            //     }
-            //     if (params.optimization.pose_optimization == "direct") {
-            //         poseopt_module_ = std::make_unique<DirectPoseOptimizationModule>(train_dataset_->get_cameras().size());
-            //         LOG_DEBUG("Direct pose optimization module created");
-            //     } else if (params.optimization.pose_optimization == "mlp") {
-            //         poseopt_module_ = std::make_unique<MLPPoseOptimizationModule>(train_dataset_->get_cameras().size());
-            //         LOG_DEBUG("MLP pose optimization module created");
-            //     } else {
-            //         return std::unexpected("Invalid pose optimization type: " + params.optimization.pose_optimization);
-            //     }
-            //     poseopt_optimizer_ = std::make_unique<torch::optim::Adam>(
-            //         std::vector<lfs::core::Tensor>{poseopt_module_->parameters()},
-            //         torch::optim::AdamOptions(1e-5));
-            // } else {
-            //     poseopt_module_ = std::make_unique<PoseOptimizationModule>();
-            // }
 
             // Create progress bar based on headless flag
             if (params.optimization.headless) {
@@ -899,12 +870,6 @@ namespace lfs::training {
                             const bool join_threads = (iter == params_.optimization.save_steps.back());
                             auto save_path = params_.dataset.output_path;
                             save_ply(save_path, iter, /*join=*/join_threads);
-                            // TODO: Port events system to use lfs::core events
-                            // Emit checkpoint saved event
-                            // events::state::CheckpointSaved{
-                            //     .iteration = iter,
-                            //     .path = save_path}
-                            //     .emit();
                         }
                     }
                 }
@@ -925,13 +890,12 @@ namespace lfs::training {
                             }
 
                             RenderOutput rendered_timelapse_output;
-                            // TODO: Port 3DGUT rasterizer to LibTorch-free implementation
-                            // if (params_.optimization.gut) {
-                            //     rendered_timelapse_output = rasterize(*cam_to_use, strategy_->get_model(), bg, 1.0f, false,
-                            //                                          false, RenderMode::RGB, nullptr);
-                            // } else {
+                            if (params_.optimization.gut) {
+                                rendered_timelapse_output = gsplat_rasterize(*cam_to_use, strategy_->get_model(), background_,
+                                                                              1.0f, false, GsplatRenderMode::RGB, true);
+                            } else {
                                 rendered_timelapse_output = fast_rasterize(*cam_to_use, strategy_->get_model(), background_);
-                            // }
+                            }
 
                             // Get folder name to save in by stripping file extension
                             std::string folder_name = lfs::loader::strip_extension(img_name);
@@ -969,23 +933,6 @@ namespace lfs::training {
         training_complete_ = false;
         ready_to_start_ = false; // Reset the flag
 
-        // TODO: Port events system to use lfs::core events
-        // Event-based ready signaling
-        // if (!params_.optimization.headless) {
-        //     // Subscribe to start signal (no need to store handle)
-        //     events::internal::TrainingReadyToStart::when([this](const auto&) {
-        //         ready_to_start_ = true;
-        //     });
-        //
-        //     // Signal we're ready
-        //     events::internal::TrainerReady{}.emit();
-        //
-        //     // Wait for start signal
-        //     LOG_DEBUG("Waiting for start signal from GUI...");
-        //     while (!ready_to_start_.load() && !stop_token.stop_requested()) {
-        //         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        //     }
-        // }
         ready_to_start_ = true; // Skip GUI wait for now
 
         is_running_ = true; // Now we can start
@@ -1130,12 +1077,6 @@ namespace lfs::training {
             if (!stop_requested_.load() && !stop_token.stop_requested()) {
                 auto final_path = params_.dataset.output_path;
                 save_ply(final_path, params_.optimization.iterations, /*join=*/true);
-                // TODO: Port events system to use lfs::core events
-                // Emit final checkpoint saved event
-                // events::state::CheckpointSaved{
-                //     static_cast<int>(params_.optimization.iterations),
-                //     final_path}
-                //     .emit();
             }
 
             if (progress_) {

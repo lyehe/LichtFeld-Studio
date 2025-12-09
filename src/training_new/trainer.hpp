@@ -6,19 +6,13 @@
 
 #include "components/bilateral_grid.hpp"
 #include "components/sparsity_optimizer.hpp"
-// TODO: Port pose optimization to LibTorch-free implementation
-// #include "components/poseopt.hpp"
-// #include "core/events.hpp"                  // Temporarily disabled - requires LibTorch (gs_core)
 #include "checkpoint.hpp"
 #include "core_new/parameters.hpp"
 #include "dataset.hpp"
-// #include "lfs/kernels/bilateral_grid.cuh"   // Temporarily disabled - not using bilateral grid
 #include "metrics/metrics.hpp"
 #include "optimizer/scheduler.hpp"
 #include "progress.hpp"
-#include "project_new/project.hpp"  // Using old project system for now
-// TODO: Port 3DGUT rasterizer to LibTorch-free implementation
-// #include "rasterization/rasterizer.hpp"
+#include "project_new/project.hpp"
 #include "strategies/istrategy.hpp"
 #include "core_new/camera.hpp"
 #include "core_new/tensor.hpp"
@@ -157,11 +151,6 @@ namespace lfs::training {
             AdamOptimizer& optimizer,
             const lfs::core::param::OptimizationParameters& opt_params);
 
-        // Temporarily disabled - requires LibTorch
-        // std::expected<std::pair<float, BilateralGridTVContext>, std::string> compute_bilateral_grid_tv_loss(
-        //     const std::unique_ptr<BilateralGrid>& bilateral_grid,
-        //     const lfs::core::param::OptimizationParameters& opt_params);
-
         // Sparsity optimization - returns GPU tensor (no CPU sync)
         std::expected<std::pair<lfs::core::Tensor, SparsityLossContext>, std::string> compute_sparsity_loss_forward(
             const int iter, const lfs::core::SplatData& splat_data);
@@ -195,10 +184,6 @@ namespace lfs::training {
 
         // Bilateral grid for appearance modeling (optional)
         std::unique_ptr<BilateralGrid> bilateral_grid_;
-
-        // TODO: Port pose optimization to LibTorch-free implementation
-        // std::unique_ptr<PoseOptimizationModule> poseopt_module_; // Pose optimization module
-        // std::unique_ptr<torch::optim::Adam> poseopt_optimizer_;  // Optimizer for pose optimization
 
         std::unique_ptr<ISparsityOptimizer> sparsity_optimizer_;
 
