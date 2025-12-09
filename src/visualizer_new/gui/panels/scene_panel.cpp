@@ -141,12 +141,15 @@ namespace lfs::vis::gui {
         if (!scene_manager) return;
 
         const auto& scene = scene_manager->getScene();
-
-        // Get selection state from SceneManager (single source of truth)
         const auto selected_names_vec = scene_manager->getSelectedNodeNames();
         std::unordered_set<std::string> selected_names(selected_names_vec.begin(), selected_names_vec.end());
 
-        ImGui::BeginChild("SceneGraph", ImVec2(0, 0), ImGuiChildFlags_None);
+        // Compact outliner style
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, 12.0f);
+
+        ImGui::BeginChild("SceneGraph", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing() - 4), ImGuiChildFlags_None);
 
         // Keyboard shortcuts
         if (ImGui::IsWindowFocused() && !m_renameState.is_renaming) {
@@ -159,32 +162,26 @@ namespace lfs::vis::gui {
             }
         }
 
-        static constexpr ImGuiTreeNodeFlags ROOT_NODE_FLAGS =
-            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow |
-            ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_Framed;
+        // Directly render models without extra "Scene" wrapper
+        renderModelsFolder(scene, selected_names);
 
-        if (ImGui::TreeNodeEx("Scene", ROOT_NODE_FLAGS)) {
-            renderModelsFolder(scene, selected_names);
-            ImGui::TreePop();
-        }
+        ImGui::EndChild();
 
-        // Summary
+        // Summary footer - always visible at bottom
         if (scene.hasNodes()) {
-            ImGui::Separator();
             size_t total = 0;
             for (const auto* node : scene.getVisibleNodes()) {
                 total += node->gaussian_count;
             }
-            ImGui::TextDisabled("Visible: %zu gaussians", total);
+            ImGui::TextDisabled("%zu visible", total);
         }
 
-        ImGui::EndChild();
+        ImGui::PopStyleVar(3);
     }
 
     void ScenePanel::renderModelsFolder(const Scene& scene, const std::unordered_set<std::string>& selected_names) {
-        static constexpr ImGuiTreeNodeFlags FOLDER_NODE_FLAGS =
-            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow |
-            ImGuiTreeNodeFlags_SpanAvailWidth;
+        static constexpr ImGuiTreeNodeFlags FOLDER_FLAGS =
+            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow;
 
         // Count only splat nodes
         const auto nodes = scene.getNodes();
@@ -192,7 +189,7 @@ namespace lfs::vis::gui {
             [](const SceneNode* n) { return n->type == NodeType::SPLAT; });
 
         const std::string label = std::format("Models ({})", splat_count);
-        if (!ImGui::TreeNodeEx(label.c_str(), FOLDER_NODE_FLAGS)) return;
+        if (!ImGui::TreeNodeEx(label.c_str(), FOLDER_FLAGS)) return;
 
         // Drop target for moving nodes to root
         handleDragDrop("", true);
@@ -249,14 +246,30 @@ namespace lfs::vis::gui {
         const auto* parent_node = scene.getNodeById(node.parent_id);
         const bool parent_is_dataset = parent_node && parent_node->type == NodeType::DATASET;
 
-        // Visibility toggle
-        if (ImGui::SmallButton(is_visible ? "[*]" : "[ ]")) {
+        // Compact visibility toggle
+        const auto& t = theme();
+        constexpr float CIRCLE_RADIUS = 3.0f;
+        const ImVec2 cursor = ImGui::GetCursorScreenPos();
+        const float line_h = ImGui::GetTextLineHeight();
+        const ImVec2 circle_center(cursor.x + CIRCLE_RADIUS + 1.0f, cursor.y + line_h * 0.5f);
+
+        ImGui::InvisibleButton("##vis", ImVec2(CIRCLE_RADIUS * 2 + 2.0f, line_h));
+        const bool vis_hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked()) {
             cmd::SetPLYVisibility{.name = node.name, .visible = !is_visible}.emit();
         }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip(is_visible ? "Hide" : "Show");
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        const ImU32 vis_color = is_visible
+            ? (vis_hovered ? t.success_u32() : toU32WithAlpha(t.palette.success, 0.7f))
+            : toU32WithAlpha(t.palette.text_dim, vis_hovered ? 0.5f : 0.25f);
+
+        if (is_visible) {
+            draw_list->AddCircleFilled(circle_center, CIRCLE_RADIUS, vis_color);
+        } else {
+            draw_list->AddCircle(circle_center, CIRCLE_RADIUS, vis_color, 0, 1.0f);
         }
-        ImGui::SameLine();
+        ImGui::SameLine(0.0f, 2.0f);
 
         const bool is_renaming = m_renameState.is_renaming && m_renameState.renaming_node_name == node.name;
 
@@ -287,28 +300,26 @@ namespace lfs::vis::gui {
             if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
             if (is_group || is_dataset) flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
-            // Build label based on node type
-            std::string label;
-            if (is_cropbox) {
-                label = std::format("[Crop] {}", node.name);
-            } else if (is_dataset) {
-                label = std::format("[Dataset] {}", node.name);
-            } else if (is_camera_group) {
-                label = node.name;  // Already includes count like "Training (185)"
-            } else if (is_camera) {
-                label = node.name;  // Camera name (image filename)
-            } else if (is_group) {
-                label = node.name;
-            } else if (is_pointcloud) {
-                // POINTCLOUD node - show point count
-                const size_t point_count = node.point_cloud ? node.point_cloud->size() : 0;
-                label = std::format("[Points] {} ({:L})", node.name, point_count);
-            } else {
-                // SPLAT node
-                label = std::format("{} ({:L})", node.name, node.gaussian_count);
+            // Build label - clean format without brackets
+            std::string label = node.name;
+            std::string suffix;
+
+            if (is_pointcloud) {
+                const size_t count = node.point_cloud ? node.point_cloud->size() : 0;
+                suffix = std::format("  {:L} pts", count);
+            } else if (!is_group && !is_dataset && !is_camera_group && !is_camera && !is_cropbox) {
+                // SPLAT node - show gaussian count
+                suffix = std::format("  {:L}", node.gaussian_count);
             }
 
             const bool is_open = ImGui::TreeNodeEx(label.c_str(), flags);
+
+            // Draw suffix in dimmed color on same line
+            if (!suffix.empty()) {
+                ImGui::SameLine();
+                ImGui::TextColored(t.palette.text_dim, "%s", suffix.c_str());
+            }
+
             const bool hovered = ImGui::IsItemHovered();
             const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
             const bool toggled = ImGui::IsItemToggledOpen();
