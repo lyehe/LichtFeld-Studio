@@ -47,8 +47,9 @@
 
 namespace lfs::vis::gui {
 
-    // Import ToolType for convenience
+    // Import commonly used types
     using ToolType = lfs::vis::ToolType;
+    using ExportFormat = lfs::core::ExportFormat;
 
     // Gizmo axis/plane visibility threshold (near-zero to always show)
     constexpr float GIZMO_AXIS_LIMIT = 0.0001f;
@@ -62,6 +63,7 @@ namespace lfs::vis::gui {
         scene_panel_ = std::make_unique<ScenePanel>(viewer->trainer_manager_);
         save_project_browser_ = std::make_unique<SaveProjectBrowser>();
         menu_bar_ = std::make_unique<MenuBar>();
+        export_dialog_ = std::make_unique<ExportDialog>();
 
         // Initialize window states
         window_states_["file_browser"] = false;
@@ -71,6 +73,7 @@ namespace lfs::vis::gui {
         window_states_["show_save_browser"] = false;
         window_states_["system_console"] = false;
         window_states_["training_tab"] = false;
+        window_states_["export_dialog"] = false;
 
         // Initialize speed overlay state
         speed_overlay_visible_ = false;
@@ -141,63 +144,55 @@ namespace lfs::vis::gui {
             }
         });
 
-        menu_bar_->setOnExportPLY([this]() {
-            auto* const scene_manager = viewer_->getSceneManager();
-            if (!scene_manager) return;
-
-            auto merged = scene_manager->getScene().createMergedModelWithTransforms();
-            if (!merged) return;
-
-#ifdef WIN32
-            const auto path = SavePlyFileDialog("export");
-            if (path.empty()) return;
-#else
-            const std::filesystem::path path = "export.ply";
-#endif
-            lfs::core::save_ply(*merged, path.parent_path(), 0, true, path.stem().string());
-            LOG_INFO("Exported PLY: {}", path.string());
+        menu_bar_->setOnExport([this]() {
+            window_states_["export_dialog"] = true;
         });
 
-        menu_bar_->setOnExportCompressedPLY([this]() {
-            auto* const scene_manager = viewer_->getSceneManager();
-            if (!scene_manager) return;
+        // Export dialog: when user clicks Export, show native file dialog and perform export
+        export_dialog_->setOnBrowse([this](ExportFormat format,
+                                           const std::string& default_name,
+                                           const std::vector<std::string>& node_names) {
+            if (isExporting()) return;
 
-            auto merged = scene_manager->getScene().createMergedModelWithTransforms();
-            if (!merged) return;
-
-#ifdef WIN32
-            const auto path = SavePlyFileDialog("export.compressed");
-            if (path.empty()) return;
-#else
-            const std::filesystem::path path = "export.compressed.ply";
-#endif
-            const lfs::loader::CompressedPlyWriteOptions options{
-                .output_path = path,
-                .include_sh = true
-            };
-            if (auto result = lfs::loader::write_compressed_ply(*merged, options); result) {
-                LOG_INFO("Exported compressed PLY: {}", path.string());
-            } else {
-                LOG_ERROR("Compressed PLY export failed: {}", result.error());
+            // Show native file dialog based on format
+            std::filesystem::path path;
+            switch (format) {
+            case ExportFormat::PLY:
+            case ExportFormat::COMPRESSED_PLY:
+                path = SavePlyFileDialog(default_name);
+                break;
+            case ExportFormat::SOG:
+                path = SaveSogFileDialog(default_name);
+                break;
+            case ExportFormat::HTML_VIEWER:
+                path = SaveHtmlFileDialog(default_name);
+                break;
             }
-        });
 
-        menu_bar_->setOnExportSOG([this]() {
-            if (isExporting()) return;
-
-            const auto path = SaveSogFileDialog("export");
             if (path.empty()) return;
 
-            startAsyncSOGExport(path);
-        });
+            // Perform the export
+            auto* const scene_manager = viewer_->getSceneManager();
+            if (!scene_manager || node_names.empty()) return;
 
-        menu_bar_->setOnExportHtml([this]() {
-            if (isExporting()) return;
+            // Collect splats with transforms for selected nodes
+            const auto& scene = scene_manager->getScene();
+            std::vector<std::pair<const lfs::core::SplatData*, glm::mat4>> splats;
+            for (const auto& name : node_names) {
+                const auto* node = scene.getNode(name);
+                if (node && node->type == NodeType::SPLAT && node->model) {
+                    splats.emplace_back(node->model.get(), scene.getWorldTransform(node->id));
+                }
+            }
 
-            const auto path = SaveHtmlFileDialog("export");
-            if (path.empty()) return;
+            if (splats.empty()) return;
 
-            startAsyncHtmlExport(path);
+            // Merge selected splats
+            auto merged = Scene::mergeSplatsWithTransforms(splats);
+            if (!merged) return;
+
+            // Start async export
+            startAsyncExport(format, path, std::move(merged));
         });
 
         menu_bar_->setOnExit([this]() {
@@ -515,6 +510,11 @@ namespace lfs::vis::gui {
         if (menu_bar_ && viewer_) {
             auto project = viewer_->getProject();
             menu_bar_->setIsProjectTemp(project ? project->getIsTempProject() : false);
+        }
+
+        // Export dialog
+        if (window_states_["export_dialog"]) {
+            export_dialog_->render(&window_states_["export_dialog"], viewer_->getSceneManager());
         }
 
         // Utility toolbar (always visible)
@@ -1025,7 +1025,6 @@ namespace lfs::vis::gui {
 
     void GuiManager::setupEventHandlers() {
         using namespace lfs::core::events;
-        using lfs::core::ExportFormat;
 
         cmd::ShowWindow::when([this](const auto& e) {
             showWindow(e.window_name, e.show);
@@ -1122,104 +1121,6 @@ namespace lfs::vis::gui {
             auto cmd = std::make_unique<command::CropBoxCommand>(
                 sm, node->name, old_state, new_state);
             viewer_->getCommandHistory().execute(std::move(cmd));
-        });
-
-        cmd::ExportNodeAs::when([this](const auto& e) {
-            auto* const scene_manager = viewer_->getSceneManager();
-            if (!scene_manager) return;
-
-            const Scene::Node* node = nullptr;
-            for (const auto* n : scene_manager->getScene().getNodes()) {
-                if (n->name == e.name) { node = n; break; }
-            }
-            if (!node || !node->model) return;
-
-            switch (e.format) {
-            case ExportFormat::PLY: {
-                const auto path = SavePlyFileDialog(e.name);
-                if (path.empty()) return;
-                lfs::core::save_ply(*node->model, path.parent_path(), 0, true, path.stem().string());
-                LOG_INFO("Exported PLY: {}", path.string());
-                break;
-            }
-            case ExportFormat::COMPRESSED_PLY: {
-                const auto path = SavePlyFileDialog(e.name + ".compressed");
-                if (path.empty()) return;
-                const lfs::loader::CompressedPlyWriteOptions options{.output_path = path, .include_sh = true};
-                if (auto result = lfs::loader::write_compressed_ply(*node->model, options); result) {
-                    LOG_INFO("Exported compressed PLY: {}", path.string());
-                } else {
-                    LOG_ERROR("Compressed PLY export failed: {}", result.error());
-                }
-                break;
-            }
-            case ExportFormat::SOG: {
-                if (isExporting()) return;
-                const auto path = SaveSogFileDialog(e.name);
-                if (path.empty()) return;
-                // Single node export runs synchronously (SplatData can't be copied)
-                const lfs::core::SogWriteOptions options{.iterations = 10, .output_path = path};
-                if (auto result = lfs::core::write_sog(*node->model, options); result) {
-                    LOG_INFO("Exported SOG: {}", path.string());
-                } else {
-                    LOG_ERROR("SOG export failed: {}", result.error());
-                }
-                break;
-            }
-            case ExportFormat::HTML_VIEWER: {
-                if (isExporting()) return;
-                const auto html_path = SaveHtmlFileDialog(e.name);
-                if (html_path.empty()) return;
-                const HtmlViewerExportOptions options{.output_path = html_path};
-                if (auto result = export_html_viewer(*node->model, options); !result) {
-                    LOG_ERROR("HTML viewer export failed: {}", result.error());
-                }
-                break;
-            }
-            }
-        });
-
-        cmd::ExportAllMergedAs::when([this](const auto& e) {
-            auto* const scene_manager = viewer_->getSceneManager();
-            if (!scene_manager) return;
-
-            auto merged = scene_manager->getScene().createMergedModelWithTransforms();
-            if (!merged) return;
-
-            switch (e.format) {
-            case ExportFormat::PLY: {
-                const auto path = SavePlyFileDialog("merged");
-                if (path.empty()) return;
-                lfs::core::save_ply(*merged, path.parent_path(), 0, true, path.stem().string());
-                LOG_INFO("Exported PLY: {}", path.string());
-                break;
-            }
-            case ExportFormat::COMPRESSED_PLY: {
-                const auto path = SavePlyFileDialog("merged.compressed");
-                if (path.empty()) return;
-                const lfs::loader::CompressedPlyWriteOptions options{.output_path = path, .include_sh = true};
-                if (auto result = lfs::loader::write_compressed_ply(*merged, options); result) {
-                    LOG_INFO("Exported compressed PLY: {}", path.string());
-                } else {
-                    LOG_ERROR("Compressed PLY export failed: {}", result.error());
-                }
-                break;
-            }
-            case ExportFormat::SOG: {
-                if (isExporting()) return;
-                const auto path = SaveSogFileDialog("merged");
-                if (path.empty()) return;
-                startAsyncSOGExport(path);
-                break;
-            }
-            case ExportFormat::HTML_VIEWER: {
-                if (isExporting()) return;
-                const auto html_path = SaveHtmlFileDialog("merged");
-                if (html_path.empty()) return;
-                startAsyncHtmlExport(html_path);
-                break;
-            }
-            }
         });
 
         // Cycle: normal -> center markers -> rings -> normal
@@ -1701,15 +1602,10 @@ namespace lfs::vis::gui {
         overlay_drawlist->PopClipRect();
     }
 
-    void GuiManager::startAsyncSOGExport(const std::filesystem::path& path) {
-        auto* const scene_manager = viewer_->getSceneManager();
-        if (!scene_manager) {
-            LOG_ERROR("No scene manager for export");
-            return;
-        }
-
-        auto merged = scene_manager->getScene().createMergedModelWithTransforms();
-        if (!merged) {
+    void GuiManager::startAsyncExport(ExportFormat format,
+                                       const std::filesystem::path& path,
+                                       std::unique_ptr<lfs::core::SplatData> data) {
+        if (!data) {
             LOG_ERROR("No splat data to export");
             return;
         }
@@ -1719,96 +1615,91 @@ namespace lfs::vis::gui {
         export_state_.progress.store(0.0f);
         {
             const std::lock_guard lock(export_state_.mutex);
+            export_state_.format = format;
             export_state_.stage = "Starting";
             export_state_.error.clear();
         }
 
-        auto splat_data = std::make_shared<lfs::core::SplatData>(std::move(*merged));
-        LOG_INFO("SOG export started: {}", path.string());
+        auto splat_data = std::make_shared<lfs::core::SplatData>(std::move(*data));
+        LOG_INFO("Export started: {} (format: {})", path.string(), static_cast<int>(format));
 
         export_state_.thread = std::make_unique<std::jthread>(
-            [this, path, splat_data](std::stop_token stop_token) {
-                const lfs::core::SogWriteOptions options{
-                    .iterations = 10,
-                    .output_path = path,
-                    .progress_callback = [this, &stop_token](float progress, const std::string& stage) -> bool {
-                        export_state_.progress.store(progress);
-                        {
-                            const std::lock_guard lock(export_state_.mutex);
-                            export_state_.stage = stage;
-                        }
-                        if (stop_token.stop_requested() || export_state_.cancel_requested.load()) {
-                            LOG_INFO("Export cancelled");
-                            return false;
-                        }
-                        return true;
+            [this, format, path, splat_data](std::stop_token stop_token) {
+                auto update_progress = [this, &stop_token](float progress, const std::string& stage) -> bool {
+                    export_state_.progress.store(progress);
+                    {
+                        const std::lock_guard lock(export_state_.mutex);
+                        export_state_.stage = stage;
                     }
+                    if (stop_token.stop_requested() || export_state_.cancel_requested.load()) {
+                        LOG_INFO("Export cancelled");
+                        return false;
+                    }
+                    return true;
                 };
 
-                auto result = lfs::core::write_sog(*splat_data, options);
+                bool success = false;
+                std::string error_msg;
 
-                if (result) {
-                    LOG_INFO("SOG export completed: {}", path.string());
-                    const std::lock_guard lock(export_state_.mutex);
-                    export_state_.stage = "Complete";
-                } else {
-                    LOG_ERROR("SOG export failed: {}", result.error());
-                    const std::lock_guard lock(export_state_.mutex);
-                    export_state_.error = result.error();
-                    export_state_.stage = "Failed";
+                switch (format) {
+                case ExportFormat::PLY: {
+                    update_progress(0.1f, "Writing PLY");
+                    lfs::core::save_ply(*splat_data, path.parent_path(), 0, true, path.stem().string());
+                    success = true;
+                    update_progress(1.0f, "Complete");
+                    break;
+                }
+                case ExportFormat::COMPRESSED_PLY: {
+                    update_progress(0.1f, "Compressing PLY");
+                    const lfs::loader::CompressedPlyWriteOptions options{
+                        .output_path = path,
+                        .include_sh = true
+                    };
+                    if (auto result = lfs::loader::write_compressed_ply(*splat_data, options); result) {
+                        success = true;
+                        update_progress(1.0f, "Complete");
+                    } else {
+                        error_msg = result.error();
+                    }
+                    break;
+                }
+                case ExportFormat::SOG: {
+                    const lfs::core::SogWriteOptions options{
+                        .iterations = 10,
+                        .output_path = path,
+                        .progress_callback = update_progress
+                    };
+                    if (auto result = lfs::core::write_sog(*splat_data, options); result) {
+                        success = true;
+                    } else {
+                        error_msg = result.error();
+                    }
+                    break;
+                }
+                case ExportFormat::HTML_VIEWER: {
+                    const HtmlViewerExportOptions options{
+                        .output_path = path,
+                        .progress_callback = [&update_progress](float p, const std::string& s) {
+                            update_progress(p, s);
+                        }
+                    };
+                    if (auto result = export_html_viewer(*splat_data, options); result) {
+                        success = true;
+                    } else {
+                        error_msg = result.error();
+                    }
+                    break;
+                }
                 }
 
-                export_state_.active.store(false);
-            });
-    }
-
-    void GuiManager::startAsyncHtmlExport(const std::filesystem::path& path) {
-        auto* const scene_manager = viewer_->getSceneManager();
-        if (!scene_manager) {
-            LOG_ERROR("No scene manager for export");
-            return;
-        }
-
-        auto merged = scene_manager->getScene().createMergedModelWithTransforms();
-        if (!merged) {
-            LOG_ERROR("No splat data to export");
-            return;
-        }
-
-        export_state_.active.store(true);
-        export_state_.cancel_requested.store(false);
-        export_state_.progress.store(0.0f);
-        {
-            const std::lock_guard lock(export_state_.mutex);
-            export_state_.stage = "Starting";
-            export_state_.error.clear();
-        }
-
-        auto splat_data = std::make_shared<lfs::core::SplatData>(std::move(*merged));
-        LOG_INFO("HTML viewer export started: {}", path.string());
-
-        export_state_.thread = std::make_unique<std::jthread>(
-            [this, path, splat_data](std::stop_token stop_token) {
-                const HtmlViewerExportOptions options{
-                    .output_path = path,
-                    .progress_callback = [this, &stop_token](float progress, const std::string& stage) {
-                        export_state_.progress.store(progress);
-                        {
-                            const std::lock_guard lock(export_state_.mutex);
-                            export_state_.stage = stage;
-                        }
-                    }
-                };
-
-                auto result = export_html_viewer(*splat_data, options);
-
-                if (result) {
+                if (success) {
+                    LOG_INFO("Export completed: {}", path.string());
                     const std::lock_guard lock(export_state_.mutex);
                     export_state_.stage = "Complete";
                 } else {
-                    LOG_ERROR("HTML viewer export failed: {}", result.error());
+                    LOG_ERROR("Export failed: {}", error_msg);
                     const std::lock_guard lock(export_state_.mutex);
-                    export_state_.error = result.error();
+                    export_state_.error = error_msg;
                     export_state_.stage = "Failed";
                 }
 
@@ -1863,7 +1754,17 @@ namespace lfs::vis::gui {
 
         if (ImGui::Begin("##ExportProgress", nullptr, FLAGS)) {
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]);
-            ImGui::TextUnformatted("Exporting SOG...");
+            {
+                const std::lock_guard lock(export_state_.mutex);
+                const char* format_name = "file";
+                switch (export_state_.format) {
+                case ExportFormat::PLY:            format_name = "PLY"; break;
+                case ExportFormat::COMPRESSED_PLY: format_name = "Compressed PLY"; break;
+                case ExportFormat::SOG:            format_name = "SOG"; break;
+                case ExportFormat::HTML_VIEWER:    format_name = "HTML"; break;
+                }
+                ImGui::Text("Exporting %s...", format_name);
+            }
             ImGui::PopFont();
 
             ImGui::Spacing();

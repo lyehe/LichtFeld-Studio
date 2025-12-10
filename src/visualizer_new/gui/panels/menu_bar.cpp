@@ -48,20 +48,8 @@ namespace lfs::vis::gui {
                     on_save_project_();
                 }
                 ImGui::Separator();
-                if (ImGui::BeginMenu("Export")) {
-                    if (ImGui::MenuItem("PLY (Standard)") && on_export_ply_) {
-                        on_export_ply_();
-                    }
-                    if (ImGui::MenuItem("Compressed PLY") && on_export_compressed_ply_) {
-                        on_export_compressed_ply_();
-                    }
-                    if (ImGui::MenuItem("SOG (SuperSplat)") && on_export_sog_) {
-                        on_export_sog_();
-                    }
-                    if (ImGui::MenuItem("HTML Viewer") && on_export_html_) {
-                        on_export_html_();
-                    }
-                    ImGui::EndMenu();
+                if (ImGui::MenuItem("Export...") && on_export_) {
+                    on_export_();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Exit") && on_exit_) {
@@ -409,20 +397,8 @@ namespace lfs::vis::gui {
         on_save_project_ = std::move(callback);
     }
 
-    void MenuBar::setOnExportPLY(std::function<void()> callback) {
-        on_export_ply_ = std::move(callback);
-    }
-
-    void MenuBar::setOnExportCompressedPLY(std::function<void()> callback) {
-        on_export_compressed_ply_ = std::move(callback);
-    }
-
-    void MenuBar::setOnExportSOG(std::function<void()> callback) {
-        on_export_sog_ = std::move(callback);
-    }
-
-    void MenuBar::setOnExportHtml(std::function<void()> callback) {
-        on_export_html_ = std::move(callback);
+    void MenuBar::setOnExport(std::function<void()> callback) {
+        on_export_ = std::move(callback);
     }
 
     void MenuBar::setOnExit(std::function<void()> callback) {

@@ -13,6 +13,7 @@
 #include "gui/panels/transform_panel.hpp"
 #include "gui/ui_context.hpp"
 #include "gui/windows/save_project_browser.hpp"
+#include "windows/export_dialog.hpp"
 #include "windows/project_changed_dialog_box.hpp"
 #include <GLFW/glfw3.h>
 #include <atomic>
@@ -25,6 +26,10 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+
+namespace lfs::core {
+    struct SplatData;
+}
 
 namespace lfs::vis {
     class VisualizerImpl;
@@ -98,6 +103,7 @@ namespace lfs::vis {
             std::unique_ptr<FileBrowser> file_browser_;
             std::unique_ptr<ProjectChangedDialogBox> project_changed_dialog_box_;
             std::unique_ptr<ScenePanel> scene_panel_;
+            std::unique_ptr<ExportDialog> export_dialog_;
 
             // UI state only
             std::unordered_map<std::string, bool> window_states_;
@@ -183,6 +189,7 @@ namespace lfs::vis {
                 std::atomic<bool> active{false};
                 std::atomic<bool> cancel_requested{false};
                 std::atomic<float> progress{0.0f};
+                lfs::core::ExportFormat format{lfs::core::ExportFormat::PLY};  // Protected by mutex
                 std::string stage;  // Protected by mutex
                 std::string error;  // Protected by mutex
                 std::mutex mutex;
@@ -191,8 +198,9 @@ namespace lfs::vis {
             ExportState export_state_;
 
             void renderExportOverlay();
-            void startAsyncSOGExport(const std::filesystem::path& path);
-            void startAsyncHtmlExport(const std::filesystem::path& path);
+            void startAsyncExport(lfs::core::ExportFormat format,
+                                  const std::filesystem::path& path,
+                                  std::unique_ptr<lfs::core::SplatData> data);
             void cancelExport();
             bool isExporting() const { return export_state_.active.load(); }
         };

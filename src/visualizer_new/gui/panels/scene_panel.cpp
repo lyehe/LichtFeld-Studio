@@ -248,20 +248,8 @@ namespace lfs::vis::gui {
                 cmd::AddGroup{.name = "New Group", .parent_name = ""}.emit();
             }
             ImGui::Separator();
-            if (ImGui::BeginMenu("Export All", splat_count > 0)) {
-                if (ImGui::MenuItem("PLY (Standard)")) {
-                    cmd::ExportAllMergedAs{.format = ExportFormat::PLY}.emit();
-                }
-                if (ImGui::MenuItem("Compressed PLY")) {
-                    cmd::ExportAllMergedAs{.format = ExportFormat::COMPRESSED_PLY}.emit();
-                }
-                if (ImGui::MenuItem("SOG (SuperSplat)")) {
-                    cmd::ExportAllMergedAs{.format = ExportFormat::SOG}.emit();
-                }
-                if (ImGui::MenuItem("HTML Viewer")) {
-                    cmd::ExportAllMergedAs{.format = ExportFormat::HTML_VIEWER}.emit();
-                }
-                ImGui::EndMenu();
+            if (ImGui::MenuItem("Export...", nullptr, false, splat_count > 0)) {
+                cmd::ShowWindow{.window_name = "export_dialog", .show = true}.emit();
             }
             ImGui::EndPopup();
         }
@@ -548,20 +536,8 @@ namespace lfs::vis::gui {
                     }
                     ImGui::Separator();
                 }
-                if (!is_group && ImGui::BeginMenu("Export As")) {
-                    if (ImGui::MenuItem("PLY (Standard)")) {
-                        cmd::ExportNodeAs{.name = node.name, .format = ExportFormat::PLY}.emit();
-                    }
-                    if (ImGui::MenuItem("Compressed PLY")) {
-                        cmd::ExportNodeAs{.name = node.name, .format = ExportFormat::COMPRESSED_PLY}.emit();
-                    }
-                    if (ImGui::MenuItem("SOG (SuperSplat)")) {
-                        cmd::ExportNodeAs{.name = node.name, .format = ExportFormat::SOG}.emit();
-                    }
-                    if (ImGui::MenuItem("HTML Viewer")) {
-                        cmd::ExportNodeAs{.name = node.name, .format = ExportFormat::HTML_VIEWER}.emit();
-                    }
-                    ImGui::EndMenu();
+                if (!is_group && ImGui::MenuItem("Export...")) {
+                    cmd::ShowWindow{.window_name = "export_dialog", .show = true}.emit();
                 }
                 if (ImGui::MenuItem("Rename")) startRenaming(node.name);
                 if (ImGui::MenuItem("Duplicate")) cmd::DuplicateNode{.name = node.name}.emit();
