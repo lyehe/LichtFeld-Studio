@@ -236,13 +236,18 @@ namespace lfs::rendering {
 
         LOG_TIMER_TRACE("ViewportGizmo::render");
 
-        // Use RAII for OpenGL state management
         GLStateGuard state_guard;
 
-        // Calculate gizmo position (lower right of viewport)
-        // GL uses Y=0 at bottom, so gizmo_y is margin_y_ from bottom of window
+        // Get framebuffer size for ImGui-to-GL coordinate conversion
+        int fb_height = 0;
+        if (GLFWwindow* const window = glfwGetCurrentContext()) {
+            int fb_width = 0;
+            glfwGetFramebufferSize(window, &fb_width, &fb_height);
+        }
+
+        // Position gizmo at lower-right of viewport (convert ImGui Y to GL Y)
         const int gizmo_x = static_cast<int>(viewport_pos.x + viewport_size.x - size_ - margin_x_);
-        const int gizmo_y = static_cast<int>(margin_y_);
+        const int gizmo_y = fb_height - static_cast<int>(viewport_pos.y + viewport_size.y) + margin_y_;
 
         // Set gizmo viewport
         glViewport(gizmo_x, gizmo_y, size_, size_);
@@ -366,10 +371,9 @@ namespace lfs::rendering {
                 sphereInfo[i].index = i;
                 sphereInfo[i].visible = true;
 
-                // Store for hit-testing (convert GL coords to ImGui coords: imgui_y = window_height - gl_y)
+                // Convert GL to ImGui coords for hit-testing
                 sphere_hits_[i].screen_pos = glm::vec2(
-                    sphereInfo[i].screenPos.x,
-                    viewport_pos.y + viewport_size.y - sphereInfo[i].screenPos.y);
+                    sphereInfo[i].screenPos.x, fb_height - sphereInfo[i].screenPos.y);
                 sphere_hits_[i].radius = sphereRadius * scaleFactor * size_ * 0.5f;
                 sphere_hits_[i].visible = true;
             } else {

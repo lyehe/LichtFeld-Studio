@@ -59,12 +59,35 @@ struct ThemeFonts {
     float heading_size = 22.0f;
 };
 
+struct ThemeMenu {
+    float bg_lighten = 0.04f;
+    float hover_lighten = 0.08f;
+    float active_alpha = 0.35f;
+    float popup_lighten = 0.02f;
+    float popup_rounding = 6.0f;
+    float popup_border_size = 1.0f;
+    float border_alpha = 0.6f;
+    float bottom_border_darken = 0.08f;
+    ImVec2 frame_padding = {12.0f, 8.0f};
+    ImVec2 item_spacing = {12.0f, 6.0f};
+    ImVec2 popup_padding = {8.0f, 8.0f};
+};
+
+struct ThemeViewport {
+    float corner_radius = 8.0f;
+    float border_size = 2.0f;
+    float border_alpha = 0.4f;
+    float border_darken = 0.15f;
+};
+
 // Complete theme
 struct Theme {
     std::string name;
     ThemePalette palette;
     ThemeSizes sizes;
     ThemeFonts fonts;
+    ThemeMenu menu;
+    ThemeViewport viewport;
 
     // ImU32 accessors for ImDrawList
     [[nodiscard]] ImU32 primary_u32() const;
@@ -107,6 +130,17 @@ struct Theme {
     // Toolbar
     [[nodiscard]] ImVec4 toolbar_background() const;
     [[nodiscard]] ImVec4 subtoolbar_background() const;
+
+    // Menu bar
+    [[nodiscard]] ImVec4 menu_background() const;
+    [[nodiscard]] ImVec4 menu_hover() const;
+    [[nodiscard]] ImVec4 menu_active() const;
+    [[nodiscard]] ImVec4 menu_popup_background() const;
+    [[nodiscard]] ImVec4 menu_border() const;
+    [[nodiscard]] ImU32 menu_bottom_border_u32() const;
+
+    // Viewport
+    [[nodiscard]] ImU32 viewport_border_u32() const;
 
     // Scene graph row colors
     [[nodiscard]] ImU32 row_even_u32() const;

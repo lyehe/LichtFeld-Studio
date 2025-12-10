@@ -21,9 +21,19 @@ namespace lfs::vis::gui {
     MenuBar::~MenuBar() = default;
 
     void MenuBar::render() {
-        // Menu bar uses theme colors with custom spacing
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 8.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(12.0f, 6.0f));
+        const auto& t = theme();
+
+        ImGui::PushStyleColor(ImGuiCol_MenuBarBg, t.menu_background());
+        ImGui::PushStyleColor(ImGuiCol_Header, t.menu_active());
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, t.menu_hover());
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, t.menu_active());
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, t.menu_popup_background());
+        ImGui::PushStyleColor(ImGuiCol_Border, t.menu_border());
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, t.menu.popup_rounding);
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, t.menu.popup_border_size);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, t.menu.popup_padding);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, t.menu.frame_padding);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, t.menu.item_spacing);
 
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("File")) {
@@ -89,10 +99,15 @@ namespace lfs::vis::gui {
                 ImGui::EndMenu();
             }
 
+            const float h = ImGui::GetWindowHeight();
+            ImGui::GetWindowDrawList()->AddLine({0, h - 1}, {ImGui::GetWindowWidth(), h - 1},
+                                                t.menu_bottom_border_u32(), 1.0f);
+
             ImGui::EndMainMenuBar();
         }
 
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(5);
+        ImGui::PopStyleColor(6);
 
         renderGettingStartedWindow();
         renderAboutWindow();

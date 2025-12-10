@@ -205,16 +205,13 @@ namespace lfs::vis::gui::panels {
             return;
         }
 
-        // Validate and auto-deselect unavailable tools
         editor->validateActiveTool();
 
-        const auto* const viewport = ImGui::GetMainViewport();
-
         constexpr int NUM_MAIN_BUTTONS = 7;
+        constexpr float TOOLBAR_MARGIN_Y = 5.0f;
         const ImVec2 toolbar_size = ComputeToolbarSize(NUM_MAIN_BUTTONS);
-
-        const float pos_x = viewport->WorkPos.x + viewport_pos.x + (viewport_size.x - toolbar_size.x) * 0.5f;
-        const float pos_y = viewport->WorkPos.y + viewport_pos.y + 5.0f;
+        const float pos_x = viewport_pos.x + (viewport_size.x - toolbar_size.x) * 0.5f;
+        const float pos_y = viewport_pos.y + TOOLBAR_MARGIN_Y;
 
         ImGui::SetNextWindowPos(ImVec2(pos_x, pos_y), ImGuiCond_Always);
         ImGui::SetNextWindowSize(toolbar_size, ImGuiCond_Always);
@@ -289,8 +286,8 @@ namespace lfs::vis::gui::panels {
             constexpr int NUM_SEL_BUTTONS = 5;
             const ImVec2 sub_size = ComputeToolbarSize(NUM_SEL_BUTTONS);
 
-            const float sub_pos_x = viewport->WorkPos.x + viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
-            const float sub_pos_y = viewport->WorkPos.y + viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
+            const float sub_pos_x = viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
+            const float sub_pos_y = viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
 
             ImGui::SetNextWindowPos(ImVec2(sub_pos_x, sub_pos_y), ImGuiCond_Always);
             ImGui::SetNextWindowSize(sub_size, ImGuiCond_Always);
@@ -344,8 +341,8 @@ namespace lfs::vis::gui::panels {
         if (is_transform_tool) {
             constexpr int NUM_BUTTONS = 2;
             const ImVec2 sub_size = ComputeToolbarSize(NUM_BUTTONS);
-            const float sub_x = viewport->WorkPos.x + viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
-            const float sub_y = viewport->WorkPos.y + viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
+            const float sub_x = viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
+            const float sub_y = viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
 
             ImGui::SetNextWindowPos(ImVec2(sub_x, sub_y), ImGuiCond_Always);
             ImGui::SetNextWindowSize(sub_size, ImGuiCond_Always);
@@ -383,8 +380,8 @@ namespace lfs::vis::gui::panels {
         if (active_tool == ToolType::CropBox) {
             constexpr int NUM_CROP_BUTTONS = 5;
             const ImVec2 sub_size = ComputeToolbarSize(NUM_CROP_BUTTONS);
-            const float sub_x = viewport->WorkPos.x + viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
-            const float sub_y = viewport->WorkPos.y + viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
+            const float sub_x = viewport_pos.x + (viewport_size.x - sub_size.x) * 0.5f;
+            const float sub_y = viewport_pos.y + toolbar_size.y + SUBTOOLBAR_OFFSET_Y;
 
             ImGui::SetNextWindowPos(ImVec2(sub_x, sub_y), ImGuiCond_Always);
             ImGui::SetNextWindowSize(sub_size, ImGuiCond_Always);
@@ -462,12 +459,10 @@ namespace lfs::vis::gui::panels {
         constexpr float MARGIN_RIGHT = 10.0f;
         constexpr float MARGIN_TOP = 5.0f;
         const int num_buttons = render_manager ? 8 : 3;
-
-        const auto* const vp = ImGui::GetMainViewport();
         const ImVec2 size = ComputeVerticalToolbarSize(num_buttons);
         const ImVec2 pos = {
-            vp->WorkPos.x + viewport_pos.x + viewport_size.x - size.x - MARGIN_RIGHT,
-            vp->WorkPos.y + viewport_pos.y + MARGIN_TOP
+            viewport_pos.x + viewport_size.x - size.x - MARGIN_RIGHT,
+            viewport_pos.y + MARGIN_TOP
         };
 
         ImGui::SetNextWindowPos(pos, ImGuiCond_Always);

@@ -366,8 +366,12 @@ namespace lfs::vis {
     void VisualizerImpl::update() {
         window_manager_->updateWindowSize();
 
-        // Update the main viewport with window size
-        viewport_.windowSize = window_manager_->getWindowSize();
+        if (gui_manager_) {
+            const auto& size = gui_manager_->getViewportSize();
+            viewport_.windowSize = {static_cast<int>(size.x), static_cast<int>(size.y)};
+        } else {
+            viewport_.windowSize = window_manager_->getWindowSize();
+        }
         viewport_.frameBufferSize = window_manager_->getFramebufferSize();
 
         if (brush_tool_ && brush_tool_->isEnabled() && tool_context_) {

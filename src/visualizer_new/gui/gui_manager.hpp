@@ -138,7 +138,10 @@ namespace lfs::vis {
             // Viewport gizmo layout (must match ViewportGizmo settings)
             static constexpr float VIEWPORT_GIZMO_SIZE = 95.0f;
             static constexpr float VIEWPORT_GIZMO_MARGIN_X = 10.0f;
-            static constexpr float VIEWPORT_GIZMO_MARGIN_Y = 35.0f;
+            static constexpr float VIEWPORT_GIZMO_MARGIN_Y = 10.0f;
+
+            // Status bar layout
+            static constexpr float STATUS_BAR_HEIGHT = 22.0f;
 
             // Crop box gizmo state (shared between panel and rendering)
             ImGuizmo::OPERATION crop_gizmo_operation_ = ImGuizmo::TRANSLATE;

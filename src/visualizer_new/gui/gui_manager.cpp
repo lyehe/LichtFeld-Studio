@@ -393,10 +393,10 @@ namespace lfs::vis::gui {
             .window_states = &window_states_,
             .editor = &editor_ctx};
 
-        // Right panel with vertical split
+        // Right panel (stops at status bar)
         if (show_main_panel_ && !ui_hidden_) {
             const auto* const vp = ImGui::GetMainViewport();
-            const float panel_h = vp->WorkSize.y;
+            const float panel_h = vp->WorkSize.y - STATUS_BAR_HEIGHT;
             right_panel_width_ = std::clamp(right_panel_width_, RIGHT_PANEL_MIN_WIDTH, RIGHT_PANEL_MAX_WIDTH);
 
             ImGui::SetNextWindowPos({vp->WorkPos.x + vp->WorkSize.x - right_panel_width_, vp->WorkPos.y}, ImGuiCond_Always);
@@ -404,7 +404,8 @@ namespace lfs::vis::gui {
 
             constexpr ImGuiWindowFlags PANEL_FLAGS =
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar;
+                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoDocking |
+                ImGuiWindowFlags_NoTitleBar;
 
             const auto& t = theme();
             ImGui::PushStyleColor(ImGuiCol_WindowBg, withAlpha(t.palette.surface, 0.95f));
@@ -714,6 +715,37 @@ namespace lfs::vis::gui {
         // Update viewport focus based on mouse position
         updateViewportFocus();
 
+        // Draw beveled viewport corners
+        if (!ui_hidden_ && viewport_size_.x > 0 && viewport_size_.y > 0) {
+            const auto& t = theme();
+            const float r = t.viewport.corner_radius;
+            if (r > 0.0f) {
+                auto* const dl = ImGui::GetForegroundDrawList();
+                const ImU32 bg = toU32(t.palette.background);
+                const float x1 = viewport_pos_.x, y1 = viewport_pos_.y;
+                const float x2 = x1 + viewport_size_.x, y2 = y1 + viewport_size_.y;
+                constexpr int ARC_SEGMENTS = 8;
+
+                // Corner masks (clockwise from each corner)
+                auto drawCorner = [&](float cx, float cy, float start_angle, float end_angle,
+                                      float dx1, float dy1, float dx2, float dy2) {
+                    dl->PathLineTo({cx + dx1, cy + dy1});
+                    dl->PathArcTo({cx, cy}, r, start_angle, end_angle, ARC_SEGMENTS);
+                    dl->PathLineTo({cx + dx2, cy + dy2});
+                    dl->PathFillConvex(bg);
+                };
+                drawCorner(x1 + r, y1 + r, IM_PI, IM_PI * 1.5f, -r, 0, 0, -r);
+                drawCorner(x2 - r, y1 + r, IM_PI * 1.5f, IM_PI * 2.0f, 0, -r, r, 0);
+                drawCorner(x1 + r, y2 - r, IM_PI * 0.5f, IM_PI, 0, r, -r, 0);
+                drawCorner(x2 - r, y2 - r, 0.0f, IM_PI * 0.5f, r, 0, 0, r);
+
+                if (t.viewport.border_size > 0.0f) {
+                    dl->AddRect({x1, y1}, {x2, y2}, t.viewport_border_u32(), r,
+                               ImDrawFlags_RoundCornersAll, t.viewport.border_size);
+                }
+            }
+        }
+
         // Render status bar at bottom of viewport
         if (!ui_hidden_) {
             renderStatusBar(ctx);
@@ -817,11 +849,13 @@ namespace lfs::vis::gui {
     }
 
     void GuiManager::updateViewportRegion() {
+        constexpr float PANEL_GAP = 2.0f;
         const auto* const vp = ImGui::GetMainViewport();
         const float w = (show_main_panel_ && !ui_hidden_)
-            ? vp->WorkSize.x - right_panel_width_ : vp->WorkSize.x;
+            ? vp->WorkSize.x - right_panel_width_ - PANEL_GAP : vp->WorkSize.x;
+        const float h = ui_hidden_ ? vp->WorkSize.y : vp->WorkSize.y - STATUS_BAR_HEIGHT;
         viewport_pos_ = {vp->WorkPos.x, vp->WorkPos.y};
-        viewport_size_ = {w, vp->WorkSize.y};
+        viewport_size_ = {w, h};
     }
 
     void GuiManager::updateViewportFocus() {
@@ -878,17 +912,18 @@ namespace lfs::vis::gui {
         auto* const sm = ctx.viewer->getSceneManager();
         if (!rm) return;
 
+        constexpr float PADDING = 8.0f, SPACING = 20.0f, FADE_DURATION_MS = 500.0f;
         const auto& t = theme();
-        constexpr float HEIGHT = 22.0f, PADDING = 8.0f, SPACING = 20.0f, FADE_MS = 500.0f;
-        const ImVec2 pos{viewport_pos_.x, viewport_pos_.y + viewport_size_.y - HEIGHT};
-        const ImVec2 size{viewport_size_.x, HEIGHT};
+        const auto* const vp = ImGui::GetMainViewport();
+        const ImVec2 pos{vp->WorkPos.x, vp->WorkPos.y + vp->WorkSize.y - STATUS_BAR_HEIGHT};
+        const ImVec2 size{vp->WorkSize.x, STATUS_BAR_HEIGHT};
         const auto now = std::chrono::steady_clock::now();
 
         // Fade alpha helper
         const auto fade_alpha = [&](auto start_time) {
             const auto remaining = speed_overlay_duration_ -
                 std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
-            return (remaining.count() < FADE_MS) ? remaining.count() / FADE_MS : 1.0f;
+            return (remaining.count() < FADE_DURATION_MS) ? remaining.count() / FADE_DURATION_MS : 1.0f;
         };
 
         // Update overlay timers
@@ -908,6 +943,7 @@ namespace lfs::vis::gui {
 
         ImGui::PushStyleColor(ImGuiCol_WindowBg, withAlpha(t.palette.background, 0.95f));
         ImGui::PushStyleColor(ImGuiCol_Border, withAlpha(t.palette.border, 0.6f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {PADDING, 3.0f});
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {6.0f, 0.0f});
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -1009,7 +1045,7 @@ namespace lfs::vis::gui {
         }
         ImGui::End();
 
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(2);
     }
 

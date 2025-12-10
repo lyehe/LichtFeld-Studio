@@ -71,7 +71,7 @@ namespace lfs::rendering {
 
         int size_ = 95;
         int margin_x_ = 10;
-        int margin_y_ = 35;
+        int margin_y_ = 10;
         bool initialized_ = false;
         std::optional<GizmoAxis> hovered_axis_;
 

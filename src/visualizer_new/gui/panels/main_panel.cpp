@@ -238,6 +238,33 @@ namespace lfs::vis::gui::panels {
             ImGui::Unindent();
         }
 
+        // Point Cloud Mode
+        ImGui::Separator();
+        ImGui::BeginDisabled(force_point_cloud);
+        if (ImGui::Checkbox("Point Cloud Mode", &settings.point_cloud_mode)) {
+            settings_changed = true;
+            ui::PointCloudModeChanged{
+                .enabled = settings.point_cloud_mode,
+                .voxel_size = settings.voxel_size}
+                .emit();
+        }
+        ImGui::EndDisabled();
+        if (force_point_cloud && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Point cloud mode is forced on before training starts");
+        }
+
+        if (settings.point_cloud_mode || force_point_cloud) {
+            ImGui::Indent();
+            if (widgets::SliderWithReset("Point Size", &settings.voxel_size, 0.001f, 0.1f, 0.03f)) {
+                settings_changed = true;
+                ui::PointCloudModeChanged{
+                    .enabled = settings.point_cloud_mode,
+                    .voxel_size = settings.voxel_size}
+                    .emit();
+            }
+            ImGui::Unindent();
+        }
+
         // Selection Colors
         ImGui::Separator();
         if (ImGui::CollapsingHeader("Selection Colors")) {

@@ -157,6 +157,15 @@ ImVec4 Theme::button_selected_hovered() const { return lighten(palette.primary, 
 ImVec4 Theme::toolbar_background() const { return withAlpha(palette.surface, TOOLBAR_BG_ALPHA); }
 ImVec4 Theme::subtoolbar_background() const { return withAlpha(darken(palette.surface, 0.03f), SUBTOOLBAR_BG_ALPHA); }
 
+ImVec4 Theme::menu_background() const { return lighten(palette.surface, menu.bg_lighten); }
+ImVec4 Theme::menu_hover() const { return lighten(palette.surface_bright, menu.hover_lighten); }
+ImVec4 Theme::menu_active() const { return withAlpha(palette.primary, menu.active_alpha); }
+ImVec4 Theme::menu_popup_background() const { return lighten(palette.surface, menu.popup_lighten); }
+ImVec4 Theme::menu_border() const { return withAlpha(palette.border, menu.border_alpha); }
+ImU32 Theme::menu_bottom_border_u32() const { return toU32(darken(palette.surface, menu.bottom_border_darken)); }
+
+ImU32 Theme::viewport_border_u32() const { return toU32WithAlpha(darken(palette.background, viewport.border_darken), viewport.border_alpha); }
+
 ImU32 Theme::row_even_u32() const { return toU32(palette.row_even); }
 ImU32 Theme::row_odd_u32() const { return toU32(palette.row_odd); }
 
@@ -436,6 +445,25 @@ bool saveTheme(const Theme& t, const std::string& path) {
         fonts["large_size"] = t.fonts.large_size;
         fonts["heading_size"] = t.fonts.heading_size;
 
+        auto& menu = j["menu"];
+        menu["bg_lighten"] = t.menu.bg_lighten;
+        menu["hover_lighten"] = t.menu.hover_lighten;
+        menu["active_alpha"] = t.menu.active_alpha;
+        menu["popup_lighten"] = t.menu.popup_lighten;
+        menu["popup_rounding"] = t.menu.popup_rounding;
+        menu["popup_border_size"] = t.menu.popup_border_size;
+        menu["border_alpha"] = t.menu.border_alpha;
+        menu["bottom_border_darken"] = t.menu.bottom_border_darken;
+        menu["frame_padding"] = vec2ToJson(t.menu.frame_padding);
+        menu["item_spacing"] = vec2ToJson(t.menu.item_spacing);
+        menu["popup_padding"] = vec2ToJson(t.menu.popup_padding);
+
+        auto& viewport = j["viewport"];
+        viewport["corner_radius"] = t.viewport.corner_radius;
+        viewport["border_size"] = t.viewport.border_size;
+        viewport["border_alpha"] = t.viewport.border_alpha;
+        viewport["border_darken"] = t.viewport.border_darken;
+
         std::ofstream file(path);
         if (!file.is_open()) return false;
         file << j.dump(2);
@@ -504,6 +532,29 @@ bool loadTheme(Theme& t, const std::string& path) {
             t.fonts.small_size = f.value("small_size", t.fonts.small_size);
             t.fonts.large_size = f.value("large_size", t.fonts.large_size);
             t.fonts.heading_size = f.value("heading_size", t.fonts.heading_size);
+        }
+
+        if (j.contains("menu")) {
+            const auto& m = j["menu"];
+            t.menu.bg_lighten = m.value("bg_lighten", t.menu.bg_lighten);
+            t.menu.hover_lighten = m.value("hover_lighten", t.menu.hover_lighten);
+            t.menu.active_alpha = m.value("active_alpha", t.menu.active_alpha);
+            t.menu.popup_lighten = m.value("popup_lighten", t.menu.popup_lighten);
+            t.menu.popup_rounding = m.value("popup_rounding", t.menu.popup_rounding);
+            t.menu.popup_border_size = m.value("popup_border_size", t.menu.popup_border_size);
+            t.menu.border_alpha = m.value("border_alpha", t.menu.border_alpha);
+            t.menu.bottom_border_darken = m.value("bottom_border_darken", t.menu.bottom_border_darken);
+            if (m.contains("frame_padding")) t.menu.frame_padding = vec2FromJson(m["frame_padding"]);
+            if (m.contains("item_spacing")) t.menu.item_spacing = vec2FromJson(m["item_spacing"]);
+            if (m.contains("popup_padding")) t.menu.popup_padding = vec2FromJson(m["popup_padding"]);
+        }
+
+        if (j.contains("viewport")) {
+            const auto& v = j["viewport"];
+            t.viewport.corner_radius = v.value("corner_radius", t.viewport.corner_radius);
+            t.viewport.border_size = v.value("border_size", t.viewport.border_size);
+            t.viewport.border_alpha = v.value("border_alpha", t.viewport.border_alpha);
+            t.viewport.border_darken = v.value("border_darken", t.viewport.border_darken);
         }
 
         return true;

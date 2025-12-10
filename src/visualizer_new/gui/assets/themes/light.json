@@ -85,5 +85,53 @@
     "small_size": 12.0,
     "large_size": 16.0,
     "heading_size": 22.0
+  },
+
+  "menu": {
+    "_info": "Menu bar styling - values are relative adjustments",
+
+    "bg_lighten": 0.03,
+    "_bg_lighten": "How much to lighten menu bar background from surface",
+
+    "hover_lighten": 0.04,
+    "_hover_lighten": "How much to lighten on hover",
+
+    "active_alpha": 0.40,
+    "_active_alpha": "Alpha for active/selected menu items",
+
+    "popup_lighten": 0.02,
+    "_popup_lighten": "How much to lighten popup background",
+
+    "popup_rounding": 6.0,
+    "_popup_rounding": "Popup corner radius",
+
+    "popup_border_size": 1.0,
+    "_popup_border_size": "Popup border thickness",
+
+    "border_alpha": 0.5,
+    "_border_alpha": "Border transparency",
+
+    "bottom_border_darken": 0.06,
+    "_bottom_border_darken": "Bottom shadow line intensity",
+
+    "frame_padding": [12.0, 8.0],
+    "item_spacing": [12.0, 6.0],
+    "popup_padding": [8.0, 8.0]
+  },
+
+  "viewport": {
+    "_info": "Viewport border styling",
+
+    "corner_radius": 8.0,
+    "_corner_radius": "Bevel radius for viewport corners",
+
+    "border_size": 2.0,
+    "_border_size": "Border thickness in pixels",
+
+    "border_alpha": 0.35,
+    "_border_alpha": "Border transparency (0-1)",
+
+    "border_darken": 0.12,
+    "_border_darken": "How much to darken border from background"
   }
 }
