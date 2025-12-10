@@ -9,6 +9,7 @@
 #include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
 #include "internal/resource_paths.hpp"
+#include "rendering/rendering_manager.hpp"
 #include "theme/theme.hpp"
 #include <imgui.h>
 
@@ -133,6 +134,10 @@ namespace lfs::vis::gui::panels {
         state.hide_ui_texture = LoadIconTexture("layout-off.png");
         state.fullscreen_texture = LoadIconTexture("arrows-maximize.png");
         state.exit_fullscreen_texture = LoadIconTexture("arrows-minimize.png");
+        state.splat_texture = LoadIconTexture("blob.png");
+        state.pointcloud_texture = LoadIconTexture("dots-diagonal.png");
+        state.rings_texture = LoadIconTexture("ring.png");
+        state.centers_texture = LoadIconTexture("circle-dot.png");
         state.initialized = true;
     }
 
@@ -157,6 +162,10 @@ namespace lfs::vis::gui::panels {
         if (state.hide_ui_texture) glDeleteTextures(1, &state.hide_ui_texture);
         if (state.fullscreen_texture) glDeleteTextures(1, &state.fullscreen_texture);
         if (state.exit_fullscreen_texture) glDeleteTextures(1, &state.exit_fullscreen_texture);
+        if (state.splat_texture) glDeleteTextures(1, &state.splat_texture);
+        if (state.pointcloud_texture) glDeleteTextures(1, &state.pointcloud_texture);
+        if (state.rings_texture) glDeleteTextures(1, &state.rings_texture);
+        if (state.centers_texture) glDeleteTextures(1, &state.centers_texture);
 
         state.selection_texture = 0;
         state.rectangle_texture = 0;
@@ -424,17 +433,36 @@ namespace lfs::vis::gui::panels {
 
     }
 
+    namespace {
+        RenderVisualization getCurrentVisualization(const RenderSettings& settings) {
+            if (settings.point_cloud_mode) return RenderVisualization::PointCloud;
+            if (settings.show_rings) return RenderVisualization::Rings;
+            if (settings.show_center_markers) return RenderVisualization::Centers;
+            return RenderVisualization::Splat;
+        }
+
+        void setVisualization(RenderingManager* mgr, RenderVisualization mode) {
+            if (!mgr) return;
+            auto settings = mgr->getSettings();
+            settings.point_cloud_mode = (mode == RenderVisualization::PointCloud);
+            settings.show_rings = (mode == RenderVisualization::Rings);
+            settings.show_center_markers = (mode == RenderVisualization::Centers);
+            mgr->updateSettings(settings);
+        }
+    }
+
     void DrawUtilityToolbar(GizmoToolbarState& state,
                             const ImVec2& viewport_pos, const ImVec2& viewport_size,
-                            bool ui_hidden, bool is_fullscreen) {
+                            bool ui_hidden, bool is_fullscreen,
+                            RenderingManager* render_manager) {
         if (!state.initialized) InitGizmoToolbar(state);
 
         constexpr float MARGIN_RIGHT = 10.0f;
         constexpr float MARGIN_TOP = 5.0f;
-        constexpr int NUM_BUTTONS = 2;
+        const int num_buttons = render_manager ? 7 : 2;  // +1 for separator space
 
         const auto* const vp = ImGui::GetMainViewport();
-        const ImVec2 size = ComputeVerticalToolbarSize(NUM_BUTTONS);
+        const ImVec2 size = ComputeVerticalToolbarSize(num_buttons);
         const ImVec2 pos = {
             vp->WorkPos.x + viewport_pos.x + viewport_size.x - size.x - MARGIN_RIGHT,
             vp->WorkPos.y + viewport_pos.y + MARGIN_TOP
@@ -470,6 +498,34 @@ namespace lfs::vis::gui::panels {
             }
             ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Toggle UI (F12)");
+
+            // Visualization mode buttons (only if render_manager provided)
+            if (render_manager) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                const auto current = getCurrentVisualization(render_manager->getSettings());
+
+                // Helper for visualization buttons
+                const auto vizButton = [&](const char* id, unsigned int tex, const char* fallback,
+                                           RenderVisualization mode, const char* tooltip) {
+                    const bool selected = (current == mode);
+                    ImGui::PushStyleColor(ImGuiCol_Button, selected ? t.button_selected() : t.button_normal());
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? t.button_selected_hovered() : t.button_hovered());
+                    const bool clicked = tex
+                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(tex), btn_size, {0,0}, {1,1}, {0,0,0,0})
+                        : ImGui::Button(fallback, btn_size);
+                    if (clicked) setVisualization(render_manager, mode);
+                    ImGui::PopStyleColor(2);
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+                };
+
+                vizButton("##splat", state.splat_texture, "S", RenderVisualization::Splat, "Splat Rendering");
+                vizButton("##pointcloud", state.pointcloud_texture, "P", RenderVisualization::PointCloud, "Point Cloud");
+                vizButton("##rings", state.rings_texture, "R", RenderVisualization::Rings, "Gaussian Rings");
+                vizButton("##centers", state.centers_texture, "C", RenderVisualization::Centers, "Center Markers");
+            }
         }
         ImGui::End();
     }

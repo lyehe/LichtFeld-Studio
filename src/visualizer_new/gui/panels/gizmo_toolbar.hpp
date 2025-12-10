@@ -9,6 +9,10 @@
 #include <imgui.h>
 #include <ImGuizmo.h>
 
+namespace lfs::vis {
+    class RenderingManager;
+}
+
 namespace lfs::vis::gui::panels {
 
     // Re-export ToolType from EditorContext for convenience
@@ -32,6 +36,13 @@ namespace lfs::vis::gui::panels {
     enum class TransformSpace {
         Local,
         World
+    };
+
+    enum class RenderVisualization {
+        Splat,      // Normal gaussian splat rendering
+        PointCloud, // Point cloud mode
+        Rings,      // Show gaussian rings
+        Centers     // Show center markers
     };
 
     struct GizmoToolbarState {
@@ -61,6 +72,12 @@ namespace lfs::vis::gui::panels {
         unsigned int hide_ui_texture = 0;
         unsigned int fullscreen_texture = 0;
         unsigned int exit_fullscreen_texture = 0;
+
+        // Render visualization icons
+        unsigned int splat_texture = 0;
+        unsigned int pointcloud_texture = 0;
+        unsigned int rings_texture = 0;
+        unsigned int centers_texture = 0;
     };
 
     void InitGizmoToolbar(GizmoToolbarState& state);
@@ -69,6 +86,7 @@ namespace lfs::vis::gui::panels {
                           const ImVec2& viewport_pos, const ImVec2& viewport_size);
     void DrawUtilityToolbar(GizmoToolbarState& state,
                             const ImVec2& viewport_pos, const ImVec2& viewport_size,
-                            bool ui_hidden, bool is_fullscreen);
+                            bool ui_hidden, bool is_fullscreen,
+                            lfs::vis::RenderingManager* render_manager = nullptr);
 
 } // namespace lfs::vis::gui::panels

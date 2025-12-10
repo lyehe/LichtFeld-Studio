@@ -128,58 +128,7 @@ namespace lfs::vis::gui::panels {
         if (force_point_cloud && !settings.point_cloud_mode) {
             settings.point_cloud_mode = true;
             settings_changed = true;
-            ui::PointCloudModeChanged{.enabled = true, .voxel_size = settings.voxel_size}.emit();
         }
-
-        // Point Cloud Mode checkbox (disabled in pre-training mode - always on)
-        ImGui::BeginDisabled(force_point_cloud);
-        if (ImGui::Checkbox("Point Cloud Mode", &settings.point_cloud_mode)) {
-            settings_changed = true;
-
-            ui::PointCloudModeChanged{
-                .enabled = settings.point_cloud_mode,
-                .voxel_size = settings.voxel_size}
-                .emit();
-        }
-        ImGui::EndDisabled();
-        if (force_point_cloud && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("Always enabled in pre-training mode");
-        }
-
-        // Show voxel size slider only when in point cloud mode
-        if (settings.point_cloud_mode) {
-            if (widgets::SliderWithReset("Voxel Size", &settings.voxel_size, 0.001f, 0.1f, 0.03f)) {
-                settings_changed = true;
-
-                ui::PointCloudModeChanged{
-                    .enabled = settings.point_cloud_mode,
-                    .voxel_size = settings.voxel_size}
-                    .emit();
-            }
-        }
-
-        // Ring Mode and Center Markers are mutually exclusive
-        ImGui::BeginDisabled(settings.point_cloud_mode);
-        if (ImGui::Checkbox("Show Gaussian Rings", &settings.show_rings)) {
-            if (settings.show_rings)
-                settings.show_center_markers = false;
-            settings_changed = true;
-        }
-        ImGui::EndDisabled();
-
-        if (settings.show_rings && !settings.point_cloud_mode) {
-            if (widgets::SliderWithReset("Ring Width", &settings.ring_width, 0.001f, 0.05f, 0.01f)) {
-                settings_changed = true;
-            }
-        }
-
-        ImGui::BeginDisabled(settings.point_cloud_mode);
-        if (ImGui::Checkbox("Show Center Markers", &settings.show_center_markers)) {
-            if (settings.show_center_markers)
-                settings.show_rings = false;
-            settings_changed = true;
-        }
-        ImGui::EndDisabled();
 
         // Background Color
         ImGui::Separator();
