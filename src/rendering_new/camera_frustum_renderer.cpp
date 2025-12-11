@@ -436,6 +436,8 @@ Result<void> CameraFrustumRenderer::render(
         }
     }
 
+    glFinish();
+
     return {};
 }
 
@@ -818,6 +820,7 @@ void CameraFrustumRenderer::uploadReadyThumbnails() {
             glCopyImageSubData(thumbnail_array_, GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0,
                                new_tex, GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0,
                                THUMBNAIL_SIZE, THUMBNAIL_SIZE, thumbnail_array_count_);
+            glFinish();
 
             thumbnail_array_ = Texture(new_tex);
             thumbnail_array_capacity_ = new_capacity;
