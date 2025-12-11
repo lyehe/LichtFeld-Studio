@@ -693,6 +693,9 @@ namespace lfs::vis {
         // SAFETY CHECK: Don't render with invalid viewport dimensions
         if (current_size.x <= 0 || current_size.y <= 0) {
             LOG_TRACE("Skipping render - invalid viewport size: {}x{}", current_size.x, current_size.y);
+            // Still clear to prevent trails
+            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             framerate_controller_.endFrame();
             return;
         }
@@ -761,11 +764,9 @@ namespace lfs::vis {
 
         glViewport(0, 0, context.viewport.frameBufferSize.x, context.viewport.frameBufferSize.y);
 
-        // Clear only when rendering (cached blit overwrites entirely)
-        if (should_render || !model) {
-            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        }
+        // Clear full framebuffer to prevent trails on viewport resize
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Set viewport region with scissor clipping (flip Y for OpenGL)
         if (context.viewport_region) {

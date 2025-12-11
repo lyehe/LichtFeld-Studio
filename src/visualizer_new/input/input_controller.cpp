@@ -38,6 +38,10 @@ namespace lfs::vis {
             drag_mode_ = DragMode::None;
             std::fill(std::begin(keys_movement_), std::end(keys_movement_), false);
             hovered_camera_id_ = -1;
+
+            // Clear ImGui input to prevent tooltip trails
+            ImGui::GetIO().ClearInputKeys();
+            ImGui::GetIO().ClearInputMouse();
         });
     }
 
