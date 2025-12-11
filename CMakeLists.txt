@@ -65,48 +65,50 @@ option(BUILD_CUDA_ALL_SM "Build CUDA fat binaries targeting all modern SMs (>= m
 set(BUILD_CUDA_ALL_MIN_SM "86" CACHE STRING "Minimum SM (compute capability) used when BUILD_CUDA_ALL_SM=ON Examples: 75, 80, 86, 89...")
 
 # Set Torch_DIR based on platform and build type
-if (WIN32)
-    if(CMAKE_CONFIGURATION_TYPES AND "${CMAKE_BUILD_TYPE}" STREQUAL "")
-        # https://github.com/pytorch/pytorch/issues/155667
-        set(Torch_DIR "${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
-        message(STATUS "[${PROJECT_NAME}] User didn't specify -DCMAKE_BUILD_TYPE so use this path for searching libtorch -> ${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
-
-        if (NOT EXISTS "${PROJ_ROOT_DIR}/external/release/")
-            message(FATAL_ERROR "you don't have a such path ${PROJ_ROOT_DIR}/external/release/ on your disk")
-        endif()
-
-        if (NOT EXISTS "${PROJ_ROOT_DIR}/external/release/libtorch/")
-            message(FATAL_ERROR "you don't have an extracted pre-installed libtorch (${PROJ_ROOT_DIR}/external/release/libtorch)!")
-        endif()
-    else()
-        if (CMAKE_BUILD_TYPE STREQUAL "Release")
+if(BUILD_LEGACY)
+    if(WIN32)
+        if(CMAKE_CONFIGURATION_TYPES AND "${CMAKE_BUILD_TYPE}" STREQUAL "")
+            # https://github.com/pytorch/pytorch/issues/155667
             set(Torch_DIR "${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
-            message(STATUS "[${PROJECT_NAME}] User specified -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} so let's search libtorch by this path -> ${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
+            message(STATUS "[${PROJECT_NAME}] User didn't specify -DCMAKE_BUILD_TYPE so use this path for searching libtorch -> ${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
 
-            if (NOT EXISTS "${PROJ_ROOT_DIR}/external/release/")
+            if(NOT EXISTS "${PROJ_ROOT_DIR}/external/release/")
                 message(FATAL_ERROR "you don't have a such path ${PROJ_ROOT_DIR}/external/release/ on your disk")
             endif()
 
-            if (NOT EXISTS "${PROJ_ROOT_DIR}/external/release/libtorch")
+            if(NOT EXISTS "${PROJ_ROOT_DIR}/external/release/libtorch/")
                 message(FATAL_ERROR "you don't have an extracted pre-installed libtorch (${PROJ_ROOT_DIR}/external/release/libtorch)!")
             endif()
-        elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(Torch_DIR "${PROJ_ROOT_DIR}/external/debug/libtorch/share/cmake/Torch")
-            message(STATUS "[${PROJECT_NAME}] User specified -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} so let's search libtorch by this path -> ${PROJ_ROOT_DIR}/external/debug/libtorch/share/cmake/Torch")
-
-            if (NOT EXISTS "${PROJ_ROOT_DIR}/external/debug/")
-                message(FATAL_ERROR "you don't have a such path ${PROJ_ROOT_DIR}/external/debug/ on your disk")
-            endif()
-
-            if (NOT EXISTS "${PROJ_ROOT_DIR}/external/debug/libtorch")
-                message(FATAL_ERROR "you don't have an extracted pre-installed libtorch (${PROJ_ROOT_DIR}/external/debug/libtorch)!")
-            endif()
         else()
-            message(FATAL_ERROR "libtorch binaries only available for Debug and Release on Windows. Current build type: '${CMAKE_BUILD_TYPE}'")
+            if(CMAKE_BUILD_TYPE STREQUAL "Release")
+                set(Torch_DIR "${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
+                message(STATUS "[${PROJECT_NAME}] User specified -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} so let's search libtorch by this path -> ${PROJ_ROOT_DIR}/external/release/libtorch/share/cmake/Torch")
+
+                if(NOT EXISTS "${PROJ_ROOT_DIR}/external/release/")
+                    message(FATAL_ERROR "you don't have a such path ${PROJ_ROOT_DIR}/external/release/ on your disk")
+                endif()
+
+                if(NOT EXISTS "${PROJ_ROOT_DIR}/external/release/libtorch")
+                    message(FATAL_ERROR "you don't have an extracted pre-installed libtorch (${PROJ_ROOT_DIR}/external/release/libtorch)!")
+                endif()
+            elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+                set(Torch_DIR "${PROJ_ROOT_DIR}/external/debug/libtorch/share/cmake/Torch")
+                message(STATUS "[${PROJECT_NAME}] User specified -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} so let's search libtorch by this path -> ${PROJ_ROOT_DIR}/external/debug/libtorch/share/cmake/Torch")
+
+                if(NOT EXISTS "${PROJ_ROOT_DIR}/external/debug/")
+                    message(FATAL_ERROR "you don't have a such path ${PROJ_ROOT_DIR}/external/debug/ on your disk")
+                endif()
+
+                if(NOT EXISTS "${PROJ_ROOT_DIR}/external/debug/libtorch")
+                    message(FATAL_ERROR "you don't have an extracted pre-installed libtorch (${PROJ_ROOT_DIR}/external/debug/libtorch)!")
+                endif()
+            else()
+                message(FATAL_ERROR "libtorch binaries only available for Debug and Release on Windows. Current build type: '${CMAKE_BUILD_TYPE}'")
+            endif()
         endif()
+    else()
+        set(Torch_DIR "${PROJ_ROOT_DIR}/external/libtorch/share/cmake/Torch")
     endif()
-else()
-    set(Torch_DIR "${PROJ_ROOT_DIR}/external/libtorch/share/cmake/Torch")
 endif()
 
 set(CMAKE_CXX_STANDARD 23)
@@ -614,22 +616,21 @@ if(BUILD_LEGACY)
     message(STATUS "Building legacy LibTorch-based binary: ${PROJECT_NAME}-legacy")
     add_executable(${PROJECT_NAME}-legacy src/main_legacy.cpp resources/lichtfeld-studio.rc)
 
-set_target_properties(${PROJECT_NAME}-legacy PROPERTIES
+    set_target_properties(${PROJECT_NAME}-legacy PROPERTIES
         CUDA_ARCHITECTURES "${LichtFeld-Studio_CUDA_ARCH}"
         CUDA_SEPARABLE_COMPILATION ON
         CUDA_RESOLVE_DEVICE_SYMBOLS ON
-)
+    )
 
-target_include_directories(${PROJECT_NAME}-legacy
+    target_include_directories(${PROJECT_NAME}-legacy
         PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
-
         ${CUDAToolkit_INCLUDE_DIRS}
         ${OPENGL_INCLUDE_DIRS}
-)
+    )
 
-target_link_libraries(${PROJECT_NAME}-legacy
+    target_link_libraries(${PROJECT_NAME}-legacy
         PRIVATE
         gs_core            # LibTorch-based core library (legacy implementation)
         gs_geometry
@@ -641,42 +642,43 @@ target_link_libraries(${PROJECT_NAME}-legacy
         gs_kernels
         gsplat_backend
         fastgs_backend
-
         ${OPENGL_LIBRARIES}
         CUDA::cudart
         spdlog::spdlog
         taywee::args
         OpenImageIO::OpenImageIO
-)
+    )
 
-# Platform-specific settings for legacy binary
-if(WIN32)
-    file(GLOB TORCH_DLLS "${Torch_DIR}/../../../lib/*.dll")
-    foreach(TORCH_DLL ${TORCH_DLLS})
-        add_custom_command(
+    # Platform-specific settings for legacy binary
+    if(WIN32)
+        file(GLOB TORCH_DLLS "${Torch_DIR}/../../../lib/*.dll")
+        foreach(TORCH_DLL ${TORCH_DLLS})
+            add_custom_command(
                 TARGET ${PROJECT_NAME}-legacy
                 POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${TORCH_DLL}"
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}-legacy>")
-    endforeach()
-elseif(UNIX)
-    target_link_libraries(${PROJECT_NAME}-legacy PRIVATE GL GLU)
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}-legacy>"
+            )
+        endforeach()
+    elseif(UNIX)
+        target_link_libraries(${PROJECT_NAME}-legacy PRIVATE GL GLU)
 
-    find_path(TORCH_LIB_DIR libtorch_cpu.so
+        find_path(TORCH_LIB_DIR libtorch_cpu.so
             PATHS "${Torch_DIR}/../../../lib"
-            NO_DEFAULT_PATH)
+            NO_DEFAULT_PATH
+        )
 
-    if(TORCH_LIB_DIR)
-        set_target_properties(${PROJECT_NAME}-legacy PROPERTIES
+        if(TORCH_LIB_DIR)
+            set_target_properties(${PROJECT_NAME}-legacy PROPERTIES
                 INSTALL_RPATH "${CUDAToolkit_LIBRARY_DIR}:${TORCH_LIB_DIR}"
                 BUILD_WITH_INSTALL_RPATH TRUE
                 INSTALL_RPATH_USE_LINK_PATH TRUE
-        )
-        message(STATUS "Torch library directory: ${TORCH_LIB_DIR}")
-    else()
-        message(WARNING "Could not find Torch library directory")
+            )
+            message(STATUS "Torch library directory: ${TORCH_LIB_DIR}")
+        else()
+            message(WARNING "Could not find Torch library directory")
+        endif()
     endif()
-endif()
 endif(BUILD_LEGACY)
 
 # Build type configuration function

@@ -12,9 +12,17 @@ struct GLFWwindow;
 
 namespace lfs::vis::gui {
 
+    // Forward declaration for Windows COM drop target
+#ifdef _WIN32
+    class DropTarget;
+#endif
+
     // Native drag-and-drop handler for visual feedback during file drags
     // Provides DragEnter/DragLeave callbacks that GLFW doesn't expose
     class NativeDragDrop {
+#ifdef _WIN32
+        friend class DropTarget;
+#endif
     public:
         using DragEnterCallback = std::function<void(const std::vector<std::string>& mime_types)>;
         using DragLeaveCallback = std::function<void()>;
