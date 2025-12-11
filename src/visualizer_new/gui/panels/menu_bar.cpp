@@ -6,6 +6,9 @@
 #include "config.h"
 #include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
+#ifdef WIN32
+#include <winsock2.h>
+#endif
 #include "gui/utils/windows_utils.hpp"
 #include "theme/theme.hpp"
 
