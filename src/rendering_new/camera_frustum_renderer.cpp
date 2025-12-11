@@ -611,35 +611,54 @@ void CameraFrustumRenderer::stopThumbnailLoader() {
 }
 
 void CameraFrustumRenderer::thumbnailLoaderWorker() {
-    std::unique_ptr<lfs::loader::NvCodecImageLoader> nvcodec_loader;
-    bool use_nvcodec = false;
+    constexpr auto IDLE_TIMEOUT = std::chrono::seconds(5);
+    constexpr auto POLL_INTERVAL = std::chrono::milliseconds(500);
 
-    try {
-        if (lfs::loader::NvCodecImageLoader::is_available()) {
+    std::unique_ptr<lfs::loader::NvCodecImageLoader> nvcodec;
+    const bool nvcodec_supported = lfs::loader::NvCodecImageLoader::is_available();
+    auto last_activity = std::chrono::steady_clock::now();
+
+    const auto create_nvcodec = [&]() -> bool {
+        if (nvcodec || !nvcodec_supported) return nvcodec != nullptr;
+        try {
             lfs::loader::NvCodecImageLoader::Options opts;
             opts.device_id = 0;
             opts.decoder_pool_size = NVCODEC_DECODER_POOL_SIZE;
-            nvcodec_loader = std::make_unique<lfs::loader::NvCodecImageLoader>(opts);
-            use_nvcodec = true;
+            nvcodec = std::make_unique<lfs::loader::NvCodecImageLoader>(opts);
+            return true;
+        } catch (const std::exception& e) {
+            LOG_WARN("nvImageCodec init failed: {}", e.what());
+            return false;
         }
-    } catch (const std::exception& e) {
-        LOG_WARN("nvImageCodec init failed: {}", e.what());
-    }
+    };
 
     while (thumbnail_loader_running_) {
         ThumbnailRequest request;
+        bool has_work = false;
 
         {
             std::unique_lock lock(load_queue_mutex_);
-            load_queue_cv_.wait(lock, [this] {
+            load_queue_cv_.wait_for(lock, POLL_INTERVAL, [this] {
                 return !thumbnail_load_queue_.empty() || !thumbnail_loader_running_;
             });
 
             if (!thumbnail_loader_running_) break;
-            if (thumbnail_load_queue_.empty()) continue;
 
-            request = std::move(thumbnail_load_queue_.front());
-            thumbnail_load_queue_.pop();
+            if (!thumbnail_load_queue_.empty()) {
+                request = std::move(thumbnail_load_queue_.front());
+                thumbnail_load_queue_.pop();
+                has_work = true;
+                last_activity = std::chrono::steady_clock::now();
+            }
+        }
+
+        // Release nvcodec after idle timeout to free CUDA resources for training
+        if (!has_work) {
+            if (nvcodec && (std::chrono::steady_clock::now() - last_activity) > IDLE_TIMEOUT) {
+                LOG_DEBUG("Releasing idle thumbnail nvcodec");
+                nvcodec.reset();
+            }
+            continue;
         }
 
         LoadedThumbnail loaded;
@@ -650,8 +669,9 @@ void CameraFrustumRenderer::thumbnailLoaderWorker() {
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
             bool loaded_with_nvcodec = false;
+            const bool is_jpeg = (ext == ".jpg" || ext == ".jpeg");
 
-            if (use_nvcodec && nvcodec_loader && (ext == ".jpg" || ext == ".jpeg")) {
+            if (is_jpeg && create_nvcodec()) {
                 try {
                     const int max_dim = std::max(request.image_width, request.image_height);
                     int pot_resize = 1;
@@ -659,7 +679,7 @@ void CameraFrustumRenderer::thumbnailLoaderWorker() {
                         pot_resize *= 2;
                     }
 
-                    auto tensor = nvcodec_loader->load_image_gpu(request.image_path, pot_resize, THUMBNAIL_SIZE);
+                    auto tensor = nvcodec->load_image_gpu(request.image_path, pot_resize, THUMBNAIL_SIZE);
                     auto cpu_tensor = tensor.cpu().contiguous();
                     const auto shape = cpu_tensor.shape();
                     const int c = shape[0], h = shape[1], w = shape[2];
