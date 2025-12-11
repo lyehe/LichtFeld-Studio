@@ -169,6 +169,23 @@ ImU32 Theme::viewport_border_u32() const { return toU32WithAlpha(darken(palette.
 ImU32 Theme::row_even_u32() const { return toU32(palette.row_even); }
 ImU32 Theme::row_odd_u32() const { return toU32(palette.row_odd); }
 
+void Theme::pushContextMenuStyle() const {
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, palette.surface);
+    ImGui::PushStyleColor(ImGuiCol_Border, palette.border);
+    ImGui::PushStyleColor(ImGuiCol_Header, withAlpha(palette.primary, context_menu.header_alpha));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, withAlpha(palette.primary, context_menu.header_hover_alpha));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, withAlpha(palette.primary, context_menu.header_active_alpha));
+    ImGui::PushStyleColor(ImGuiCol_Text, palette.text);
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, context_menu.rounding);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, context_menu.padding);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, context_menu.item_spacing);
+}
+
+void Theme::popContextMenuStyle() {
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(6);
+}
+
 // Global access
 const Theme& theme() {
     ensureInitialized();
@@ -460,6 +477,14 @@ bool saveTheme(const Theme& t, const std::string& path) {
         menu["item_spacing"] = vec2ToJson(t.menu.item_spacing);
         menu["popup_padding"] = vec2ToJson(t.menu.popup_padding);
 
+        auto& ctx = j["context_menu"];
+        ctx["rounding"] = t.context_menu.rounding;
+        ctx["header_alpha"] = t.context_menu.header_alpha;
+        ctx["header_hover_alpha"] = t.context_menu.header_hover_alpha;
+        ctx["header_active_alpha"] = t.context_menu.header_active_alpha;
+        ctx["padding"] = vec2ToJson(t.context_menu.padding);
+        ctx["item_spacing"] = vec2ToJson(t.context_menu.item_spacing);
+
         auto& viewport = j["viewport"];
         viewport["corner_radius"] = t.viewport.corner_radius;
         viewport["border_size"] = t.viewport.border_size;
@@ -563,6 +588,16 @@ bool loadTheme(Theme& t, const std::string& path) {
             if (m.contains("frame_padding")) t.menu.frame_padding = vec2FromJson(m["frame_padding"]);
             if (m.contains("item_spacing")) t.menu.item_spacing = vec2FromJson(m["item_spacing"]);
             if (m.contains("popup_padding")) t.menu.popup_padding = vec2FromJson(m["popup_padding"]);
+        }
+
+        if (j.contains("context_menu")) {
+            const auto& ctx = j["context_menu"];
+            t.context_menu.rounding = ctx.value("rounding", t.context_menu.rounding);
+            t.context_menu.header_alpha = ctx.value("header_alpha", t.context_menu.header_alpha);
+            t.context_menu.header_hover_alpha = ctx.value("header_hover_alpha", t.context_menu.header_hover_alpha);
+            t.context_menu.header_active_alpha = ctx.value("header_active_alpha", t.context_menu.header_active_alpha);
+            if (ctx.contains("padding")) t.context_menu.padding = vec2FromJson(ctx["padding"]);
+            if (ctx.contains("item_spacing")) t.context_menu.item_spacing = vec2FromJson(ctx["item_spacing"]);
         }
 
         if (j.contains("viewport")) {

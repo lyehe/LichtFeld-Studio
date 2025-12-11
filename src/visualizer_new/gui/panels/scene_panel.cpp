@@ -242,6 +242,7 @@ namespace lfs::vis::gui {
         handleDragDrop("", true);
 
         // Context menu for folder
+        theme().pushContextMenuStyle();
         if (ImGui::BeginPopupContextItem("##ModelsMenu")) {
             if (ImGui::MenuItem("Add PLY...")) {
                 cmd::ShowWindow{.window_name = "file_browser", .show = true}.emit();
@@ -259,6 +260,7 @@ namespace lfs::vis::gui {
             }
             ImGui::EndPopup();
         }
+        Theme::popContextMenuStyle();
 
         // Render root-level nodes (parent_id == NULL_NODE)
         for (const auto* node : nodes) {
@@ -544,29 +546,31 @@ namespace lfs::vis::gui {
                 }
             }
 
-            // Helper lambda to close context menu and finish node rendering
-            const auto closeContextAndFinish = [&]() {
-                ImGui::EndPopup();
-                if (is_open && has_children) {
-                    renderNodeChildren(node.id, scene, selected_names, depth + 1);
-                    ImGui::TreePop();
-                }
-                ImGui::PopID();
-            };
-
             // Context menu
+            theme().pushContextMenuStyle();
             if (ImGui::BeginPopup(("##ctx_" + node.name).c_str())) {
+                // Helper to finish node after early menu exit
+                const auto finishNode = [&]() {
+                    ImGui::EndPopup();
+                    Theme::popContextMenuStyle();
+                    if (is_open && has_children) {
+                        renderNodeChildren(node.id, scene, selected_names, depth + 1);
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                };
+
                 if (is_camera) {
                     if (ImGui::MenuItem("Go to Camera View")) {
                         cmd::GoToCamView{.cam_id = node.camera_uid}.emit();
                     }
-                    closeContextAndFinish();
+                    finishNode();
                     return;
                 }
 
                 if (is_camera_group || parent_is_dataset) {
                     ImGui::TextDisabled("(No actions)");
-                    closeContextAndFinish();
+                    finishNode();
                     return;
                 }
 
@@ -574,7 +578,7 @@ namespace lfs::vis::gui {
                     if (ImGui::MenuItem("Delete")) {
                         cmd::RemovePLY{.name = node.name, .keep_children = false}.emit();
                     }
-                    closeContextAndFinish();
+                    finishNode();
                     return;
                 }
 
@@ -585,12 +589,7 @@ namespace lfs::vis::gui {
                     if (ImGui::MenuItem("Fit to Scene (Trimmed)")) {
                         cmd::FitCropBoxToScene{.use_percentile = true}.emit();
                     }
-                    ImGui::EndPopup();
-                    if (is_open && has_children) {
-                        renderNodeChildren(node.id, scene, selected_names, depth + 1);
-                        ImGui::TreePop();
-                    }
-                    ImGui::PopID();
+                    finishNode();
                     return;
                 }
 
@@ -639,6 +638,7 @@ namespace lfs::vis::gui {
                 }
                 ImGui::EndPopup();
             }
+            Theme::popContextMenuStyle();
 
             if (is_open && has_children) {
                 renderNodeChildren(node.id, scene, selected_names, depth + 1);
@@ -803,6 +803,7 @@ namespace lfs::vis::gui {
                 }
 
                 const std::string context_menu_id = std::format("context_menu_{}", i);
+                theme().pushContextMenuStyle();
                 if (ImGui::BeginPopupContextItem(context_menu_id.c_str())) {
                     if (ImGui::MenuItem("Go to Cam View")) {
                         if (const auto cam_it = m_pathToCamId.find(imagePath); cam_it != m_pathToCamId.end()) {
@@ -811,6 +812,7 @@ namespace lfs::vis::gui {
                     }
                     ImGui::EndPopup();
                 }
+                Theme::popContextMenuStyle();
             }
         } else {
             ImGui::Text("No images loaded.");

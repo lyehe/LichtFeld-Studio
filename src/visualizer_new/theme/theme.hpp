@@ -75,6 +75,15 @@ struct ThemeMenu {
     ImVec2 popup_padding = {8.0f, 8.0f};
 };
 
+struct ThemeContextMenu {
+    float rounding = 6.0f;
+    float header_alpha = 0.4f;
+    float header_hover_alpha = 0.6f;
+    float header_active_alpha = 0.8f;
+    ImVec2 padding = {12.0f, 8.0f};
+    ImVec2 item_spacing = {8.0f, 6.0f};
+};
+
 struct ThemeViewport {
     float corner_radius = 8.0f;
     float border_size = 2.0f;
@@ -103,6 +112,7 @@ struct Theme {
     ThemeSizes sizes;
     ThemeFonts fonts;
     ThemeMenu menu;
+    ThemeContextMenu context_menu;
     ThemeViewport viewport;
     ThemeShadows shadows;
     ThemeVignette vignette;
@@ -163,6 +173,10 @@ struct Theme {
     // Scene graph row colors
     [[nodiscard]] ImU32 row_even_u32() const;
     [[nodiscard]] ImU32 row_odd_u32() const;
+
+    // Context menu helpers (pushes 6 colors, 3 style vars)
+    void pushContextMenuStyle() const;
+    static void popContextMenuStyle();
 };
 
 // Global access

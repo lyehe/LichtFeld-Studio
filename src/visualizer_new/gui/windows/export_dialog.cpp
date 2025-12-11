@@ -4,132 +4,190 @@
 
 #include "gui/windows/export_dialog.hpp"
 #include "scene/scene_manager.hpp"
+#include "theme/theme.hpp"
 #include <imgui.h>
 
 namespace lfs::vis::gui {
 
-    using ExportFormat = lfs::core::ExportFormat;
+namespace {
+    constexpr float WINDOW_WIDTH = 380.0f;
+    constexpr float FRAME_DARKEN = 0.1f;
+    constexpr float BUTTON_LIGHTEN = 0.1f;
+    constexpr ImVec2 WINDOW_PADDING = {16.0f, 12.0f};
+    constexpr ImVec2 ITEM_SPACING = {8.0f, 6.0f};
+    constexpr ImVec2 EXPORT_BUTTON_SIZE = {130.0f, 28.0f};
+    constexpr ImVec2 CANCEL_BUTTON_SIZE = {80.0f, 28.0f};
 
-    void ExportDialog::render(bool* p_open, SceneManager* scene_manager) {
-        if (!p_open || !*p_open) return;
+    void pushInputStyle(const Theme& t) {
+        ImGui::PushStyleColor(ImGuiCol_CheckMark, t.palette.primary);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, darken(t.palette.surface, FRAME_DARKEN));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, t.palette.surface_bright);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, t.palette.primary_dim);
+    }
 
-        constexpr ImGuiWindowFlags WINDOW_FLAGS =
-            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking;
+    void popInputStyle() {
+        ImGui::PopStyleColor(4);
+    }
 
-        ImGui::SetNextWindowSize(ImVec2(400, 0), ImGuiCond_FirstUseEver);
+    void pushButtonStyle(const Theme& t) {
+        ImGui::PushStyleColor(ImGuiCol_Button, t.button_normal());
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, t.button_hovered());
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, t.button_active());
+    }
 
-        if (!ImGui::Begin("Export", p_open, WINDOW_FLAGS)) {
-            ImGui::End();
-            return;
-        }
+    void popButtonStyle() {
+        ImGui::PopStyleColor(3);
+    }
+} // namespace
 
-        // Collect SPLAT nodes from scene
-        std::vector<const SceneNode*> splat_nodes;
-        if (scene_manager) {
-            const auto& scene = scene_manager->getScene();
-            for (const auto* node : scene.getNodes()) {
-                if (node->type == NodeType::SPLAT && node->model) {
-                    splat_nodes.push_back(node);
-                }
+using ExportFormat = lfs::core::ExportFormat;
+
+void ExportDialog::render(bool* p_open, SceneManager* scene_manager) {
+    if (!p_open || !*p_open) return;
+
+    const auto& t = theme();
+
+    constexpr ImGuiWindowFlags WINDOW_FLAGS =
+        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking;
+
+    ImGui::SetNextWindowSize(ImVec2(WINDOW_WIDTH, 0), ImGuiCond_FirstUseEver);
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, t.palette.surface);
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, t.palette.surface);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, t.palette.surface_bright);
+    ImGui::PushStyleColor(ImGuiCol_Border, t.palette.border);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, WINDOW_PADDING);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ITEM_SPACING);
+
+    if (!ImGui::Begin("Export", p_open, WINDOW_FLAGS)) {
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(4);
+        return;
+    }
+
+    // Collect SPLAT nodes
+    std::vector<const SceneNode*> splat_nodes;
+    if (scene_manager) {
+        for (const auto* node : scene_manager->getScene().getNodes()) {
+            if (node->type == NodeType::SPLAT && node->model) {
+                splat_nodes.push_back(node);
             }
         }
+    }
 
-        // Initialize on first open
-        if (!initialized_ && !splat_nodes.empty()) {
-            selected_nodes_.clear();
+    // Initialize selection on first open
+    if (!initialized_ && !splat_nodes.empty()) {
+        selected_nodes_.clear();
+        for (const auto* node : splat_nodes) {
+            selected_nodes_.insert(node->name);
+        }
+        initialized_ = true;
+    }
+
+    // Format selection
+    ImGui::TextColored(t.palette.text_dim, "FORMAT");
+    ImGui::Spacing();
+
+    pushInputStyle(t);
+    int format_idx = static_cast<int>(selected_format_);
+    ImGui::RadioButton("PLY (Standard)", &format_idx, static_cast<int>(ExportFormat::PLY));
+    ImGui::RadioButton("Compressed PLY", &format_idx, static_cast<int>(ExportFormat::COMPRESSED_PLY));
+    ImGui::RadioButton("SOG (SuperSplat)", &format_idx, static_cast<int>(ExportFormat::SOG));
+    ImGui::RadioButton("HTML Viewer", &format_idx, static_cast<int>(ExportFormat::HTML_VIEWER));
+    selected_format_ = static_cast<ExportFormat>(format_idx);
+    popInputStyle();
+
+    ImGui::Spacing();
+    ImGui::Spacing();
+
+    // Model selection
+    ImGui::TextColored(t.palette.text_dim, "MODELS");
+    ImGui::Spacing();
+
+    if (splat_nodes.empty()) {
+        ImGui::TextColored(t.palette.text_dim, "No models in scene");
+    } else {
+        pushButtonStyle(t);
+        if (ImGui::SmallButton("All")) {
             for (const auto* node : splat_nodes) {
                 selected_nodes_.insert(node->name);
             }
-            initialized_ = true;
         }
-
-        // === Format Selection ===
-        ImGui::Text("Export Format");
-        ImGui::Separator();
-
-        int format_idx = static_cast<int>(selected_format_);
-        ImGui::RadioButton("PLY (Standard)", &format_idx, static_cast<int>(ExportFormat::PLY));
-        ImGui::RadioButton("Compressed PLY", &format_idx, static_cast<int>(ExportFormat::COMPRESSED_PLY));
-        ImGui::RadioButton("SOG (SuperSplat)", &format_idx, static_cast<int>(ExportFormat::SOG));
-        ImGui::RadioButton("HTML Viewer", &format_idx, static_cast<int>(ExportFormat::HTML_VIEWER));
-        selected_format_ = static_cast<ExportFormat>(format_idx);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("None")) {
+            selected_nodes_.clear();
+        }
+        popButtonStyle();
 
         ImGui::Spacing();
-        ImGui::Spacing();
 
-        // === Node Selection ===
-        ImGui::Text("Select Models to Export");
-        ImGui::Separator();
-
-        if (splat_nodes.empty()) {
-            ImGui::TextDisabled("No models in scene");
-        } else {
-            if (ImGui::SmallButton("All")) {
-                for (const auto* node : splat_nodes) {
+        pushInputStyle(t);
+        for (const auto* node : splat_nodes) {
+            bool selected = selected_nodes_.contains(node->name);
+            if (ImGui::Checkbox(node->name.c_str(), &selected)) {
+                if (selected) {
                     selected_nodes_.insert(node->name);
+                } else {
+                    selected_nodes_.erase(node->name);
                 }
             }
             ImGui::SameLine();
-            if (ImGui::SmallButton("None")) {
-                selected_nodes_.clear();
-            }
-
-            ImGui::Spacing();
-
-            for (const auto* node : splat_nodes) {
-                bool selected = selected_nodes_.contains(node->name);
-                if (ImGui::Checkbox(node->name.c_str(), &selected)) {
-                    if (selected) {
-                        selected_nodes_.insert(node->name);
-                    } else {
-                        selected_nodes_.erase(node->name);
-                    }
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("(%zu gaussians)", node->gaussian_count);
-            }
+            ImGui::TextColored(t.palette.text_dim, "(%zu)", node->gaussian_count);
         }
-
-        ImGui::Spacing();
-        ImGui::Spacing();
-        ImGui::Separator();
-
-        // === Export Button ===
-        const bool can_export = !selected_nodes_.empty();
-
-        if (!can_export) {
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Select at least one model");
-        }
-
-        ImGui::BeginDisabled(!can_export);
-
-        const char* export_label = selected_nodes_.size() > 1 ? "Export Merged..." : "Export...";
-        if (ImGui::Button(export_label, ImVec2(140, 0))) {
-            if (on_browse_) {
-                // Generate default filename
-                std::string default_name = "export";
-                if (selected_nodes_.size() == 1) {
-                    default_name = *selected_nodes_.begin();
-                } else {
-                    default_name = "merged";
-                }
-
-                std::vector<std::string> nodes(selected_nodes_.begin(), selected_nodes_.end());
-                on_browse_(selected_format_, default_name, nodes);
-            }
-            *p_open = false;
-            initialized_ = false;
-        }
-
-        ImGui::EndDisabled();
-
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
-            *p_open = false;
-            initialized_ = false;
-        }
-
-        ImGui::End();
+        popInputStyle();
     }
+
+    ImGui::Spacing();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Export button
+    const bool can_export = !selected_nodes_.empty();
+
+    if (!can_export) {
+        ImGui::TextColored(t.palette.error, "Select at least one model");
+        ImGui::Spacing();
+    }
+
+    const ImVec4 btn_color = can_export ? t.palette.primary : t.palette.surface_bright;
+    const ImVec4 btn_hover = can_export ? lighten(t.palette.primary, BUTTON_LIGHTEN) : t.palette.surface_bright;
+    const ImVec4 btn_active = can_export ? darken(t.palette.primary, BUTTON_LIGHTEN) : t.palette.surface_bright;
+    const ImVec4 btn_text = can_export ? ImVec4(1, 1, 1, 1) : t.palette.text_dim;
+
+    ImGui::PushStyleColor(ImGuiCol_Button, btn_color);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, btn_hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, btn_active);
+    ImGui::PushStyleColor(ImGuiCol_Text, btn_text);
+
+    ImGui::BeginDisabled(!can_export);
+    const char* label = selected_nodes_.size() > 1 ? "Export Merged..." : "Export...";
+    if (ImGui::Button(label, EXPORT_BUTTON_SIZE)) {
+        if (on_browse_) {
+            const std::string default_name = selected_nodes_.size() == 1
+                ? *selected_nodes_.begin() : "merged";
+            std::vector<std::string> nodes(selected_nodes_.begin(), selected_nodes_.end());
+            on_browse_(selected_format_, default_name, nodes);
+        }
+        *p_open = false;
+        initialized_ = false;
+    }
+    ImGui::EndDisabled();
+    ImGui::PopStyleColor(4);
+
+    ImGui::SameLine();
+
+    pushButtonStyle(t);
+    if (ImGui::Button("Cancel", CANCEL_BUTTON_SIZE)) {
+        *p_open = false;
+        initialized_ = false;
+    }
+    popButtonStyle();
+
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(4);
+}
 
 } // namespace lfs::vis::gui
