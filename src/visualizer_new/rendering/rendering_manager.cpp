@@ -1203,6 +1203,9 @@ namespace lfs::vis {
             .size = render_size,
             .fov = settings_.fov};
 
+        // Reset depth for overlay rendering
+        glClear(GL_DEPTH_BUFFER_BIT);
+
         // Grid
         if (settings_.show_grid && engine_) {
             auto grid_result = engine_->renderGrid(
