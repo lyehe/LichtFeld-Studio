@@ -41,6 +41,7 @@ namespace lfs::vis::input {
         CAMERA_MOVE_UP,
         CAMERA_MOVE_DOWN,
         CAMERA_RESET_HOME,
+        CAMERA_FOCUS_SELECTION,
         CAMERA_SET_PIVOT,
         CAMERA_NEXT_VIEW,
         CAMERA_PREV_VIEW,

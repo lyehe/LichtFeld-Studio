@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <format>
+#include <limits>
 #include <imgui.h>
 #include <ImGuizmo.h>
 
@@ -711,6 +712,10 @@ namespace lfs::vis {
                     publishCameraMove();
                     return;
 
+                case input::Action::CAMERA_FOCUS_SELECTION:
+                    handleFocusSelection();
+                    return;
+
                 case input::Action::CYCLE_PLY:
                     cmd::CyclePLY{}.emit();
                     return;
@@ -1109,6 +1114,56 @@ namespace lfs::vis {
         }
 
         last_camview_ = event.cam_id;
+    }
+
+    void InputController::handleFocusSelection() {
+        if (!tool_context_) return;
+        auto* const sm = tool_context_->getSceneManager();
+        if (!sm) return;
+
+        const auto& scene = sm->getScene();
+        const auto& selected = sm->getSelectedNodeNames();
+
+        glm::vec3 total_min(std::numeric_limits<float>::max());
+        glm::vec3 total_max(std::numeric_limits<float>::lowest());
+
+        // Accumulate world-space AABB from node's local bounds
+        const auto accumulateBounds = [&](const SceneNode* node) {
+            glm::vec3 local_min, local_max;
+            if (!scene.getNodeBounds(node->id, local_min, local_max)) return;
+
+            const glm::mat4 world_xform = scene.getWorldTransform(node->id);
+            for (int i = 0; i < 8; ++i) {
+                const glm::vec3 corner(
+                    (i & 1) ? local_max.x : local_min.x,
+                    (i & 2) ? local_max.y : local_min.y,
+                    (i & 4) ? local_max.z : local_min.z);
+                const glm::vec3 world_pt = glm::vec3(world_xform * glm::vec4(corner, 1.0f));
+                total_min = glm::min(total_min, world_pt);
+                total_max = glm::max(total_max, world_pt);
+            }
+        };
+
+        if (selected.empty()) {
+            // Focus on entire scene (skip group nodes)
+            for (const auto* node : scene.getNodes()) {
+                if (node->type == NodeType::GROUP || node->type == NodeType::CAMERA_GROUP ||
+                    node->type == NodeType::IMAGE_GROUP)
+                    continue;
+                accumulateBounds(node);
+            }
+        } else {
+            // Focus on selected nodes
+            for (const auto& name : selected) {
+                if (const auto* node = scene.getNode(name))
+                    accumulateBounds(node);
+            }
+        }
+
+        if (total_min.x <= total_max.x) {
+            viewport_.camera.focusOnBounds(total_min, total_max);
+            publishCameraMove();
+        }
     }
 
     // Helpers

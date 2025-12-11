@@ -130,6 +130,7 @@ namespace lfs::vis {
         void handleKey(int key, int action, int mods);
         void handleFileDrop(const std::vector<std::string>& paths);
         void handleGoToCamView(const lfs::core::events::cmd::GoToCamView& event);
+        void handleFocusSelection();
 
         // WASD processing with proper frame timing
         void processWASDMovement();

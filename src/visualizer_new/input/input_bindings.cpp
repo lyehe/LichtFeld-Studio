@@ -367,6 +367,7 @@ namespace lfs::vis::input {
             {KeyTrigger{GLFW_KEY_Q, MODIFIER_NONE, true}, Action::CAMERA_MOVE_DOWN, "Down"},
             {KeyTrigger{GLFW_KEY_E, MODIFIER_NONE, true}, Action::CAMERA_MOVE_UP, "Up"},
             {KeyTrigger{GLFW_KEY_H, MODIFIER_NONE}, Action::CAMERA_RESET_HOME, "Home"},
+            {KeyTrigger{GLFW_KEY_F, MODIFIER_NONE}, Action::CAMERA_FOCUS_SELECTION, "Focus selection"},
             {KeyTrigger{GLFW_KEY_RIGHT, MODIFIER_NONE}, Action::CAMERA_NEXT_VIEW, "Next view"},
             {KeyTrigger{GLFW_KEY_LEFT, MODIFIER_NONE}, Action::CAMERA_PREV_VIEW, "Prev view"},
             {KeyTrigger{GLFW_KEY_EQUAL, MODIFIER_CTRL}, Action::CAMERA_SPEED_UP, "Speed up"},
@@ -465,6 +466,7 @@ namespace lfs::vis::input {
         case Action::CAMERA_MOVE_UP: return "Move Up";
         case Action::CAMERA_MOVE_DOWN: return "Move Down";
         case Action::CAMERA_RESET_HOME: return "Go to Home";
+        case Action::CAMERA_FOCUS_SELECTION: return "Focus Selection";
         case Action::CAMERA_SET_PIVOT: return "Set Pivot";
         case Action::CAMERA_NEXT_VIEW: return "Next Camera View";
         case Action::CAMERA_PREV_VIEW: return "Previous Camera View";

@@ -71,6 +71,25 @@ class Viewport {
             pivot = home_pivot;
         }
 
+        // Focus camera on bounding box
+        void focusOnBounds(const glm::vec3& bounds_min, const glm::vec3& bounds_max,
+                          float fov_degrees = lfs::rendering::DEFAULT_FOV,
+                          float padding = 1.2f) {
+            static constexpr float MIN_BOUNDS_DIAGONAL = 0.001f;
+
+            const glm::vec3 center = (bounds_min + bounds_max) * 0.5f;
+            const float diagonal = glm::length(bounds_max - bounds_min);
+            if (diagonal < MIN_BOUNDS_DIAGONAL) return;
+
+            const float half_fov = glm::radians(fov_degrees) * 0.5f;
+            const float distance = (diagonal * 0.5f * padding) / std::tan(half_fov);
+
+            const glm::vec3 backward = -R[2];
+            t = center + backward * distance;
+            pivot = center;
+            R = computeLookAtRotation(t, pivot);
+        }
+
         void rotate(const glm::vec2& pos, bool enforceUpright = false) {
             glm::vec2 delta = pos - prePos;
 
