@@ -29,4 +29,9 @@ namespace lfs::vis::gui::widgets {
 
     // Vignette effect for viewport
     void DrawViewportVignette(const ImVec2& pos, const ImVec2& size);
+
+    // Icon button with selection state styling
+    bool IconButton(const char* id, unsigned int texture, const ImVec2& size, bool selected = false,
+                    const char* fallback_label = "?");
+
 } // namespace lfs::vis::gui::widgets

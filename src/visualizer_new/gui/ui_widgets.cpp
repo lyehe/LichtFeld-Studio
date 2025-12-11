@@ -186,8 +186,8 @@ namespace lfs::vis::gui::widgets {
         const auto& t = theme();
         if (!t.shadows.enabled) return;
 
-        constexpr int LAYER_COUNT = 16;
-        constexpr float FALLOFF_SCALE = 0.12f;
+        constexpr int LAYER_COUNT = 8;
+        constexpr float FALLOFF_SCALE = 0.18f;
         constexpr float ROUNDING_SCALE = 0.3f;
 
         auto* const draw_list = ImGui::GetBackgroundDrawList();
@@ -229,6 +229,36 @@ namespace lfs::vis::gui::widgets {
         draw_list->AddRectFilledMultiColor({x2 - edge_w, y1}, {x2, y2}, TRANSPARENT, dark, dark, TRANSPARENT);
         draw_list->AddRectFilledMultiColor({x1, y1}, {x2, y1 + edge_h}, dark, dark, TRANSPARENT, TRANSPARENT);
         draw_list->AddRectFilledMultiColor({x1, y2 - edge_h}, {x2, y2}, TRANSPARENT, TRANSPARENT, dark, dark);
+    }
+
+    bool IconButton(const char* id, const unsigned int texture, const ImVec2& size,
+                    const bool selected, const char* fallback_label) {
+        constexpr float ACTIVE_DARKEN = 0.1f;
+        constexpr float TINT_BASE = 0.7f;
+        constexpr float TINT_ACCENT = 0.3f;
+        constexpr float FALLBACK_PADDING = 8.0f;
+        constexpr ImVec4 TINT_NORMAL = {1.0f, 1.0f, 1.0f, 0.9f};
+
+        const auto& t = theme();
+        const ImVec4 bg_normal = selected ? t.button_selected() : t.button_normal();
+        const ImVec4 bg_hovered = selected ? t.button_selected_hovered() : t.button_hovered();
+        const ImVec4 bg_active = selected ? darken(t.button_selected(), ACTIVE_DARKEN) : t.button_active();
+        const ImVec4 tint = selected
+            ? ImVec4{TINT_BASE + t.palette.primary.x * TINT_ACCENT,
+                     TINT_BASE + t.palette.primary.y * TINT_ACCENT,
+                     TINT_BASE + t.palette.primary.z * TINT_ACCENT, 1.0f}
+            : TINT_NORMAL;
+
+        ImGui::PushStyleColor(ImGuiCol_Button, bg_normal);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, bg_hovered);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, bg_active);
+
+        const bool clicked = texture
+            ? ImGui::ImageButton(id, static_cast<ImTextureID>(texture), size, {0, 0}, {1, 1}, {0, 0, 0, 0}, tint)
+            : ImGui::Button(fallback_label, {size.x + FALLBACK_PADDING, size.y + FALLBACK_PADDING});
+
+        ImGui::PopStyleColor(3);
+        return clicked;
     }
 
 } // namespace lfs::vis::gui::widgets

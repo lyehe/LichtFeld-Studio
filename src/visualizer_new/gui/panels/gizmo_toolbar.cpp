@@ -232,23 +232,11 @@ namespace lfs::vis::gui::panels {
                     const bool enabled = editor->isToolAvailable(tool);
                     const char* disabled_reason = editor->getToolUnavailableReason(tool);
 
-                    if (!enabled) {
-                        ImGui::BeginDisabled();
-                    }
+                    if (!enabled) ImGui::BeginDisabled();
 
-                    ImGui::PushStyleColor(ImGuiCol_Button, is_selected ? t.button_selected() : t.button_normal());
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_selected ? t.button_selected_hovered() : t.button_hovered());
+                    const bool clicked = widgets::IconButton(id, texture, btn_size, is_selected, fallback);
 
-                    const bool clicked = texture
-                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(texture),
-                                             btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
-                        : ImGui::Button(fallback, btn_size);
-
-                    ImGui::PopStyleColor(2);
-
-                    if (!enabled) {
-                        ImGui::EndDisabled();
-                    }
+                    if (!enabled) ImGui::EndDisabled();
 
                     if (clicked && enabled) {
                         editor->setActiveTool(is_selected ? ToolType::None : tool);
@@ -256,10 +244,10 @@ namespace lfs::vis::gui::panels {
                     }
 
                     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                        if (enabled) {
-                            ImGui::SetTooltip("%s", tooltip);
-                        } else if (disabled_reason) {
+                        if (!enabled && disabled_reason) {
                             ImGui::SetTooltip("%s (%s)", tooltip, disabled_reason);
+                        } else {
+                            ImGui::SetTooltip("%s", tooltip);
                         }
                     }
                 };
@@ -305,16 +293,9 @@ namespace lfs::vis::gui::panels {
                                                          SelectionSubMode mode, const char* fallback,
                                                          const char* tooltip) {
                         const bool is_selected = (state.selection_mode == mode);
-                        ImGui::PushStyleColor(ImGuiCol_Button, is_selected ? t.button_selected() : t.button_normal());
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_selected ? t.button_selected_hovered() : t.button_hovered());
-
-                        const bool clicked = texture
-                            ? ImGui::ImageButton(id, static_cast<ImTextureID>(texture),
-                                                 btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
-                            : ImGui::Button(fallback, btn_size);
-
-                        ImGui::PopStyleColor(2);
-                        if (clicked) state.selection_mode = mode;
+                        if (widgets::IconButton(id, texture, btn_size, is_selected, fallback)) {
+                            state.selection_mode = mode;
+                        }
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
                     };
 
@@ -360,17 +341,10 @@ namespace lfs::vis::gui::panels {
                                              TransformSpace space, const char* fallback,
                                              const char* tooltip) {
                     const bool selected = (state.transform_space == space);
-                    ImGui::PushStyleColor(ImGuiCol_Button, selected ? t.button_selected() : t.button_normal());
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? t.button_selected_hovered() : t.button_hovered());
-
-                    const bool clicked = tex
-                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(tex),
-                                             btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
-                        : ImGui::Button(fallback, btn_size);
-
-                    ImGui::PopStyleColor(2);
-                    if (clicked) { state.transform_space = space; }
-                    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", tooltip); }
+                    if (widgets::IconButton(id, tex, btn_size, selected, fallback)) {
+                        state.transform_space = space;
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
                 };
 
                 SpaceButton("##local", state.local_texture, TransformSpace::Local, "L", "Local Space");
@@ -400,17 +374,10 @@ namespace lfs::vis::gui::panels {
                                               CropBoxOperation op, const char* fallback,
                                               const char* tooltip) {
                     const bool selected = (state.cropbox_operation == op);
-                    ImGui::PushStyleColor(ImGuiCol_Button, selected ? t.button_selected() : t.button_normal());
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? t.button_selected_hovered() : t.button_hovered());
-
-                    const bool clicked = tex
-                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(tex),
-                                             btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
-                        : ImGui::Button(fallback, btn_size);
-
-                    ImGui::PopStyleColor(2);
-                    if (clicked) { state.cropbox_operation = op; }
-                    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("%s", tooltip); }
+                    if (widgets::IconButton(id, tex, btn_size, selected, fallback)) {
+                        state.cropbox_operation = op;
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
                 };
 
                 CropOpButton("##crop_bounds", state.bounds_texture, CropBoxOperation::Bounds, "B", "Resize Bounds");
@@ -422,15 +389,10 @@ namespace lfs::vis::gui::panels {
                 CropOpButton("##crop_scale", state.scaling_texture, CropBoxOperation::Scale, "S", "Scale");
                 ImGui::SameLine();
 
-                ImGui::PushStyleColor(ImGuiCol_Button, t.button_normal());
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, t.button_hovered());
-                const bool reset_clicked = state.reset_texture
-                    ? ImGui::ImageButton("##crop_reset", static_cast<ImTextureID>(state.reset_texture),
-                                         btn_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0))
-                    : ImGui::Button("X", btn_size);
-                ImGui::PopStyleColor(2);
-                if (reset_clicked) { state.reset_cropbox_requested = true; }
-                if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Reset to Default"); }
+                if (widgets::IconButton("##crop_reset", state.reset_texture, btn_size, false, "X")) {
+                    state.reset_cropbox_requested = true;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reset to Default");
             }
             ImGui::End();
         }
@@ -480,39 +442,25 @@ namespace lfs::vis::gui::panels {
             const ImVec2 btn_size{t.sizes.toolbar_button_size, t.sizes.toolbar_button_size};
 
             // Home
-            ImGui::PushStyleColor(ImGuiCol_Button, t.button_normal());
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, t.button_hovered());
-            const bool home_clicked = state.home_texture
-                ? ImGui::ImageButton("##home", static_cast<ImTextureID>(state.home_texture), btn_size, {0,0}, {1,1}, {0,0,0,0})
-                : ImGui::Button("H", btn_size);
-            ImGui::PopStyleColor(2);
-            if (home_clicked) lfs::core::events::cmd::ResetCamera{}.emit();
+            if (widgets::IconButton("##home", state.home_texture, btn_size, false, "H")) {
+                lfs::core::events::cmd::ResetCamera{}.emit();
+            }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Home (H)");
 
             // Fullscreen
             const auto fs_tex = is_fullscreen ? state.exit_fullscreen_texture : state.fullscreen_texture;
-            ImGui::PushStyleColor(ImGuiCol_Button, is_fullscreen ? t.button_selected() : t.button_normal());
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, is_fullscreen ? t.button_selected_hovered() : t.button_hovered());
-            if (fs_tex
-                ? ImGui::ImageButton("##fullscreen", static_cast<ImTextureID>(fs_tex), btn_size, {0,0}, {1,1}, {0,0,0,0})
-                : ImGui::Button("F", btn_size)) {
+            if (widgets::IconButton("##fullscreen", fs_tex, btn_size, is_fullscreen, "F")) {
                 lfs::core::events::ui::ToggleFullscreen{}.emit();
             }
-            ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fullscreen (F11)");
 
             // Toggle UI
-            ImGui::PushStyleColor(ImGuiCol_Button, ui_hidden ? t.button_selected() : t.button_normal());
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ui_hidden ? t.button_selected_hovered() : t.button_hovered());
-            if (state.hide_ui_texture
-                ? ImGui::ImageButton("##hide_ui", static_cast<ImTextureID>(state.hide_ui_texture), btn_size, {0,0}, {1,1}, {0,0,0,0})
-                : ImGui::Button("H", btn_size)) {
+            if (widgets::IconButton("##hide_ui", state.hide_ui_texture, btn_size, ui_hidden, "U")) {
                 lfs::core::events::ui::ToggleUI{}.emit();
             }
-            ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Toggle UI (F12)");
 
-            // Visualization mode buttons (only if render_manager provided)
+            // Visualization mode buttons
             if (render_manager) {
                 ImGui::Spacing();
                 ImGui::Separator();
@@ -520,17 +468,11 @@ namespace lfs::vis::gui::panels {
 
                 const auto current = getCurrentVisualization(render_manager->getSettings());
 
-                // Helper for visualization buttons
                 const auto vizButton = [&](const char* id, unsigned int tex, const char* fallback,
                                            RenderVisualization mode, const char* tooltip) {
-                    const bool selected = (current == mode);
-                    ImGui::PushStyleColor(ImGuiCol_Button, selected ? t.button_selected() : t.button_normal());
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, selected ? t.button_selected_hovered() : t.button_hovered());
-                    const bool clicked = tex
-                        ? ImGui::ImageButton(id, static_cast<ImTextureID>(tex), btn_size, {0,0}, {1,1}, {0,0,0,0})
-                        : ImGui::Button(fallback, btn_size);
-                    if (clicked) setVisualization(render_manager, mode);
-                    ImGui::PopStyleColor(2);
+                    if (widgets::IconButton(id, tex, btn_size, current == mode, fallback)) {
+                        setVisualization(render_manager, mode);
+                    }
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
                 };
 
