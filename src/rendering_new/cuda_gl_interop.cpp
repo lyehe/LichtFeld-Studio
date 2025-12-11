@@ -378,10 +378,8 @@ namespace lfs::rendering {
                                                cudaGetErrorString(err)));
         }
 
-        // Synchronize to ensure copy is complete
-        cudaDeviceSynchronize();
-
-        LOG_TRACE("Successfully updated texture from CUDA tensor");
+        // cudaGraphicsUnmapResources provides sync; explicit sync would block on VSync
+        LOG_TRACE("Updated texture from CUDA tensor");
         return {};
     }
 
@@ -630,7 +628,7 @@ namespace lfs::rendering {
     }
 
     void InteropFrameBuffer::resize(int new_width, int new_height) {
-        LOG_TRACE("Resizing InteropFrameBuffer from {}x{} to {}x{}", width, height, new_width, new_height);
+        LOG_TRACE("InteropFrameBuffer::resize {}x{} -> {}x{}", width, height, new_width, new_height);
         FrameBuffer::resize(new_width, new_height);
         if (use_interop_ && interop_texture_) {
             if (auto result = interop_texture_->resize(new_width, new_height); !result) {

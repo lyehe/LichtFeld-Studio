@@ -351,6 +351,7 @@ namespace lfs::rendering {
         const RenderResult& result,
         const glm::ivec2& viewport_pos,
         const glm::ivec2& viewport_size) {
+        LOG_TIMER_TRACE("RenderingEngineImpl::presentToScreen");
 
         if (!isInitialized()) {
             LOG_ERROR("Rendering engine not initialized");
@@ -379,7 +380,6 @@ namespace lfs::rendering {
 
         glViewport(viewport_pos.x, viewport_pos.y, viewport_size.x, viewport_size.y);
 
-        // Use the quad shader directly
         return screen_renderer_->render(quad_shader_);
     }
 

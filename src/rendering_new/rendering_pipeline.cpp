@@ -626,6 +626,7 @@ namespace lfs::rendering {
         const RenderResult& result,
         ScreenQuadRenderer& renderer,
         const glm::ivec2& viewport_size) {
+        LOG_TIMER_TRACE("RenderingPipeline::uploadToScreen");
 
         if (!result.valid || !result.image.is_valid()) {
             LOG_ERROR("Invalid render result for upload");

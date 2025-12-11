@@ -299,10 +299,10 @@ namespace lfs::vis {
         ui::WindowResized::when([this](const auto&) {
             LOG_DEBUG("Window resized, clearing render cache");
             markDirty();
-            cached_result_ = {};                  // Clear cache on resize
-            last_render_size_ = glm::ivec2(0, 0); // Force size update
+            cached_result_ = {};
+            last_render_size_ = glm::ivec2(0, 0);
             render_texture_valid_ = false;
-            gt_texture_cache_.clear(); // Clear GT cache on resize to avoid scaling issues
+            gt_texture_cache_.clear();
         });
 
         // Grid settings
@@ -477,6 +477,7 @@ namespace lfs::vis {
     }
 
     void RenderingManager::renderToTexture(const RenderContext& context, SceneManager* scene_manager, const lfs::core::SplatData* model) {
+        LOG_TIMER_TRACE("RenderingManager::renderToTexture");
         if (!model || model->size() == 0) {
             render_texture_valid_ = false;
             return;
@@ -630,10 +631,10 @@ namespace lfs::vis {
                 .transform = settings_.depth_filter_transform.inv().toMat4()};
         }
 
-        // Render the gaussians
-        auto render_result = engine_->renderGaussians(*model, request);
+        const auto render_result = engine_->renderGaussians(*model, request);
         if (render_result) {
             cached_result_ = *render_result;
+            render_texture_valid_ = true;
 
             // Copy packed depth+id back and extract gaussian ID
             if (need_hovered_output) {
@@ -645,21 +646,8 @@ namespace lfs::vis {
                     hovered_gaussian_id_ = static_cast<int>(hovered_depth_id_ & 0xFFFFFFFF);
                 }
             }
-
-            // Present to texture
-            auto present_result = engine_->presentToScreen(
-                cached_result_,
-                glm::ivec2(0, 0),
-                render_size);
-
-            if (present_result) {
-                render_texture_valid_ = true;
-            } else {
-                LOG_ERROR("Failed to present to texture: {}", present_result.error());
-                render_texture_valid_ = false;
-            }
         } else {
-            LOG_ERROR("Failed to render gaussians to texture: {}", render_result.error());
+            LOG_ERROR("Failed to render gaussians: {}", render_result.error());
             render_texture_valid_ = false;
         }
 
@@ -700,20 +688,15 @@ namespace lfs::vis {
             return;
         }
 
-        // Detect viewport size change and invalidate cache
         if (current_size != last_render_size_) {
-            LOG_TRACE("Viewport size changed from {}x{} to {}x{}",
-                      last_render_size_.x, last_render_size_.y,
+            LOG_DEBUG("Viewport resize: {}x{} -> {}x{}", last_render_size_.x, last_render_size_.y,
                       current_size.x, current_size.y);
             needs_render_ = true;
-            cached_result_ = {};
-            render_texture_valid_ = false;
             last_render_size_ = current_size;
         }
 
-        // Get current model
-        const lfs::core::SplatData* model = scene_manager ? scene_manager->getModelForRendering() : nullptr;
-        size_t model_ptr = reinterpret_cast<size_t>(model);
+        const lfs::core::SplatData* const model = scene_manager ? scene_manager->getModelForRendering() : nullptr;
+        const size_t model_ptr = reinterpret_cast<size_t>(model);
 
         // Detect model switch
         if (model_ptr != last_model_ptr_) {
@@ -724,7 +707,6 @@ namespace lfs::vis {
             cached_result_ = {};
         }
 
-        // Check if split view is enabled
         bool split_view_active = settings_.split_view_mode != SplitViewMode::Disabled;
 
         // For GT comparison, ensure we have a valid render texture
@@ -764,11 +746,7 @@ namespace lfs::vis {
 
         glViewport(0, 0, context.viewport.frameBufferSize.x, context.viewport.frameBufferSize.y);
 
-        // Clear full framebuffer to prevent trails on viewport resize
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // Set viewport region with scissor clipping (flip Y for OpenGL)
+        // Set viewport region with scissor clipping (Y flipped for OpenGL)
         if (context.viewport_region) {
             const GLint x = static_cast<GLint>(context.viewport_region->x);
             const GLint y = context.viewport.frameBufferSize.y
@@ -784,18 +762,17 @@ namespace lfs::vis {
             doFullRender(context, scene_manager, model);
         } else if (cached_result_.image) {
             glm::ivec2 viewport_pos(0, 0);
-            glm::ivec2 render_size = current_size;
+            const glm::ivec2 render_size = current_size;
 
             if (context.viewport_region) {
-                // Convert ImGui Y (top=0) to OpenGL Y (bottom=0)
-                int gl_y = context.viewport.frameBufferSize.y
-                           - static_cast<int>(context.viewport_region->y)
-                           - static_cast<int>(context.viewport_region->height);
-                viewport_pos = glm::ivec2(
-                    static_cast<int>(context.viewport_region->x),
-                    gl_y);
+                const int gl_y = context.viewport.frameBufferSize.y
+                               - static_cast<int>(context.viewport_region->y)
+                               - static_cast<int>(context.viewport_region->height);
+                viewport_pos = glm::ivec2(static_cast<int>(context.viewport_region->x), gl_y);
             }
 
+            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             engine_->presentToScreen(cached_result_, viewport_pos, render_size);
             renderOverlays(context);
         }
@@ -807,7 +784,7 @@ namespace lfs::vis {
     }
 
     void RenderingManager::doFullRender(const RenderContext& context, SceneManager* scene_manager, const lfs::core::SplatData* model) {
-        LOG_TIMER_TRACE("Full render pass");
+        LOG_TIMER_TRACE("RenderingManager::doFullRender");
 
         render_count_++;
         LOG_TRACE("Render #{}, pick_requested: {}", render_count_, pick_requested_);
@@ -857,16 +834,18 @@ namespace lfs::vis {
             if (render_texture_valid_) {
                 glm::ivec2 viewport_pos(0, 0);
                 if (context.viewport_region) {
-                    // Convert ImGui Y (top=0) to OpenGL Y (bottom=0)
-                    int gl_y = context.viewport.frameBufferSize.y
-                               - static_cast<int>(context.viewport_region->y)
-                               - static_cast<int>(context.viewport_region->height);
-                    viewport_pos = glm::ivec2(
-                        static_cast<int>(context.viewport_region->x),
-                        gl_y);
+                    const int gl_y = context.viewport.frameBufferSize.y
+                                   - static_cast<int>(context.viewport_region->y)
+                                   - static_cast<int>(context.viewport_region->height);
+                    viewport_pos = glm::ivec2(static_cast<int>(context.viewport_region->x), gl_y);
                 }
 
-                auto present_result = engine_->presentToScreen(
+                glViewport(viewport_pos.x, viewport_pos.y, render_size.x, render_size.y);
+                glClearColor(settings_.background_color.r, settings_.background_color.g,
+                             settings_.background_color.b, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                const auto present_result = engine_->presentToScreen(
                     cached_result_,
                     viewport_pos,
                     render_size);
@@ -998,18 +977,20 @@ namespace lfs::vis {
                 if (render_result) {
                     cached_result_ = *render_result;
 
-                    // Present to screen
                     glm::ivec2 viewport_pos(0, 0);
                     if (context.viewport_region) {
-                        int gl_y = context.viewport.frameBufferSize.y
-                                   - static_cast<int>(context.viewport_region->y)
-                                   - static_cast<int>(context.viewport_region->height);
-                        viewport_pos = glm::ivec2(
-                            static_cast<int>(context.viewport_region->x),
-                            gl_y);
+                        const int gl_y = context.viewport.frameBufferSize.y
+                                       - static_cast<int>(context.viewport_region->y)
+                                       - static_cast<int>(context.viewport_region->height);
+                        viewport_pos = glm::ivec2(static_cast<int>(context.viewport_region->x), gl_y);
                     }
 
-                    auto present_result = engine_->presentToScreen(cached_result_, viewport_pos, render_size);
+                    glViewport(viewport_pos.x, viewport_pos.y, render_size.x, render_size.y);
+                    glClearColor(settings_.background_color.r, settings_.background_color.g,
+                                 settings_.background_color.b, 1.0f);
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                    const auto present_result = engine_->presentToScreen(cached_result_, viewport_pos, render_size);
                     if (!present_result) {
                         LOG_ERROR("Failed to present point cloud render result: {}", present_result.error());
                     }
