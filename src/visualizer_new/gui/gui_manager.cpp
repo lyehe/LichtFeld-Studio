@@ -393,14 +393,17 @@ namespace lfs::vis::gui {
             .window_states = &window_states_,
             .editor = &editor_ctx};
 
-        // Right panel (stops at status bar)
+        // Right panel
         if (show_main_panel_ && !ui_hidden_) {
             const auto* const vp = ImGui::GetMainViewport();
             const float panel_h = vp->WorkSize.y - STATUS_BAR_HEIGHT;
-            right_panel_width_ = std::clamp(right_panel_width_, RIGHT_PANEL_MIN_WIDTH, RIGHT_PANEL_MAX_WIDTH);
+            const float min_w = vp->WorkSize.x * RIGHT_PANEL_MIN_RATIO;
+            const float max_w = vp->WorkSize.x * RIGHT_PANEL_MAX_RATIO;
+            right_panel_width_ = std::clamp(right_panel_width_, min_w, max_w);
 
-            ImGui::SetNextWindowPos({vp->WorkPos.x + vp->WorkSize.x - right_panel_width_, vp->WorkPos.y}, ImGuiCond_Always);
-            ImGui::SetNextWindowSizeConstraints({RIGHT_PANEL_MIN_WIDTH, panel_h}, {RIGHT_PANEL_MAX_WIDTH, panel_h});
+            const float panel_x = vp->WorkPos.x + vp->WorkSize.x - right_panel_width_;
+            ImGui::SetNextWindowPos({panel_x, vp->WorkPos.y}, ImGuiCond_Always);
+            ImGui::SetNextWindowSize({right_panel_width_, panel_h}, ImGuiCond_Always);
 
             constexpr ImGuiWindowFlags PANEL_FLAGS =
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
@@ -411,8 +414,26 @@ namespace lfs::vis::gui {
             ImGui::PushStyleColor(ImGuiCol_WindowBg, withAlpha(t.palette.surface, 0.95f));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {8.0f, 8.0f});
 
+            // Left edge resize handle
+            constexpr float EDGE_GRAB_W = 8.0f;
+            const auto& io = ImGui::GetIO();
+            hovering_panel_edge_ = io.MousePos.x >= panel_x - EDGE_GRAB_W &&
+                                   io.MousePos.x <= panel_x + EDGE_GRAB_W &&
+                                   io.MousePos.y >= vp->WorkPos.y &&
+                                   io.MousePos.y <= vp->WorkPos.y + panel_h;
+
+            if (hovering_panel_edge_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                resizing_panel_ = true;
+            if (resizing_panel_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+                resizing_panel_ = false;
+            if (resizing_panel_) {
+                right_panel_width_ = std::clamp(right_panel_width_ - io.MouseDelta.x, min_w, max_w);
+                updateViewportRegion();
+            }
+            if (hovering_panel_edge_ || resizing_panel_)
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+
             if (ImGui::Begin("##RightPanel", nullptr, PANEL_FLAGS)) {
-                right_panel_width_ = ImGui::GetWindowSize().x;
                 const float avail_h = ImGui::GetContentRegionAvail().y;
                 constexpr float SPLITTER_H = 6.0f, MIN_H = 80.0f;
 
@@ -477,9 +498,12 @@ namespace lfs::vis::gui {
             ImGui::End();
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
+        } else {
+            hovering_panel_edge_ = false;
+            resizing_panel_ = false;
         }
 
-        // Render floating windows (these remain movable)
+        // Render floating windows
         if (window_states_["file_browser"]) {
             file_browser_->render(&window_states_["file_browser"]);
         }

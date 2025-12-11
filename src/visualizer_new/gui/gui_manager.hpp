@@ -68,6 +68,7 @@ namespace lfs::vis {
             bool isViewportFocused() const;
             bool isPositionInViewport(double x, double y) const;
             bool isViewportGizmoDragging() const { return viewport_gizmo_dragging_; }
+            bool isResizingPanel() const { return resizing_panel_ || hovering_panel_edge_; }
             bool isPositionInViewportGizmo(double x, double y) const;
 
             // Crop box gizmo state access
@@ -132,8 +133,10 @@ namespace lfs::vis {
             // Right panel state
             float right_panel_width_ = 300.0f;
             float scene_panel_ratio_ = 0.4f;
-            static constexpr float RIGHT_PANEL_MIN_WIDTH = 200.0f;
-            static constexpr float RIGHT_PANEL_MAX_WIDTH = 600.0f;
+            bool resizing_panel_ = false;
+            bool hovering_panel_edge_ = false;
+            static constexpr float RIGHT_PANEL_MIN_RATIO = 0.01f;
+            static constexpr float RIGHT_PANEL_MAX_RATIO = 0.99f;
 
             // Viewport gizmo layout (must match ViewportGizmo settings)
             static constexpr float VIEWPORT_GIZMO_SIZE = 95.0f;

@@ -259,7 +259,8 @@ namespace lfs::vis {
             return;
         }
 
-        const bool over_gui = ImGui::GetIO().WantCaptureMouse;
+        const bool over_gui = ImGui::GetIO().WantCaptureMouse ||
+                              (gui_manager_ && gui_manager_->isResizingPanel());
         const bool over_gizmo = gui_manager_ && gui_manager_->isPositionInViewportGizmo(x, y);
 
         // Single binding lookup with current tool mode
