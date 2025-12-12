@@ -249,23 +249,25 @@ namespace lfs::rendering {
             }
         }
 
-        // Save current OpenGL state
-        GLint current_viewport[4];
-        GLint current_fbo;
-        glGetIntegerv(GL_VIEWPORT, current_viewport);
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo);
+        // Save GL state for FBO rendering
+        GLint saved_viewport[4];
+        GLint saved_fbo;
+        glGetIntegerv(GL_VIEWPORT, saved_viewport);
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &saved_fbo);
+        const GLboolean saved_scissor = glIsEnabled(GL_SCISSOR_TEST);
+        if (saved_scissor) glDisable(GL_SCISSOR_TEST);
 
-        // RAII guard to restore state
-        struct StateGuard {
-            GLint viewport[4];
-            GLint fbo;
+        // RAII restore
+        const struct StateGuard {
+            const GLint* vp;
+            const GLint fbo;
+            const GLboolean scissor;
             ~StateGuard() {
                 glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-                glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+                glViewport(vp[0], vp[1], vp[2], vp[3]);
+                if (scissor) glEnable(GL_SCISSOR_TEST);
             }
-        } state_guard{
-            {current_viewport[0], current_viewport[1], current_viewport[2], current_viewport[3]},
-            current_fbo};
+        } guard{saved_viewport, saved_fbo, saved_scissor};
 
         // Create view matrix using the same convention as Viewport::getViewMatrix()
         glm::mat3 flip_yz = glm::mat3(
@@ -451,23 +453,25 @@ namespace lfs::rendering {
             }
         }
 
-        // Save current OpenGL state
-        GLint current_viewport[4];
-        GLint current_fbo;
-        glGetIntegerv(GL_VIEWPORT, current_viewport);
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo);
+        // Save GL state for FBO rendering
+        GLint saved_viewport[4];
+        GLint saved_fbo;
+        glGetIntegerv(GL_VIEWPORT, saved_viewport);
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &saved_fbo);
+        const GLboolean saved_scissor = glIsEnabled(GL_SCISSOR_TEST);
+        if (saved_scissor) glDisable(GL_SCISSOR_TEST);
 
-        // RAII guard to restore state
-        struct StateGuard {
-            GLint viewport[4];
-            GLint fbo;
+        // RAII restore
+        const struct StateGuard {
+            const GLint* vp;
+            const GLint fbo;
+            const GLboolean scissor;
             ~StateGuard() {
                 glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-                glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+                glViewport(vp[0], vp[1], vp[2], vp[3]);
+                if (scissor) glEnable(GL_SCISSOR_TEST);
             }
-        } state_guard{
-            {current_viewport[0], current_viewport[1], current_viewport[2], current_viewport[3]},
-            current_fbo};
+        } guard{saved_viewport, saved_fbo, saved_scissor};
 
         // Create view matrix using the same convention as Viewport::getViewMatrix()
         glm::mat3 flip_yz = glm::mat3(
