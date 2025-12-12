@@ -572,7 +572,7 @@ namespace lfs::rendering {
     }
 
     void RenderingEngineImpl::clearFrustumCache() {
-        camera_frustum_renderer_.clearThumbnailCache();
+        camera_frustum_renderer_.clearCache();
     }
 
     RenderingPipelineResult RenderingEngineImpl::renderWithPipeline(
