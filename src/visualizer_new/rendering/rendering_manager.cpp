@@ -14,7 +14,9 @@
 #include "rendering_new/rendering.hpp"
 #include "scene/scene_manager.hpp"
 #include "training/training_manager.hpp"
+#include "training_new/trainer.hpp"
 #include <cuda_runtime.h>
+#include <shared_mutex>
 #include <glad/glad.h>
 #include <stdexcept>
 
@@ -706,6 +708,14 @@ namespace lfs::vis {
 
         const lfs::core::SplatData* const model = scene_manager ? scene_manager->getModelForRendering() : nullptr;
         const size_t model_ptr = reinterpret_cast<size_t>(model);
+
+        // Lock model during render to prevent tensor replacement
+        std::shared_lock<std::shared_mutex> render_lock;
+        if (const auto* tm = scene_manager ? scene_manager->getTrainerManager() : nullptr) {
+            if (const auto* trainer = tm->getTrainer()) {
+                render_lock = std::shared_lock{trainer->getRenderMutex()};
+            }
+        }
 
         // Detect model switch
         if (model_ptr != last_model_ptr_) {

@@ -130,8 +130,6 @@ namespace lfs::vis {
         void copySelection();
         void pasteSelection();
 
-        std::shared_ptr<TrainerManager> trainer_manager_;
-
         // GUI manager
         std::unique_ptr<gui::GuiManager> gui_manager_;
         friend class gui::GuiManager;
@@ -167,6 +165,7 @@ namespace lfs::vis {
         std::unique_ptr<InputController> input_controller_;
         std::unique_ptr<RenderingManager> rendering_manager_;
         std::unique_ptr<SceneManager> scene_manager_;
+        std::shared_ptr<TrainerManager> trainer_manager_;
         std::unique_ptr<DataLoadingService> data_loader_;
         std::unique_ptr<MainLoop> main_loop_;
 
