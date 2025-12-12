@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "camera_frustum_renderer.hpp"
+#include "core_new/image_io.hpp"
 #include "core_new/logger.hpp"
 #include "gl_state_guard.hpp"
+#include "loader_new/nvcodec_image_loader.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace lfs::rendering {
@@ -17,11 +19,28 @@ namespace {
     constexpr float MIN_RENDER_ALPHA = 0.01f;
     constexpr float WIREFRAME_WIDTH = 1.5f;
     constexpr int PICKING_SAMPLE_SIZE = 3;
+    constexpr int NVCODEC_DECODER_POOL_SIZE = 4;
+    constexpr int INITIAL_TEXTURE_ARRAY_CAPACITY = 256;
 
     const glm::mat4 GL_TO_COLMAP = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
 }
 
-void CameraFrustumRenderer::clearCache() {
+CameraFrustumRenderer::~CameraFrustumRenderer() {
+    stopThumbnailLoader();
+}
+
+void CameraFrustumRenderer::clearThumbnailCache() {
+    const std::scoped_lock lock(pending_mutex_, load_queue_mutex_, ready_queue_mutex_);
+
+    thumbnail_pending_.clear();
+    thumbnail_load_queue_ = {};
+    thumbnail_ready_queue_ = {};
+
+    thumbnail_array_ = Texture{};
+    thumbnail_array_capacity_ = 0;
+    thumbnail_array_count_ = 0;
+    uid_to_layer_.clear();
+
     cached_instances_.clear();
     camera_ids_.clear();
     camera_positions_.clear();
@@ -49,6 +68,7 @@ Result<void> CameraFrustumRenderer::init() {
         return result;
     }
 
+    startThumbnailLoader();
     initialized_ = true;
     LOG_INFO("Camera frustum renderer initialized");
     return {};
@@ -232,7 +252,7 @@ void CameraFrustumRenderer::prepareInstances(
             }
         }
 
-        cached_instances_.push_back({model, color, alpha, is_validation ? 1u : 0u, {0, 0, 0}});
+        cached_instances_.push_back({model, color, alpha, 0, is_validation ? 1u : 0u, {0, 0}});
         camera_ids_.push_back(cam->uid());
     }
 
@@ -278,6 +298,8 @@ Result<void> CameraFrustumRenderer::render(
 
     if (!initialized_ || cameras.empty()) return {};
 
+    uploadReadyThumbnails();
+
     const glm::vec3 view_position = glm::vec3(glm::inverse(view)[3]);
     prepareInstances(cameras, scale, train_color, eval_color, false, view_position, scene_transform);
 
@@ -285,13 +307,18 @@ Result<void> CameraFrustumRenderer::render(
 
     std::vector<InstanceData> visible_instances;
     std::vector<int> visible_indices;
+    std::vector<std::shared_ptr<const lfs::core::Camera>> visible_cameras;
     visible_instances.reserve(cached_instances_.size());
     visible_indices.reserve(cached_instances_.size());
+    visible_cameras.reserve(cached_instances_.size());
 
     for (size_t i = 0; i < cached_instances_.size(); ++i) {
         if (cached_instances_[i].alpha > MIN_RENDER_ALPHA) {
             visible_instances.push_back(cached_instances_[i]);
             visible_indices.push_back(static_cast<int>(i));
+            if (i < cameras.size()) {
+                visible_cameras.push_back(cameras[i]);
+            }
         }
     }
 
@@ -341,8 +368,13 @@ Result<void> CameraFrustumRenderer::render(
 
                 glEnableVertexAttribArray(7);
                 glVertexAttribIPointer(7, 1, GL_UNSIGNED_INT, sizeof(InstanceData),
-                                       reinterpret_cast<void*>(offsetof(InstanceData, is_validation)));
+                                       reinterpret_cast<void*>(offsetof(InstanceData, texture_id)));
                 glVertexAttribDivisor(7, 1);
+
+                glEnableVertexAttribArray(8);
+                glVertexAttribIPointer(8, 1, GL_UNSIGNED_INT, sizeof(InstanceData),
+                                       reinterpret_cast<void*>(offsetof(InstanceData, is_validation)));
+                glVertexAttribDivisor(8, 1);
             }
 
             glEnable(GL_DEPTH_TEST);
@@ -351,13 +383,53 @@ Result<void> CameraFrustumRenderer::render(
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+            shader->set("showImages", show_images_ && thumbnail_array_capacity_ > 0);
+            shader->set("imageOpacity", image_opacity_);
+
+            // Set texture IDs for all visible instances (layer index + 1, 0 = no texture)
+            if (show_images_) {
+                for (size_t i = 0; i < visible_instances.size() && i < visible_cameras.size(); ++i) {
+                    visible_instances[i].texture_id = getOrLoadThumbnail(*visible_cameras[i]);
+                }
+
+                // Re-upload instance data with texture IDs
+                {
+                    BufferBinder<GL_ARRAY_BUFFER> instance_bind(instance_vbo_);
+                    upload_buffer(GL_ARRAY_BUFFER, std::span(visible_instances), GL_DYNAMIC_DRAW);
+                }
+
+                // Bind texture array
+                if (thumbnail_array_capacity_ > 0) {
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D_ARRAY, thumbnail_array_);
+                    shader->set("cameraTextures", 0);
+                }
+            }
+
+            // Single batched draw for all textured frustum faces
+            if (show_images_ && thumbnail_array_capacity_ > 0) {
+                BufferBinder<GL_ELEMENT_ARRAY_BUFFER> face_bind(face_ebo_);
+                glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(visible_instances.size()));
+            }
+
+            // Reset texture IDs for wireframe pass
+            if (show_images_) {
+                for (auto& inst : visible_instances) inst.texture_id = 0;
+                {
+                    BufferBinder<GL_ARRAY_BUFFER> instance_bind(instance_vbo_);
+                    upload_buffer(GL_ARRAY_BUFFER, std::span(visible_instances), GL_DYNAMIC_DRAW);
+                }
+                glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+                shader->set("showImages", false);
+            }
+
             glLineWidth(WIREFRAME_WIDTH);
             {
                 BufferBinder<GL_ELEMENT_ARRAY_BUFFER> edge_bind(edge_ebo_);
                 glDrawElementsInstanced(GL_LINES, static_cast<GLsizei>(num_edge_indices_), GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(visible_instances.size()));
             }
 
-            for (int i = 2; i <= 7; ++i) {
+            for (int i = 2; i <= 8; ++i) {
                 glDisableVertexAttribArray(i);
                 glVertexAttribDivisor(i, 0);
             }
@@ -447,8 +519,13 @@ Result<int> CameraFrustumRenderer::pickCamera(
 
             glEnableVertexAttribArray(7);
             glVertexAttribIPointer(7, 1, GL_UNSIGNED_INT, sizeof(InstanceData),
-                                   reinterpret_cast<void*>(offsetof(InstanceData, is_validation)));
+                                   reinterpret_cast<void*>(offsetof(InstanceData, texture_id)));
             glVertexAttribDivisor(7, 1);
+
+            glEnableVertexAttribArray(8);
+            glVertexAttribIPointer(8, 1, GL_UNSIGNED_INT, sizeof(InstanceData),
+                                   reinterpret_cast<void*>(offsetof(InstanceData, is_validation)));
+            glVertexAttribDivisor(8, 1);
         }
 
         glEnable(GL_DEPTH_TEST);
@@ -461,7 +538,7 @@ Result<int> CameraFrustumRenderer::pickCamera(
             glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(num_face_indices_), GL_UNSIGNED_INT, nullptr, static_cast<GLsizei>(cached_instances_.size()));
         }
 
-        for (int i = 2; i <= 7; ++i) {
+        for (int i = 2; i <= 8; ++i) {
             glDisableVertexAttribArray(i);
             glVertexAttribDivisor(i, 0);
         }
@@ -498,6 +575,293 @@ Result<int> CameraFrustumRenderer::pickCamera(
         return camera_ids_[id];
     }
     return -1;
+}
+
+GLuint CameraFrustumRenderer::getOrLoadThumbnail(const lfs::core::Camera& camera) {
+    const int uid = camera.uid();
+
+    // Return layer index + 1 (0 means no texture)
+    if (const auto it = uid_to_layer_.find(uid); it != uid_to_layer_.end()) {
+        return static_cast<GLuint>(it->second + 1);
+    }
+
+    const auto& image_path = camera.image_path();
+    if (image_path.empty() || !std::filesystem::exists(image_path)) {
+        return 0;
+    }
+
+    queueThumbnailLoad(camera);
+    return 0;
+}
+
+void CameraFrustumRenderer::startThumbnailLoader() {
+    if (thumbnail_loader_running_) return;
+
+    thumbnail_loader_running_ = true;
+    thumbnail_loader_thread_ = std::thread(&CameraFrustumRenderer::thumbnailLoaderWorker, this);
+}
+
+void CameraFrustumRenderer::stopThumbnailLoader() {
+    if (!thumbnail_loader_running_) return;
+
+    thumbnail_loader_running_ = false;
+    load_queue_cv_.notify_all();
+
+    if (thumbnail_loader_thread_.joinable()) {
+        thumbnail_loader_thread_.join();
+    }
+}
+
+void CameraFrustumRenderer::thumbnailLoaderWorker() {
+    constexpr auto IDLE_TIMEOUT = std::chrono::seconds(5);
+    constexpr auto POLL_INTERVAL = std::chrono::milliseconds(500);
+
+    std::unique_ptr<lfs::loader::NvCodecImageLoader> nvcodec;
+    const bool nvcodec_supported = lfs::loader::NvCodecImageLoader::is_available();
+    auto last_activity = std::chrono::steady_clock::now();
+
+    const auto create_nvcodec = [&]() -> bool {
+        if (nvcodec || !nvcodec_supported) return nvcodec != nullptr;
+        try {
+            lfs::loader::NvCodecImageLoader::Options opts;
+            opts.device_id = 0;
+            opts.decoder_pool_size = NVCODEC_DECODER_POOL_SIZE;
+            nvcodec = std::make_unique<lfs::loader::NvCodecImageLoader>(opts);
+            return true;
+        } catch (const std::exception& e) {
+            LOG_WARN("nvImageCodec init failed: {}", e.what());
+            return false;
+        }
+    };
+
+    while (thumbnail_loader_running_) {
+        ThumbnailRequest request;
+        bool has_work = false;
+
+        {
+            std::unique_lock lock(load_queue_mutex_);
+            load_queue_cv_.wait_for(lock, POLL_INTERVAL, [this] {
+                return !thumbnail_load_queue_.empty() || !thumbnail_loader_running_;
+            });
+
+            if (!thumbnail_loader_running_) break;
+
+            if (!thumbnail_load_queue_.empty()) {
+                request = std::move(thumbnail_load_queue_.front());
+                thumbnail_load_queue_.pop();
+                has_work = true;
+                last_activity = std::chrono::steady_clock::now();
+            }
+        }
+
+        // Release nvcodec after idle timeout to free CUDA resources for training
+        if (!has_work) {
+            if (nvcodec && (std::chrono::steady_clock::now() - last_activity) > IDLE_TIMEOUT) {
+                LOG_DEBUG("Releasing idle thumbnail nvcodec");
+                nvcodec.reset();
+            }
+            continue;
+        }
+
+        LoadedThumbnail loaded;
+        loaded.camera_uid = request.camera_uid;
+
+        try {
+            std::string ext = request.image_path.extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+            bool loaded_with_nvcodec = false;
+            const bool is_jpeg = (ext == ".jpg" || ext == ".jpeg");
+
+            if (is_jpeg && create_nvcodec()) {
+                try {
+                    const int max_dim = std::max(request.image_width, request.image_height);
+                    int pot_resize = 1;
+                    while (pot_resize * 2 <= max_dim / THUMBNAIL_SIZE) {
+                        pot_resize *= 2;
+                    }
+
+                    auto tensor = nvcodec->load_image_gpu(request.image_path, pot_resize, THUMBNAIL_SIZE);
+                    auto cpu_tensor = tensor.cpu().contiguous();
+                    const auto shape = cpu_tensor.shape();
+                    const int c = shape[0], h = shape[1], w = shape[2];
+
+                    if (c != 3) throw std::runtime_error("Expected 3 channels");
+
+                    loaded.width = w;
+                    loaded.height = h;
+                    loaded.pixel_data.resize(w * h * 3);
+
+                    // CHW (channel-first) to HWC (interleaved) with Y-flip
+                    const float* src = cpu_tensor.ptr<float>();
+                    const int plane_size = h * w;
+                    const float* r_plane = src;
+                    const float* g_plane = src + plane_size;
+                    const float* b_plane = src + 2 * plane_size;
+
+                    for (int y = 0; y < h; ++y) {
+                        const int src_y = h - 1 - y;
+                        uint8_t* dst_row = loaded.pixel_data.data() + y * w * 3;
+                        const float* r_row = r_plane + src_y * w;
+                        const float* g_row = g_plane + src_y * w;
+                        const float* b_row = b_plane + src_y * w;
+
+                        for (int x = 0; x < w; ++x) {
+                            dst_row[x * 3] = static_cast<uint8_t>(std::clamp(r_row[x] * 255.0f, 0.0f, 255.0f));
+                            dst_row[x * 3 + 1] = static_cast<uint8_t>(std::clamp(g_row[x] * 255.0f, 0.0f, 255.0f));
+                            dst_row[x * 3 + 2] = static_cast<uint8_t>(std::clamp(b_row[x] * 255.0f, 0.0f, 255.0f));
+                        }
+                    }
+                    loaded_with_nvcodec = true;
+                } catch (...) {}
+            }
+
+            if (!loaded_with_nvcodec) {
+                auto [data, width, height, channels] = lfs::core::load_image(request.image_path, -1, THUMBNAIL_SIZE);
+                if (!data) continue;
+
+                loaded.width = width;
+                loaded.height = height;
+                loaded.pixel_data.resize(width * height * 3);
+
+                for (int y = 0; y < height; ++y) {
+                    std::memcpy(loaded.pixel_data.data() + y * width * 3,
+                                data + (height - 1 - y) * width * 3,
+                                width * 3);
+                }
+                lfs::core::free_image(data);
+            }
+
+            {
+                std::lock_guard lock(ready_queue_mutex_);
+                thumbnail_ready_queue_.push(std::move(loaded));
+            }
+
+        } catch (const std::exception& e) {
+            LOG_WARN("Thumbnail load failed for camera {}: {}", request.camera_uid, e.what());
+            std::lock_guard lock(pending_mutex_);
+            thumbnail_pending_.erase(request.camera_uid);
+        }
+    }
+}
+
+void CameraFrustumRenderer::queueThumbnailLoad(const lfs::core::Camera& camera) {
+    const int uid = camera.uid();
+
+    {
+        std::lock_guard lock(pending_mutex_);
+        if (thumbnail_pending_.contains(uid) || uid_to_layer_.contains(uid)) {
+            return;
+        }
+        thumbnail_pending_.insert(uid);
+    }
+
+    ThumbnailRequest request{
+        .camera_uid = uid,
+        .image_path = camera.image_path(),
+        .image_width = camera.image_width(),
+        .image_height = camera.image_height()
+    };
+
+    {
+        std::lock_guard lock(load_queue_mutex_);
+        thumbnail_load_queue_.push(std::move(request));
+    }
+    load_queue_cv_.notify_one();
+}
+
+void CameraFrustumRenderer::uploadReadyThumbnails() {
+    while (true) {
+        LoadedThumbnail loaded;
+
+        {
+            std::lock_guard lock(ready_queue_mutex_);
+            if (thumbnail_ready_queue_.empty()) break;
+            loaded = std::move(thumbnail_ready_queue_.front());
+            thumbnail_ready_queue_.pop();
+        }
+
+        // Initialize texture array if needed
+        if (thumbnail_array_capacity_ == 0) {
+            GLuint tex_id;
+            glGenTextures(1, &tex_id);
+            thumbnail_array_ = Texture(tex_id);
+
+            glBindTexture(GL_TEXTURE_2D_ARRAY, thumbnail_array_);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB8,
+                         THUMBNAIL_SIZE, THUMBNAIL_SIZE, INITIAL_TEXTURE_ARRAY_CAPACITY,
+                         0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+            thumbnail_array_capacity_ = INITIAL_TEXTURE_ARRAY_CAPACITY;
+            LOG_DEBUG("Created texture array with capacity {}", thumbnail_array_capacity_);
+        }
+
+        // Grow texture array if needed
+        if (thumbnail_array_count_ >= thumbnail_array_capacity_) {
+            const int new_capacity = thumbnail_array_capacity_ * 2;
+
+            GLuint new_tex;
+            glGenTextures(1, &new_tex);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, new_tex);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB8,
+                         THUMBNAIL_SIZE, THUMBNAIL_SIZE, new_capacity,
+                         0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            // Copy existing layers
+            glCopyImageSubData(thumbnail_array_, GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0,
+                               new_tex, GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0,
+                               THUMBNAIL_SIZE, THUMBNAIL_SIZE, thumbnail_array_count_);
+            glFinish();
+
+            thumbnail_array_ = Texture(new_tex);
+            thumbnail_array_capacity_ = new_capacity;
+            LOG_DEBUG("Grew texture array to capacity {}", new_capacity);
+        }
+
+        // Upload to next available layer (resize to THUMBNAIL_SIZE if needed)
+        const int layer = thumbnail_array_count_++;
+        glBindTexture(GL_TEXTURE_2D_ARRAY, thumbnail_array_);
+
+        // Resize if dimensions don't match
+        if (loaded.width != THUMBNAIL_SIZE || loaded.height != THUMBNAIL_SIZE) {
+            std::vector<uint8_t> resized(THUMBNAIL_SIZE * THUMBNAIL_SIZE * 3);
+            const float scale_x = static_cast<float>(loaded.width) / THUMBNAIL_SIZE;
+            const float scale_y = static_cast<float>(loaded.height) / THUMBNAIL_SIZE;
+            for (int y = 0; y < THUMBNAIL_SIZE; ++y) {
+                for (int x = 0; x < THUMBNAIL_SIZE; ++x) {
+                    const int src_x = std::min(static_cast<int>(x * scale_x), loaded.width - 1);
+                    const int src_y = std::min(static_cast<int>(y * scale_y), loaded.height - 1);
+                    const int dst_idx = (y * THUMBNAIL_SIZE + x) * 3;
+                    const int src_idx = (src_y * loaded.width + src_x) * 3;
+                    resized[dst_idx] = loaded.pixel_data[src_idx];
+                    resized[dst_idx + 1] = loaded.pixel_data[src_idx + 1];
+                    resized[dst_idx + 2] = loaded.pixel_data[src_idx + 2];
+                }
+            }
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer,
+                            THUMBNAIL_SIZE, THUMBNAIL_SIZE, 1, GL_RGB, GL_UNSIGNED_BYTE, resized.data());
+        } else {
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer,
+                            THUMBNAIL_SIZE, THUMBNAIL_SIZE, 1, GL_RGB, GL_UNSIGNED_BYTE, loaded.pixel_data.data());
+        }
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+        uid_to_layer_[loaded.camera_uid] = layer;
+
+        {
+            std::lock_guard lock(pending_mutex_);
+            thumbnail_pending_.erase(loaded.camera_uid);
+        }
+    }
 }
 
 } // namespace lfs::rendering

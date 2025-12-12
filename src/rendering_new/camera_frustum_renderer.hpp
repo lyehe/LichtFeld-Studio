@@ -7,16 +7,26 @@
 #include "core_new/camera.hpp"
 #include "gl_resources.hpp"
 #include "shader_manager.hpp"
+#include <atomic>
+#include <condition_variable>
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <memory>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace lfs::rendering {
 
 class CameraFrustumRenderer {
 public:
+    static constexpr int THUMBNAIL_SIZE = 128;
+
     CameraFrustumRenderer() = default;
-    ~CameraFrustumRenderer() = default;
+    ~CameraFrustumRenderer();
 
     Result<void> init();
     Result<void> render(const std::vector<std::shared_ptr<const lfs::core::Camera>>& cameras,
@@ -39,9 +49,15 @@ public:
     void setHighlightedCamera(const int index) { highlighted_camera_ = index; }
     [[nodiscard]] int getHighlightedCamera() const { return highlighted_camera_; }
 
+    void setShowImages(const bool show) { show_images_ = show; }
+    [[nodiscard]] bool getShowImages() const { return show_images_; }
+
+    void setImageOpacity(const float opacity) { image_opacity_ = std::clamp(opacity, 0.0f, 1.0f); }
+    [[nodiscard]] float getImageOpacity() const { return image_opacity_; }
+
     [[nodiscard]] bool isInitialized() const { return initialized_; }
 
-    void clearCache();
+    void clearThumbnailCache();
 
 private:
     struct Vertex {
@@ -53,8 +69,23 @@ private:
         glm::mat4 transform;
         glm::vec3 color;
         float alpha;
+        uint32_t texture_id;
         uint32_t is_validation;
-        uint32_t padding[3];  // 16-byte alignment
+        uint32_t padding[2];  // 16-byte alignment
+    };
+
+    struct ThumbnailRequest {
+        int camera_uid;
+        std::filesystem::path image_path;
+        int image_width;
+        int image_height;
+    };
+
+    struct LoadedThumbnail {
+        int camera_uid;
+        std::vector<uint8_t> pixel_data;
+        int width;
+        int height;
     };
 
     Result<void> createGeometry();
@@ -69,6 +100,14 @@ private:
                           const glm::mat4& scene_transform);
 
     void updateInstanceVisibility(const glm::vec3& view_position);
+
+    // Thumbnail loading
+    [[nodiscard]] GLuint getOrLoadThumbnail(const lfs::core::Camera& camera);
+    void startThumbnailLoader();
+    void stopThumbnailLoader();
+    void thumbnailLoaderWorker();
+    void queueThumbnailLoad(const lfs::core::Camera& camera);
+    void uploadReadyThumbnails();
 
     // GL resources
     ManagedShader shader_;
@@ -101,6 +140,29 @@ private:
     glm::vec3 last_eval_color_{-1, -1, -1};
     glm::vec3 last_view_position_{0, 0, 0};
     glm::mat4 last_scene_transform_{1.0f};
+
+    // Image preview
+    bool show_images_ = true;
+    float image_opacity_ = 0.8f;
+
+    // Texture array for batched thumbnail rendering
+    Texture thumbnail_array_;
+    int thumbnail_array_capacity_ = 0;
+    int thumbnail_array_count_ = 0;
+    std::unordered_map<int, int> uid_to_layer_;  // camera_uid -> array layer index
+    std::unordered_set<int> thumbnail_pending_;
+    std::mutex pending_mutex_;
+
+    // Async loading
+    std::queue<ThumbnailRequest> thumbnail_load_queue_;
+    std::mutex load_queue_mutex_;
+    std::condition_variable load_queue_cv_;
+
+    std::queue<LoadedThumbnail> thumbnail_ready_queue_;
+    std::mutex ready_queue_mutex_;
+
+    std::thread thumbnail_loader_thread_;
+    std::atomic<bool> thumbnail_loader_running_{false};
 };
 
 } // namespace lfs::rendering
