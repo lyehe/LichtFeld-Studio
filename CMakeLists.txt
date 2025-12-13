@@ -25,6 +25,9 @@ endif()
 
 project(LichtFeld-Studio LANGUAGES CUDA CXX C)
 
+# Disable C++20 module scanning
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # Get git version info
 execute_process(
     COMMAND git rev-parse --short HEAD
