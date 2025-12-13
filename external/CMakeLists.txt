@@ -17,14 +17,16 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/nvImageCodec/CMakeLists.txt")
     message(STATUS "Adding nvImageCodec from external/nvImageCodec")
 
-    # Enable nvJPEG and nvJPEG2K extensions (the only ones we have)
-    set(BUILD_NVJPEG_EXT ON CACHE BOOL "Build nvJPEG extension" FORCE)
-    set(BUILD_NVJPEG2K_EXT ON CACHE BOOL "Build nvJPEG2000 extension" FORCE)
+    # Match main project CUDA arch (e.g., "8.6" -> "86")
+    if(DEFINED DETECTED_COMPUTE_CAP)
+        string(REPLACE "." "" _arch "${DETECTED_COMPUTE_CAP}")
+        set(CUDA_TARGET_ARCHS "${_arch}" CACHE STRING "" FORCE)
+    endif()
 
-    # Disable dynamic loading - statically link to CUDA libraries instead
-    # This makes deployment easier (no need for LD_LIBRARY_PATH or dlopen search paths)
-    set(WITH_DYNAMIC_NVJPEG OFF CACHE BOOL "Statically link nvJPEG instead of runtime dlopen" FORCE)
-    set(WITH_DYNAMIC_NVJPEG2K OFF CACHE BOOL "Statically link nvJPEG2K instead of runtime dlopen" FORCE)
+    set(BUILD_NVJPEG_EXT ON CACHE BOOL "" FORCE)
+    set(BUILD_NVJPEG2K_EXT ON CACHE BOOL "" FORCE)
+    set(WITH_DYNAMIC_NVJPEG OFF CACHE BOOL "" FORCE)
+    set(WITH_DYNAMIC_NVJPEG2K OFF CACHE BOOL "" FORCE)
 
     add_subdirectory(nvImageCodec)
 else()
