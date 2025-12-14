@@ -38,18 +38,6 @@ namespace lfs::io {
     std::vector<std::string> get_ply_attribute_names(const SplatData& splat_data);
 
     // ============================================================================
-    // Compressed PLY Export
-    // ============================================================================
-
-    struct CompressedPlyWriteOptions {
-        std::filesystem::path output_path;
-        bool include_sh = true;
-    };
-
-    std::expected<void, std::string> write_compressed_ply(const SplatData& splat_data,
-                                                          const CompressedPlyWriteOptions& options);
-
-    // ============================================================================
     // SOG Export (SuperSplat format)
     // ============================================================================
 

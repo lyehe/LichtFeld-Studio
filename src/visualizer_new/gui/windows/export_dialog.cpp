@@ -92,7 +92,6 @@ void ExportDialog::render(bool* p_open, SceneManager* scene_manager) {
     pushInputStyle(t);
     int format_idx = static_cast<int>(selected_format_);
     ImGui::RadioButton("PLY (Standard)", &format_idx, static_cast<int>(ExportFormat::PLY));
-    ImGui::RadioButton("Compressed PLY", &format_idx, static_cast<int>(ExportFormat::COMPRESSED_PLY));
     ImGui::RadioButton("SOG (SuperSplat)", &format_idx, static_cast<int>(ExportFormat::SOG));
     ImGui::RadioButton("HTML Viewer", &format_idx, static_cast<int>(ExportFormat::HTML_VIEWER));
     selected_format_ = static_cast<ExportFormat>(format_idx);

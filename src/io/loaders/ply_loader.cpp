@@ -5,7 +5,6 @@
 #include "ply_loader.hpp"
 #include "core_new/logger.hpp"
 #include "core_new/splat_data.hpp"
-#include "formats/compressed_ply.hpp"
 #include "formats/ply.hpp"
 #include <chrono>
 #include <filesystem>
@@ -82,21 +81,13 @@ namespace lfs::io {
             return result;
         }
 
-        // Check if it's a compressed PLY file
-        const bool is_compressed = is_compressed_ply(path);
-
         if (options.progress) {
-            options.progress(50.0f, is_compressed ? "Parsing compressed PLY data..." : "Parsing PLY data...");
+            options.progress(50.0f, "Parsing PLY data...");
         }
 
-        LOG_INFO("Loading {} PLY file: {}", is_compressed ? "compressed" : "standard", path.string());
+        LOG_INFO("Loading PLY file: {}", path.string());
 
-        std::expected<SplatData, std::string> splat_result;
-        if (is_compressed) {
-            splat_result = load_compressed_ply(path);
-        } else {
-            splat_result = load_ply(path);
-        }
+        auto splat_result = load_ply(path);
 
         if (!splat_result) {
             std::string error_msg = splat_result.error();

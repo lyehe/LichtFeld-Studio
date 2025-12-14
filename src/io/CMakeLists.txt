@@ -56,8 +56,6 @@ add_library(lfs_io STATIC
         formats/transforms.cpp
         formats/sogs.hpp
         formats/sogs.cpp
-        formats/compressed_ply.hpp
-        formats/compressed_ply.cpp
         formats/html.hpp
         formats/html.cpp
         formats/html_viewer_resources.hpp

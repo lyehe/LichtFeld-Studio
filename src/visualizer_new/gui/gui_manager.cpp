@@ -162,7 +162,6 @@ namespace lfs::vis::gui {
             std::filesystem::path path;
             switch (format) {
             case ExportFormat::PLY:
-            case ExportFormat::COMPRESSED_PLY:
                 path = SavePlyFileDialog(default_name);
                 break;
             case ExportFormat::SOG:
@@ -1860,20 +1859,6 @@ namespace lfs::vis::gui {
                     update_progress(1.0f, "Complete");
                     break;
                 }
-                case ExportFormat::COMPRESSED_PLY: {
-                    update_progress(0.1f, "Compressing PLY");
-                    const lfs::io::CompressedPlyWriteOptions options{
-                        .output_path = path,
-                        .include_sh = true
-                    };
-                    if (auto result = lfs::io::write_compressed_ply(*splat_data, options); result) {
-                        success = true;
-                        update_progress(1.0f, "Complete");
-                    } else {
-                        error_msg = result.error();
-                    }
-                    break;
-                }
                 case ExportFormat::SOG: {
                     const lfs::core::SogWriteOptions options{
                         .iterations = 10,
@@ -1969,9 +1954,8 @@ namespace lfs::vis::gui {
                 const std::lock_guard lock(export_state_.mutex);
                 const char* format_name = "file";
                 switch (export_state_.format) {
-                case ExportFormat::PLY:            format_name = "PLY"; break;
-                case ExportFormat::COMPRESSED_PLY: format_name = "Compressed PLY"; break;
-                case ExportFormat::SOG:            format_name = "SOG"; break;
+                case ExportFormat::PLY: format_name = "PLY"; break;
+                case ExportFormat::SOG: format_name = "SOG"; break;
                 case ExportFormat::HTML_VIEWER:    format_name = "HTML"; break;
                 }
                 ImGui::Text("Exporting %s...", format_name);
