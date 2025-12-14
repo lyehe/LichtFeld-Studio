@@ -797,24 +797,22 @@ namespace lfs::vis {
                     return;
 
                 case input::Action::CAMERA_NEXT_VIEW:
-                    // Don't iterate cameras if ImGui wants keyboard (e.g., image viewer is open)
-                    if (ImGui::GetIO().WantCaptureKeyboard) return;
+                    if (ImGui::GetIO().WantTextInput) return;
                     if (training_manager_) {
                         const int num_cams = static_cast<int>(training_manager_->getCamList().size());
                         if (num_cams > 0) {
-                            last_camview_ = (last_camview_ + 1) % num_cams;
+                            last_camview_ = (last_camview_ < 0) ? 0 : (last_camview_ + 1) % num_cams;
                             cmd::GoToCamView{.cam_id = last_camview_}.emit();
                         }
                     }
                     return;
 
                 case input::Action::CAMERA_PREV_VIEW:
-                    // Don't iterate cameras if ImGui wants keyboard (e.g., image viewer is open)
-                    if (ImGui::GetIO().WantCaptureKeyboard) return;
+                    if (ImGui::GetIO().WantTextInput) return;
                     if (training_manager_) {
                         const int num_cams = static_cast<int>(training_manager_->getCamList().size());
                         if (num_cams > 0) {
-                            last_camview_ = (last_camview_ - 1 + num_cams) % num_cams;
+                            last_camview_ = (last_camview_ < 0) ? num_cams - 1 : (last_camview_ - 1 + num_cams) % num_cams;
                             cmd::GoToCamView{.cam_id = last_camview_}.emit();
                         }
                     }
