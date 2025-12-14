@@ -65,6 +65,7 @@ namespace lfs::vis::gui::panels {
         unsigned int rotation_texture = 0;
         unsigned int scaling_texture = 0;
         unsigned int brush_texture = 0;
+        unsigned int painting_texture = 0;
         unsigned int align_texture = 0;
         unsigned int cropbox_texture = 0;
         unsigned int bounds_texture = 0;

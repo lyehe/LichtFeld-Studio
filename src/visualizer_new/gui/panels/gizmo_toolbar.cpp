@@ -65,14 +65,23 @@ namespace lfs::vis::gui::panels {
         }
     };
 
-    static ImVec2 ComputeVerticalToolbarSize(int num_buttons) {
+    static ImVec2 ComputeVerticalToolbarSize(const int num_buttons, const int num_separators = 0) {
         const auto& t = theme();
+        const float separator_extra = t.sizes.toolbar_spacing;
         return {
             t.sizes.toolbar_button_size + 2.0f * t.sizes.toolbar_padding,
             num_buttons * t.sizes.toolbar_button_size +
                 (num_buttons - 1) * t.sizes.toolbar_spacing +
+                num_separators * separator_extra +
                 2.0f * t.sizes.toolbar_padding
         };
+    }
+
+    // Draws vertical gap between toolbar button groups
+    static void DrawToolbarSeparator(const float width) {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        ImGui::Dummy(ImVec2(width, theme().sizes.toolbar_spacing));
+        ImGui::PopStyleVar();
     }
 
     struct VerticalToolbarStyle {
@@ -127,6 +136,7 @@ namespace lfs::vis::gui::panels {
         state.rotation_texture = LoadIconTexture("rotation.png");
         state.scaling_texture = LoadIconTexture("scaling.png");
         state.brush_texture = LoadIconTexture("brush.png");
+        state.painting_texture = LoadIconTexture("painting.png");
         state.align_texture = LoadIconTexture("align.png");
         state.cropbox_texture = LoadIconTexture("cropbox.png");
         state.bounds_texture = LoadIconTexture("bounds.png");
@@ -158,6 +168,7 @@ namespace lfs::vis::gui::panels {
         if (state.rotation_texture) glDeleteTextures(1, &state.rotation_texture);
         if (state.scaling_texture) glDeleteTextures(1, &state.scaling_texture);
         if (state.brush_texture) glDeleteTextures(1, &state.brush_texture);
+        if (state.painting_texture) glDeleteTextures(1, &state.painting_texture);
         if (state.align_texture) glDeleteTextures(1, &state.align_texture);
         if (state.cropbox_texture) glDeleteTextures(1, &state.cropbox_texture);
         if (state.bounds_texture) glDeleteTextures(1, &state.bounds_texture);
@@ -265,7 +276,7 @@ namespace lfs::vis::gui::panels {
                 ImGui::SameLine();
                 ToolButton("##scale", state.scaling_texture, ToolType::Scale, ImGuizmo::SCALE, "S", "Scale");
                 ImGui::SameLine();
-                ToolButton("##brush", state.brush_texture, ToolType::Brush, ImGuizmo::TRANSLATE, "B", "Brush Selection");
+                ToolButton("##brush", state.painting_texture, ToolType::Brush, ImGuizmo::TRANSLATE, "P", "Painting");
                 ImGui::SameLine();
                 ToolButton("##align", state.align_texture, ToolType::Align, ImGuizmo::TRANSLATE, "A", "3-Point Align");
                 ImGui::SameLine();
@@ -304,8 +315,8 @@ namespace lfs::vis::gui::panels {
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
                     };
 
-                    SelectionModeButton("##centers", state.selection_texture, SelectionSubMode::Centers,
-                                        "C", "Brush selection (Ctrl+1)");
+                    SelectionModeButton("##centers", state.brush_texture, SelectionSubMode::Centers,
+                                        "B", "Brush selection (Ctrl+1)");
                     ImGui::SameLine();
                     SelectionModeButton("##rect", state.rectangle_texture, SelectionSubMode::Rectangle,
                                         "R", "Rectangle selection (Ctrl+2)");
@@ -431,8 +442,12 @@ namespace lfs::vis::gui::panels {
 
         constexpr float MARGIN_RIGHT = 10.0f;
         constexpr float MARGIN_TOP = 5.0f;
-        const int num_buttons = render_manager ? 9 : 3;  // +1 for projection toggle
-        const ImVec2 size = ComputeVerticalToolbarSize(num_buttons);
+        constexpr int FULL_BUTTON_COUNT = 8;   // Home, Fullscreen, ToggleUI, Splat, PointCloud, Rings, Centers, Projection
+        constexpr int MINIMAL_BUTTON_COUNT = 3; // Home, Fullscreen, ToggleUI
+        constexpr int SEPARATOR_COUNT = 2;
+        const int num_buttons = render_manager ? FULL_BUTTON_COUNT : MINIMAL_BUTTON_COUNT;
+        const int num_separators = render_manager ? SEPARATOR_COUNT : 0;
+        const ImVec2 size = ComputeVerticalToolbarSize(num_buttons, num_separators);
         const ImVec2 pos = {
             viewport_pos.x + viewport_size.x - size.x - MARGIN_RIGHT,
             viewport_pos.y + MARGIN_TOP
@@ -466,11 +481,8 @@ namespace lfs::vis::gui::panels {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Toggle UI (F12)");
 
-            // Visualization mode buttons
             if (render_manager) {
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
+                DrawToolbarSeparator(btn_size.x);
 
                 const auto current = getCurrentVisualization(render_manager->getSettings());
 
@@ -487,10 +499,7 @@ namespace lfs::vis::gui::panels {
                 vizButton("##rings", state.rings_texture, "R", RenderVisualization::Rings, "Gaussian Rings");
                 vizButton("##centers", state.centers_texture, "C", RenderVisualization::Centers, "Center Markers");
 
-                // Projection mode toggle
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
+                DrawToolbarSeparator(btn_size.x);
 
                 const auto settings = render_manager->getSettings();
                 const bool is_ortho = settings.orthographic;
