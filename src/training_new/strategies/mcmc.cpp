@@ -556,7 +556,9 @@ namespace lfs::training {
         // Select only the Gaussians we want to keep
         _splat_data->means() = _splat_data->means().index_select(0, keep_indices).contiguous();
         _splat_data->sh0() = _splat_data->sh0().index_select(0, keep_indices).contiguous();
-        _splat_data->shN() = _splat_data->shN().index_select(0, keep_indices).contiguous();
+        if (_splat_data->shN().is_valid()) {
+            _splat_data->shN() = _splat_data->shN().index_select(0, keep_indices).contiguous();
+        }
         _splat_data->scaling_raw() = _splat_data->scaling_raw().index_select(0, keep_indices).contiguous();
         _splat_data->rotation_raw() = _splat_data->rotation_raw().index_select(0, keep_indices).contiguous();
         _splat_data->opacity_raw() = _splat_data->opacity_raw().index_select(0, keep_indices).contiguous();

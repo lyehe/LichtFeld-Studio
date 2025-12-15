@@ -197,6 +197,9 @@ namespace lfs::core {
     Tensor SplatData::get_shs() const {
         // _sh0 is [N, 1, 3], _shN is [N, coeffs, 3]
         // Concatenate along dim 1 (coeffs) to get [N, total_coeffs, 3]
+        if (!_shN.is_valid()) {
+            return _sh0;  // SH degree 0: only DC component
+        }
         return _sh0.cat(_shN, 1);
     }
 

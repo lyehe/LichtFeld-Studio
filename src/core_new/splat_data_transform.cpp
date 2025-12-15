@@ -184,7 +184,9 @@ namespace lfs::core {
 
         auto cropped_means = splat_data._means.index_select(0, indices).contiguous();
         auto cropped_sh0 = splat_data._sh0.index_select(0, indices).contiguous();
-        auto cropped_shN = splat_data._shN.index_select(0, indices).contiguous();
+        Tensor cropped_shN = splat_data._shN.is_valid()
+            ? splat_data._shN.index_select(0, indices).contiguous()
+            : Tensor{};
         auto cropped_scaling = splat_data._scaling.index_select(0, indices).contiguous();
         auto cropped_rotation = splat_data._rotation.index_select(0, indices).contiguous();
         auto cropped_opacity = splat_data._opacity.index_select(0, indices).contiguous();
@@ -280,7 +282,9 @@ namespace lfs::core {
 
         splat_data._means = splat_data._means.index_select(0, indices_tensor).contiguous();
         splat_data._sh0 = splat_data._sh0.index_select(0, indices_tensor).contiguous();
-        splat_data._shN = splat_data._shN.index_select(0, indices_tensor).contiguous();
+        if (splat_data._shN.is_valid()) {
+            splat_data._shN = splat_data._shN.index_select(0, indices_tensor).contiguous();
+        }
         splat_data._scaling = splat_data._scaling.index_select(0, indices_tensor).contiguous();
         splat_data._rotation = splat_data._rotation.index_select(0, indices_tensor).contiguous();
         splat_data._opacity = splat_data._opacity.index_select(0, indices_tensor).contiguous();
@@ -387,11 +391,15 @@ namespace lfs::core {
         auto indices = selection_mask.nonzero();
         if (indices.ndim() == 2) { indices = indices.squeeze(1); }
 
+        Tensor shN_selected = splat_data._shN.is_valid()
+            ? splat_data._shN.index_select(0, indices).contiguous()
+            : Tensor{};
+
         SplatData result(
             splat_data._max_sh_degree,
             splat_data._means.index_select(0, indices).contiguous(),
             splat_data._sh0.index_select(0, indices).contiguous(),
-            splat_data._shN.index_select(0, indices).contiguous(),
+            std::move(shN_selected),
             splat_data._scaling.index_select(0, indices).contiguous(),
             splat_data._rotation.index_select(0, indices).contiguous(),
             splat_data._opacity.index_select(0, indices).contiguous(),

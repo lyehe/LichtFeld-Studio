@@ -13,6 +13,27 @@
 
 namespace lfs::training {
 
+    namespace {
+        constexpr size_t SH_CHANNELS = 3;
+
+        void truncateSHDegree(lfs::core::SplatData& splat, const int target_degree) {
+            if (target_degree < 0 || target_degree >= splat.get_max_sh_degree()) return;
+
+            if (target_degree == 0) {
+                splat.shN() = lfs::core::Tensor{};
+            } else {
+                const size_t keep = static_cast<size_t>((target_degree + 1) * (target_degree + 1) - 1);
+                auto& shN = splat.shN();
+                if (shN.is_valid() && shN.ndim() >= 2 && shN.shape()[1] > keep) {
+                    const auto slice_end = static_cast<int64_t>(shN.ndim() == 3 ? keep : keep * SH_CHANNELS);
+                    shN = shN.slice(1, 0, slice_end).contiguous();
+                }
+            }
+            splat.set_max_sh_degree(target_degree);
+            splat.set_active_sh_degree(target_degree);
+        }
+    } // namespace
+
     std::expected<void, std::string> loadTrainingDataIntoScene(
         const lfs::core::param::TrainingParameters& params,
         lfs::vis::Scene& scene) {
@@ -99,7 +120,17 @@ namespace lfs::training {
                     try {
                         auto splat_data = std::move(*std::get<std::shared_ptr<lfs::core::SplatData>>(ply_load_result->data));
                         auto model = std::make_unique<lfs::core::SplatData>(std::move(splat_data));
-                        LOG_INFO("Adding training model from init_ply to scene (size={})", model->size());
+
+                        // Apply command-line sh_degree if specified and lower than loaded
+                        const int target_sh = params.optimization.sh_degree;
+                        if (target_sh >= 0 && target_sh < model->get_max_sh_degree()) {
+                            LOG_INFO("Truncating init_ply SH degree from {} to {}",
+                                     model->get_max_sh_degree(), target_sh);
+                            truncateSHDegree(*model, target_sh);
+                        }
+
+                        LOG_INFO("Adding training model from init_ply to scene (size={}, sh_degree={})",
+                                 model->size(), model->get_max_sh_degree());
                         scene.addSplat("Model", std::move(model), dataset_id);
                         scene.setTrainingModelNode("Model");
                     } catch (const std::bad_variant_access&) {

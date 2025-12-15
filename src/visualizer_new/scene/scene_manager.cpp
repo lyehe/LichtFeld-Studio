@@ -1887,11 +1887,15 @@ namespace lfs::vis {
             indices_vec, {indices_vec.size()}, lfs::core::Device::CUDA);
 
         const auto& src = *combined;
+        lfs::core::Tensor shN_selected = src.shN_raw().is_valid()
+            ? src.shN_raw().index_select(0, indices).contiguous()
+            : lfs::core::Tensor{};
+
         gaussian_clipboard_ = std::make_unique<lfs::core::SplatData>(
             src.get_max_sh_degree(),
             src.means_raw().index_select(0, indices).contiguous(),
             src.sh0_raw().index_select(0, indices).contiguous(),
-            src.shN_raw().index_select(0, indices).contiguous(),
+            std::move(shN_selected),
             src.scaling_raw().index_select(0, indices).contiguous(),
             src.rotation_raw().index_select(0, indices).contiguous(),
             src.opacity_raw().index_select(0, indices).contiguous(),

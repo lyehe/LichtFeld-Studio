@@ -54,38 +54,24 @@ namespace lfs::training {
             return;  // Nothing to duplicate
         }
 
-        // Gather parameters for selected Gaussians to duplicate
-        LOG_DEBUG("duplicate(): sh0 shape before index_select: {}", _splat_data->sh0().shape().str());
-        LOG_DEBUG("duplicate(): shN shape before index_select: {}", _splat_data->shN().shape().str());
-
         auto pos_selected = _splat_data->means().index_select(0, sampled_idxs).contiguous();
         auto rot_selected = _splat_data->rotation_raw().index_select(0, sampled_idxs).contiguous();
         auto scale_selected = _splat_data->scaling_raw().index_select(0, sampled_idxs).contiguous();
         auto sh0_selected = _splat_data->sh0().index_select(0, sampled_idxs).contiguous();
-        auto shN_selected = _splat_data->shN().index_select(0, sampled_idxs).contiguous();
         auto op_selected = _splat_data->opacity_raw().index_select(0, sampled_idxs).contiguous();
 
-        LOG_DEBUG("duplicate(): sh0_selected shape after index_select: {}", sh0_selected.shape().str());
-        LOG_DEBUG("duplicate(): shN_selected shape after index_select: {}", shN_selected.shape().str());
-
         // Concatenate parameters directly in SplatData
-        LOG_DEBUG("duplicate(): About to cat means: existing={}, selected={}", _splat_data->means().shape().str(), pos_selected.shape().str());
         _splat_data->means() = _splat_data->means().cat(pos_selected, 0);
-
-        LOG_DEBUG("duplicate(): About to cat rotation: existing={}, selected={}", _splat_data->rotation_raw().shape().str(), rot_selected.shape().str());
         _splat_data->rotation_raw() = _splat_data->rotation_raw().cat(rot_selected, 0);
-
-        LOG_DEBUG("duplicate(): About to cat scaling: existing={}, selected={}", _splat_data->scaling_raw().shape().str(), scale_selected.shape().str());
         _splat_data->scaling_raw() = _splat_data->scaling_raw().cat(scale_selected, 0);
-
-        LOG_ERROR("duplicate(): About to cat sh0: existing={}, selected={}", _splat_data->sh0().shape().str(), sh0_selected.shape().str());
         _splat_data->sh0() = _splat_data->sh0().cat(sh0_selected, 0);
-
-        LOG_ERROR("duplicate(): About to cat shN: existing={}, selected={}", _splat_data->shN().shape().str(), shN_selected.shape().str());
-        _splat_data->shN() = _splat_data->shN().cat(shN_selected, 0);
-
-        LOG_DEBUG("duplicate(): About to cat opacity: existing={}, selected={}", _splat_data->opacity_raw().shape().str(), op_selected.shape().str());
         _splat_data->opacity_raw() = _splat_data->opacity_raw().cat(op_selected, 0);
+
+        // Handle higher-order SH (only if SH degree > 0)
+        if (_splat_data->shN().is_valid()) {
+            auto shN_selected = _splat_data->shN().index_select(0, sampled_idxs).contiguous();
+            _splat_data->shN() = _splat_data->shN().cat(shN_selected, 0);
+        }
 
         // Update optimizer states for duplicated Gaussians
         auto update_optimizer_state = [&](ParamType param_type, const char* name) {
