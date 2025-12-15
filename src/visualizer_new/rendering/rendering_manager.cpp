@@ -318,6 +318,8 @@ namespace lfs::vis {
             markDirty();
         });
 
+        ui::NodeSelected::when([this](const auto&) { triggerSelectionFlash(); });
+
         // Scene changes
         state::SceneLoaded::when([this](const auto&) {
             LOG_DEBUG("Scene loaded, marking render dirty");
@@ -616,8 +618,10 @@ namespace lfs::vis {
             .brush_saturation_mode = brush_saturation_mode_,
             .brush_saturation_amount = brush_saturation_amount_,
             .selection_mode_rings = (selection_mode_ == lfs::rendering::SelectionMode::Rings),
-            // Selected node mask for desaturation - empty if feature disabled
-            .selected_node_mask = settings_.desaturate_unselected ? std::move(scene_state.selected_node_mask) : std::vector<bool>{},
+            .selected_node_mask = (settings_.desaturate_unselected || getSelectionFlashIntensity() > 0.0f)
+                ? std::move(scene_state.selected_node_mask) : std::vector<bool>{},
+            .desaturate_unselected = settings_.desaturate_unselected,
+            .selection_flash_intensity = getSelectionFlashIntensity(),
             .hovered_depth_id = nullptr,
             .highlight_gaussian_id = (selection_mode_ == lfs::rendering::SelectionMode::Rings) ? hovered_gaussian_id_ : -1,
             .far_plane = settings_.depth_clip_enabled ? settings_.depth_clip_far : 1e10f,

@@ -75,9 +75,9 @@ namespace lfs::rendering {
             unsigned long long* hovered_depth_id = nullptr;
             int highlight_gaussian_id = -1;
             float far_plane = 1e10f;
-            // Desaturate unselected nodes (when multiple PLYs visible)
-            // Mask: true = selected (don't desaturate), false = desaturate. Empty = no desaturation.
             std::vector<bool> selected_node_mask;
+            bool desaturate_unselected = false;
+            float selection_flash_intensity = 0.0f;
             bool orthographic = false;
             float ortho_scale = DEFAULT_ORTHO_SCALE;
 

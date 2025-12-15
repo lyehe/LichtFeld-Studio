@@ -37,7 +37,7 @@ namespace lfs::vis {
         // Crop box (data stored in scene graph CropBoxData, these are UI toggles only)
         bool show_crop_box = false;
         bool use_crop_box = false;
-        bool desaturate_unselected = true;  // Desaturate unselected PLYs when one is selected
+        bool desaturate_unselected = false;  // Desaturate unselected PLYs when one is selected
 
         // Background
         glm::vec3 background_color = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -164,12 +164,37 @@ namespace lfs::vis {
                 return true;
             }
             pivot_animation_active_.store(false);
+
+            // Selection flash: continuous rendering while active
+            if (selection_flash_active_.load()) {
+                const auto elapsed = std::chrono::steady_clock::now() - selection_flash_start_time_;
+                if (std::chrono::duration<float>(elapsed).count() < SELECTION_FLASH_DURATION_SEC) {
+                    needs_render_.store(true);
+                    return true;
+                }
+                selection_flash_active_.store(false);
+            }
+
             return needs_render_.load();
         }
 
         void setPivotAnimationEndTime(const std::chrono::steady_clock::time_point end_time) {
             pivot_animation_end_time_ = end_time;
             pivot_animation_active_.store(true);
+        }
+
+        void triggerSelectionFlash() {
+            selection_flash_start_time_ = std::chrono::steady_clock::now();
+            selection_flash_active_.store(true);
+            markDirty();
+        }
+
+        [[nodiscard]] float getSelectionFlashIntensity() const {
+            if (!selection_flash_active_.load()) return 0.0f;
+            const float t = std::chrono::duration<float>(
+                std::chrono::steady_clock::now() - selection_flash_start_time_).count() / SELECTION_FLASH_DURATION_SEC;
+            if (t >= 1.0f) return 0.0f;
+            return 1.0f - t * t;  // Ease-out
         }
 
         // Settings management
@@ -265,10 +290,16 @@ namespace lfs::vis {
         bool render_texture_valid_ = false;
 
         // State tracking
-        std::atomic<bool> needs_render_{true};
+        mutable std::atomic<bool> needs_render_{true};
         mutable std::atomic<bool> pivot_animation_active_{false};
         std::chrono::steady_clock::time_point pivot_animation_end_time_;
         lfs::rendering::RenderResult cached_result_;
+
+        // Selection flash animation
+        mutable std::atomic<bool> selection_flash_active_{false};
+        std::chrono::steady_clock::time_point selection_flash_start_time_;
+        static constexpr float SELECTION_FLASH_DURATION_SEC = 0.5f;
+
         size_t last_model_ptr_ = 0;
         glm::ivec2 last_render_size_{0, 0};
         std::chrono::steady_clock::time_point last_training_render_;

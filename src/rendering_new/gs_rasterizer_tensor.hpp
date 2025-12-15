@@ -46,6 +46,8 @@ namespace lfs::rendering {
         int highlight_gaussian_id = -1,
         float far_plane = 1e10f,
         const std::vector<bool>& selected_node_mask = {},
+        bool desaturate_unselected = false,
+        float selection_flash_intensity = 0.0f,
         bool orthographic = false,
         float ortho_scale = 1.0f);
 

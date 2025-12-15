@@ -285,6 +285,15 @@ namespace lfs::vis::gui::panels {
             ImGui::Unindent();
         }
 
+        // Selection Behavior
+        ImGui::Separator();
+        if (ImGui::Checkbox("Desaturate Unselected", &settings.desaturate_unselected)) {
+            settings_changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Dim unselected PLYs when one or more are selected");
+        }
+
         // Apply settings changes if any
         if (settings_changed) {
             render_manager->updateSettings(settings);

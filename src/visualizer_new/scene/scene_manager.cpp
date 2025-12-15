@@ -428,18 +428,16 @@ namespace lfs::vis {
                 }
             }
         }
-        // Trigger re-render to update viewport highlighting
-        if (rendering_manager_) {
-            rendering_manager_->markDirty();
-        }
+        if (rendering_manager_) rendering_manager_->triggerSelectionFlash();
     }
 
     void SceneManager::addToSelection(const std::string& name) {
-        const auto* node = scene_.getNode(name);
-        if (node != nullptr) {
+        if (scene_.getNode(name) == nullptr) return;
+        {
             std::lock_guard<std::mutex> lock(state_mutex_);
             selected_nodes_.insert(name);
         }
+        if (rendering_manager_) rendering_manager_->triggerSelectionFlash();
     }
 
     void SceneManager::clearSelection() {

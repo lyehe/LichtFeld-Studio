@@ -109,6 +109,8 @@ namespace lfs::rendering {
         int highlight_gaussian_id = -1,
         const bool* selected_node_mask = nullptr,
         int num_selected_nodes = 0,
+        bool desaturate_unselected = false,
+        float selection_flash_intensity = 0.0f,
         bool orthographic = false,
         float ortho_scale = 1.0f);
 

@@ -160,6 +160,8 @@ namespace lfs::rendering {
                                                     request.highlight_gaussian_id,
                                                     request.far_plane,
                                                     request.selected_node_mask,
+                                                    request.desaturate_unselected,
+                                                    request.selection_flash_intensity,
                                                     request.orthographic,
                                                     request.ortho_scale);
                     result.image = std::move(image);
@@ -215,6 +217,8 @@ namespace lfs::rendering {
                                             request.highlight_gaussian_id,
                                             request.far_plane,
                                             request.selected_node_mask,
+                                            request.desaturate_unselected,
+                                            request.selection_flash_intensity,
                                             request.orthographic,
                                             request.ortho_scale);
             result.image = std::move(image);

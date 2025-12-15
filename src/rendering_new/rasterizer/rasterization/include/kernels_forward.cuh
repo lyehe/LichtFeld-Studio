@@ -81,6 +81,7 @@ namespace lfs::rendering::kernels::forward {
         unsigned long long* hovered_depth_id,
         const bool* selected_node_mask,
         const int num_selected_nodes,
+        const bool desaturate_unselected,
         const bool orthographic,
         const float ortho_scale) {
         auto primitive_idx = cg::this_grid().thread_rank();
@@ -152,8 +153,8 @@ namespace lfs::rendering::kernels::forward {
             if (!inside) outside_crop = true;
         }
 
-        // Desaturate unselected nodes
-        if (active && selected_node_mask != nullptr && num_selected_nodes > 0 && transform_indices != nullptr) {
+        // Mark unselected nodes for desaturation
+        if (active && desaturate_unselected && selected_node_mask != nullptr && num_selected_nodes > 0 && transform_indices != nullptr) {
             const int node_idx = transform_indices[primitive_idx];
             if (node_idx >= 0 && node_idx < num_selected_nodes && !selected_node_mask[node_idx]) {
                 outside_crop = true;
@@ -548,7 +549,11 @@ namespace lfs::rendering::kernels::forward {
         const uint grid_width,
         const bool show_rings,
         const float ring_width,
-        const bool show_center_markers) {
+        const bool show_center_markers,
+        const float selection_flash_intensity,
+        const int* transform_indices,
+        const bool* selected_node_mask,
+        const int num_selected_nodes) {
         auto block = cg::this_thread_block();
         const dim3 group_index = block.group_index();
         const dim3 thread_index = block.thread_index();
@@ -567,6 +572,7 @@ namespace lfs::rendering::kernels::forward {
         __shared__ float collected_depth[config::block_size_blend];
         __shared__ bool collected_outside_crop[config::block_size_blend];
         __shared__ uint8_t collected_selection_status[config::block_size_blend];
+        __shared__ uint collected_primitive_idx[config::block_size_blend];
         // initialize local storage
         float3 color_pixel = make_float3(0.0f);
         float depth_pixel = 1e10f;  // Median depth (at 50% accumulated alpha)
@@ -585,6 +591,7 @@ namespace lfs::rendering::kernels::forward {
                 collected_depth[thread_rank] = primitive_depth[primitive_idx];
                 collected_outside_crop[thread_rank] = primitive_outside_crop[primitive_idx];
                 collected_selection_status[thread_rank] = primitive_selection_status[primitive_idx];
+                collected_primitive_idx[thread_rank] = primitive_idx;
             }
             block.sync();
             const int current_batch_size = min(config::block_size_blend, n_points_remaining);
@@ -651,6 +658,15 @@ namespace lfs::rendering::kernels::forward {
                     final_color = lerp(final_color, config::SELECTION_COLOR_PREVIEW, SELECTION_PREVIEW_BLEND);
                 } else if (group_id > 0) {
                     final_color = lerp(final_color, config::SELECTION_GROUP_COLORS[group_id], SELECTION_COMMITTED_BLEND);
+                }
+
+                // Selection flash highlight
+                if (selection_flash_intensity > 0.0f && selected_node_mask != nullptr && transform_indices != nullptr) {
+                    const int node_idx = transform_indices[collected_primitive_idx[j]];
+                    if (node_idx >= 0 && node_idx < num_selected_nodes && selected_node_mask[node_idx]) {
+                        constexpr float3 SELECTION_FLASH_COLOR = {1.0f, 0.95f, 0.6f};
+                        final_color = lerp(final_color, SELECTION_FLASH_COLOR, selection_flash_intensity * 0.5f);
+                    }
                 }
 
                 color_pixel += transmittance * alpha * final_color;

@@ -319,6 +319,8 @@ void lfs::rendering::forward(
     int highlight_gaussian_id,
     const bool* selected_node_mask,
     int num_selected_nodes,
+    bool desaturate_unselected,
+    float selection_flash_intensity,
     bool orthographic,
     float ortho_scale) {
 
@@ -414,6 +416,7 @@ void lfs::rendering::forward(
         hovered_depth_id,
         selected_node_mask,
         num_selected_nodes,
+        desaturate_unselected,
         orthographic,
         ortho_scale);
     CHECK_CUDA(config::debug, "preprocess")
@@ -514,6 +517,10 @@ void lfs::rendering::forward(
         grid.x,
         show_rings,
         ring_width,
-        show_center_markers);
+        show_center_markers,
+        selection_flash_intensity,
+        transform_indices,
+        selected_node_mask,
+        num_selected_nodes);
     CHECK_CUDA(config::debug, "blend")
 }

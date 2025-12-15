@@ -56,6 +56,7 @@ namespace lfs::vis {
             // Filter
             char m_filterText[128] = {};
             mutable int m_rowIndex = 0;  // For alternating row backgrounds
+            mutable float m_selectionFlashIntensity = 0.0f;  // Selection flash effect (0-1)
 
             // Rename state
             struct RenameState {

@@ -81,6 +81,8 @@ namespace lfs::rendering {
         unsigned long long* hovered_depth_id,
         int highlight_gaussian_id,
         const std::vector<bool>& selected_node_mask,
+        bool desaturate_unselected,
+        float selection_flash_intensity,
         bool orthographic,
         float ortho_scale) {
 
@@ -265,6 +267,8 @@ namespace lfs::rendering {
             highlight_gaussian_id,
             selected_node_mask_ptr,
             num_selected_nodes,
+            desaturate_unselected,
+            selection_flash_intensity,
             orthographic,
             ortho_scale);
 

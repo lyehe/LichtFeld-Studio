@@ -10,6 +10,7 @@
 #include "gui/utils/windows_utils.hpp"
 #include "gui/windows/image_preview.hpp"
 #include "internal/resource_paths.hpp"
+#include "rendering/rendering_manager.hpp"
 #include "scene/scene_manager.hpp"
 #include "theme/theme.hpp"
 #include "visualizer_impl.hpp"
@@ -180,6 +181,10 @@ namespace lfs::vis::gui {
         auto* scene_manager = ctx->viewer->getSceneManager();
         if (!scene_manager) return;
 
+        // Update flash intensity
+        const auto* rm = ctx->viewer->getRenderingManager();
+        m_selectionFlashIntensity = rm ? rm->getSelectionFlashIntensity() : 0.0f;
+
         const auto& scene = scene_manager->getScene();
         const auto selected_names_vec = scene_manager->getSelectedNodeNames();
         std::unordered_set<std::string> selected_names(selected_names_vec.begin(), selected_names_vec.end());
@@ -320,13 +325,34 @@ namespace lfs::vis::gui {
 
         constexpr float ROW_PADDING = 2.0f;
         constexpr ImU32 HIGHLIGHT_COLOR = IM_COL32(80, 120, 180, 180);
+        constexpr ImU32 SELECTION_COLOR_BASE = IM_COL32(60, 100, 160, 200);
+        constexpr ImU32 SELECTION_COLOR_FLASH = IM_COL32(140, 180, 240, 230);
 
         const ImVec2 row_min = ImGui::GetCursorScreenPos();
         const float window_left = ImGui::GetWindowPos().x;
         const float window_right = window_left + ImGui::GetWindowWidth();
         const float row_height = ImGui::GetTextLineHeight() + ROW_PADDING;
-        const ImU32 row_color = is_highlighted_cam ? HIGHLIGHT_COLOR
-                              : (m_rowIndex++ % 2 == 0) ? t.row_even_u32() : t.row_odd_u32();
+
+        // Compute row color
+        ImU32 row_color;
+        if (is_selected) {
+            if (m_selectionFlashIntensity > 0.0f) {
+                const ImVec4 base = ImGui::ColorConvertU32ToFloat4(SELECTION_COLOR_BASE);
+                const ImVec4 flash = ImGui::ColorConvertU32ToFloat4(SELECTION_COLOR_FLASH);
+                const float t = 1.0f - m_selectionFlashIntensity;
+                row_color = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                    flash.x + (base.x - flash.x) * t,
+                    flash.y + (base.y - flash.y) * t,
+                    flash.z + (base.z - flash.z) * t,
+                    flash.w + (base.w - flash.w) * t));
+            } else {
+                row_color = SELECTION_COLOR_BASE;
+            }
+        } else if (is_highlighted_cam) {
+            row_color = HIGHLIGHT_COLOR;
+        } else {
+            row_color = (m_rowIndex++ % 2 == 0) ? t.row_even_u32() : t.row_odd_u32();
+        }
 
         draw_list->AddRectFilled(
             ImVec2(window_left, row_min.y),
@@ -448,7 +474,6 @@ namespace lfs::vis::gui {
 
             static constexpr ImGuiTreeNodeFlags BASE_FLAGS = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
             ImGuiTreeNodeFlags flags = BASE_FLAGS;
-            if (is_selected) flags |= ImGuiTreeNodeFlags_Selected;
             if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
             if (is_group || is_dataset) flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
