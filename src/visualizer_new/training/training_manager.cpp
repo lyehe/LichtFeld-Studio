@@ -512,28 +512,30 @@ namespace lfs::vis {
                   static_cast<int>(old_state), state_str);
     }
 
-    void TrainerManager::handleTrainingComplete(bool success, const std::string& error) {
+    void TrainerManager::handleTrainingComplete(const bool success, const std::string& error) {
         if (!error.empty()) {
             last_error_ = error;
             LOG_ERROR("Training error: {}", error);
         }
 
+        // Capture elapsed time before state change (while still Running)
+        const float elapsed = getElapsedSeconds();
         setState(success ? State::Completed : State::Error);
 
-        int final_iteration = getCurrentIteration();
-        float final_loss = getCurrentLoss();
+        const int final_iteration = getCurrentIteration();
+        const float final_loss = getCurrentLoss();
 
-        LOG_INFO("Training finished - Success: {}, Final iteration: {}, Final loss: {:.6f}",
-                 success, final_iteration, final_loss);
+        LOG_INFO("Training finished: iter={}, loss={:.6f}, elapsed={:.1f}s",
+                 final_iteration, final_loss, elapsed);
 
         state::TrainingCompleted{
             .iteration = final_iteration,
             .final_loss = final_loss,
+            .elapsed_seconds = elapsed,
             .success = success,
             .error = error.empty() ? std::nullopt : std::optional(error)}
             .emit();
 
-        // Notify completion
         {
             std::lock_guard<std::mutex> lock(completion_mutex_);
             training_complete_ = true;

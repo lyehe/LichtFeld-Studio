@@ -57,11 +57,12 @@ namespace {
     const std::set<std::string> VALID_POSE_OPTS = {"none", "direct", "mlp"};
     const std::set<std::string> VALID_STRATEGIES = {"mcmc", "default"};
 
-    void scale_steps_vector(std::vector<size_t>& steps, size_t scaler) {
-        std::set<size_t> unique_steps(steps.begin(), steps.end());
+    void scale_steps_vector(std::vector<size_t>& steps, float scaler) {
+        std::set<size_t> unique_steps;
         for (const auto& step : steps) {
-            for (size_t i = 1; i <= scaler; ++i) {
-                unique_steps.insert(step * i);
+            size_t scaled = static_cast<size_t>(static_cast<float>(step) * scaler);
+            if (scaled > 0) {
+                unique_steps.insert(scaled);
             }
         }
         steps.assign(unique_steps.begin(), unique_steps.end());

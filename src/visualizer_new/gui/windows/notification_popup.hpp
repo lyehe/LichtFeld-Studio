@@ -5,19 +5,23 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <string>
 
 namespace lfs::vis::gui {
 
-    /// Self-contained notification popup triggered by events
     class NotificationPopup {
     public:
         enum class Type { INFO, WARNING, ERROR };
+        using Callback = std::function<void()>;
 
         NotificationPopup();
 
         void render();
-        void show(Type type, const std::string& title, const std::string& message);
+        void show(Type type, const std::string& title, const std::string& message,
+                  Callback on_close = nullptr);
+
+        static std::string formatDuration(float seconds);
 
     private:
         void setupEventHandlers();
@@ -26,6 +30,7 @@ namespace lfs::vis::gui {
             Type type;
             std::string title;
             std::string message;
+            Callback on_close;
         };
 
         std::deque<Notification> pending_;

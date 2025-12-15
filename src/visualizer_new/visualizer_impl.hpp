@@ -152,6 +152,7 @@ namespace lfs::vis {
         void handleTrainingCompleted(const lfs::core::events::state::TrainingCompleted& event);
         void handleLoadFileCommand(const lfs::core::events::cmd::LoadFile& cmd);
         void handleSaveProject(const lfs::core::events::cmd::SaveProject& cmd);
+        void handleSwitchToLatestCheckpoint();
 
         // Tool initialization
         void initializeTools();

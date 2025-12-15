@@ -290,9 +290,12 @@ namespace lfs::vis {
             handleLoadFileCommand(cmd);
         });
 
-        // Listen to save project
         cmd::SaveProject::when([this](const auto& cmd) {
             handleSaveProject(cmd);
+        });
+
+        cmd::SwitchToLatestCheckpoint::when([this](const auto&) {
+            handleSwitchToLatestCheckpoint();
         });
     }
 
@@ -998,6 +1001,40 @@ namespace lfs::vis {
 
         if (scene_manager_) {
             scene_manager_->changeContentType(SceneManager::ContentType::Dataset);
+        }
+    }
+
+    void VisualizerImpl::handleSwitchToLatestCheckpoint() {
+        if (!scene_manager_ || !project_) {
+            LOG_ERROR("Cannot switch to checkpoint: missing scene_manager or project");
+            return;
+        }
+
+        const auto plys = project_->getPlys();
+        if (plys.empty()) {
+            LOG_WARN("No PLY files in project");
+            return;
+        }
+
+        const auto latest = std::max_element(plys.begin(), plys.end(),
+            [](const auto& a, const auto& b) {
+                return a.ply_training_iter_number < b.ply_training_iter_number;
+            });
+
+        if (!std::filesystem::exists(latest->ply_path)) {
+            LOG_ERROR("PLY not found: {}", latest->ply_path.string());
+            return;
+        }
+
+        scene_manager_->clear();
+        scene_manager_->changeContentType(SceneManager::ContentType::SplatFiles);
+
+        try {
+            const auto node_name = scene_manager_->addSplatFile(latest->ply_path, latest->ply_name, true);
+            scene_manager_->selectNode(node_name);
+            LOG_INFO("Loaded checkpoint: {} (iter {})", node_name, latest->ply_training_iter_number);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Failed to load PLY: {}", e.what());
         }
     }
 
