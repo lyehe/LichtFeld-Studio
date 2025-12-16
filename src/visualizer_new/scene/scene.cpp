@@ -69,6 +69,11 @@ namespace lfs::vis {
     }
 
     void Scene::addNode(const std::string& name, std::unique_ptr<lfs::core::SplatData> model) {
+        if (name.empty()) {
+            LOG_WARN("Cannot add node with empty name");
+            return;
+        }
+
         // Calculate gaussian count and centroid before moving
         const size_t gaussian_count = static_cast<size_t>(model->size());
         const glm::vec3 centroid = computeCentroid(model.get());
@@ -107,6 +112,8 @@ namespace lfs::vis {
     }
 
     void Scene::removeNodeInternal(const std::string& name, const bool keep_children, const bool force) {
+        if (name.empty()) return;
+
         const auto it = std::find_if(nodes_.begin(), nodes_.end(),
                                [&name](const std::unique_ptr<Node>& node) { return node->name == name; });
         if (it == nodes_.end()) return;
