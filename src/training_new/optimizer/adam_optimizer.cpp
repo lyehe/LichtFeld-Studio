@@ -670,6 +670,13 @@ namespace lfs::training {
             }
             states_[name] = std::move(state);
         }
+
+        // Allocate gradient buffers (not serialized)
+        for (auto& [_, state] : states_) {
+            if (state.exp_avg.is_valid()) {
+                state.grad = lfs::core::Tensor::zeros_direct(state.exp_avg.shape(), state.capacity);
+            }
+        }
         LOG_DEBUG("Deserialized AdamOptimizer: {} states", num_states);
     }
 

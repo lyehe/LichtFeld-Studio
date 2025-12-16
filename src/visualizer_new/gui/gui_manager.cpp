@@ -1018,11 +1018,12 @@ namespace lfs::vis::gui {
                     trainer_mgr = sm->getTrainerManager();
                     if (trainer_mgr && trainer_mgr->hasTrainer()) {
                         const auto state = trainer_mgr->getState();
+                        const int current_iter = trainer_mgr->getCurrentIteration();
                         const char* base_mode = "Dataset";
                         switch (state) {
                         case TrainerManager::State::Running:   base_mode = "Training"; color = t.palette.warning; show_training_progress = true; break;
                         case TrainerManager::State::Paused:    base_mode = "Paused";   color = t.palette.text_dim; show_training_progress = true; break;
-                        case TrainerManager::State::Ready:     base_mode = "Ready";    color = t.palette.success; break;
+                        case TrainerManager::State::Ready:     base_mode = (current_iter > 0) ? "Resume" : "Ready"; color = t.palette.success; break;
                         case TrainerManager::State::Completed: base_mode = "Complete"; color = t.palette.success; show_training_progress = true; break;
                         case TrainerManager::State::Error:     base_mode = "Error";    color = t.palette.error; break;
                         default: break;

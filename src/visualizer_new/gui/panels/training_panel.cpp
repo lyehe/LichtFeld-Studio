@@ -1737,7 +1737,7 @@ namespace lfs::vis::gui::panels {
         const char* state_str = "Unknown";
         switch (trainer_state) {
         case TrainerManager::State::Idle: state_str = "Idle"; break;
-        case TrainerManager::State::Ready: state_str = "Ready"; break;
+        case TrainerManager::State::Ready: state_str = (current_iteration > 0) ? "Resume" : "Ready"; break;
         case TrainerManager::State::Running: state_str = "Running"; break;
         case TrainerManager::State::Paused: state_str = "Paused"; break;
         case TrainerManager::State::Stopping: state_str = "Stopping"; break;
