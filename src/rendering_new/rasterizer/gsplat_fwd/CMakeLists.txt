@@ -42,9 +42,10 @@ set_target_properties(gsplat_fwd PROPERTIES
 
 target_include_directories(gsplat_fwd
         PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/include
         ${CUDAToolkit_INCLUDE_DIRS}
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(gsplat_fwd

@@ -53,10 +53,10 @@ set_target_properties(gsplat_backend_lfs PROPERTIES
 
 target_include_directories(gsplat_backend_lfs
         PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/include
         ${CUDAToolkit_INCLUDE_DIRS}
         PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 target_link_libraries(gsplat_backend_lfs
