@@ -7,10 +7,10 @@
 #include "core_new/logger.hpp"
 #include "core_new/tensor.hpp"
 #include "io/nvcodec_image_loader.hpp"
-#include "project_new/project.hpp"
 
 #include <algorithm>
 #include <fstream>
+#include <random>
 
 #ifdef __linux__
 #include <sys/sysinfo.h>
@@ -20,6 +20,34 @@
 #endif
 
 namespace lfs::io {
+
+    namespace {
+        std::filesystem::path get_lichtfeld_temp_folder() {
+            std::filesystem::path temp_base;
+#ifdef _WIN32
+            const char* temp = std::getenv("TEMP");
+            if (!temp) temp = std::getenv("TMP");
+            temp_base = temp ? temp : "C:/Temp";
+#else
+            temp_base = "/tmp";
+#endif
+            return temp_base / "LichtFeld";
+        }
+
+        std::string generate_short_hash() {
+            static std::random_device rd;
+            static std::mt19937 gen(rd());
+            static std::uniform_int_distribution<> dis(0, 15);
+            static const char hex_chars[] = "0123456789abcdef";
+
+            std::string hash;
+            hash.reserve(8);
+            for (int i = 0; i < 8; ++i) {
+                hash += hex_chars[dis(gen)];
+            }
+            return hash;
+        }
+    } // anonymous namespace
 
     std::size_t get_total_physical_memory() {
 #ifdef __linux__
@@ -141,8 +169,8 @@ namespace lfs::io {
         if (!use_fs_cache_)
             return;
 
-        const auto cache_base = lfs::project::GetLichtFeldBaseTemporaryFolder() / "cache";
-        const std::string unique_cache_path = std::string(CACHE_PREFIX) + lfs::project::generateShortHash();
+        const auto cache_base = get_lichtfeld_temp_folder() / "cache";
+        const std::string unique_cache_path = std::string(CACHE_PREFIX) + generate_short_hash();
         const std::filesystem::path cache_folder = cache_base / unique_cache_path;
         std::error_code ec;
 
@@ -181,7 +209,7 @@ namespace lfs::io {
     }
 
     void CacheLoader::clean_cache_folders() {
-        const auto cache_base = lfs::project::GetLichtFeldBaseTemporaryFolder() / "cache";
+        const auto cache_base = get_lichtfeld_temp_folder() / "cache";
         if (!std::filesystem::exists(cache_base) || !std::filesystem::is_directory(cache_base)) {
             return;
         }

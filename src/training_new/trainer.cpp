@@ -1183,13 +1183,6 @@ namespace lfs::training {
             LOG_WARN("Failed to save checkpoint: {}", ckpt_result.error());
         }
 
-        // Update project with PLY info
-        if (lf_project_) {
-            const std::string ply_name = "splat_" + std::to_string(iter_num);
-            const std::filesystem::path ply_path = save_path / (ply_name + ".ply");
-            lf_project_->addPly(lfs::project::PlyData(false, ply_path, iter_num, ply_name));
-        }
-
         LOG_DEBUG("PLY save initiated: {} (sync={})", save_path.string(), join_threads);
     }
 

@@ -12,7 +12,6 @@
 #include "metrics/metrics.hpp"
 #include "optimizer/scheduler.hpp"
 #include "progress.hpp"
-#include "project_new/project.hpp"
 #include "strategies/istrategy.hpp"
 #include "core_new/camera.hpp"
 #include "core_new/tensor.hpp"
@@ -91,8 +90,6 @@ namespace lfs::training {
         std::shared_mutex& getRenderMutex() const { return render_mutex_; }
 
         const lfs::core::param::TrainingParameters& getParams() const { return params_; }
-
-        void setProject(std::shared_ptr<lfs::project::Project> project) { lf_project_ = project; }
 
         // Checkpoint methods
         std::expected<void, std::string> save_checkpoint(int iteration);
@@ -225,8 +222,5 @@ namespace lfs::training {
         std::function<void()> callback_;
         std::atomic<bool> callback_busy_{false};
         cudaStream_t callback_stream_ = nullptr;
-
-        // LichtFeld project
-        std::shared_ptr<lfs::project::Project> lf_project_ = nullptr;
     };
 } // namespace lfs::training

@@ -114,13 +114,7 @@ namespace lfs::vis {
         std::shared_ptr<const lfs::core::Camera> getCamById(int camId) const;
         std::vector<std::shared_ptr<const lfs::core::Camera>> getCamList() const;
 
-        void setProject(std::shared_ptr<lfs::project::Project> project);
-
-        std::shared_ptr<lfs::project::Project> getProject() const { return project_; }
-
     private:
-        // Helper method to avoid duplicated initialization logic
-        std::expected<bool, std::string> initializeTrainerFromProject();
 
         // Training thread function
         void trainingThreadFunc(std::stop_token stop_token);
@@ -154,9 +148,6 @@ namespace lfs::vis {
         // Training time tracking
         std::chrono::steady_clock::time_point training_start_time_;
         std::chrono::steady_clock::duration accumulated_training_time_{0};
-
-        // project
-        std::shared_ptr<lfs::project::Project> project_ = nullptr;
     };
 
 } // namespace lfs::vis

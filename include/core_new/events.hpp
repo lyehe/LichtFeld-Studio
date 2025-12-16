@@ -48,9 +48,7 @@ namespace lfs::core {
             EVENT(ResetTraining, );
             EVENT(SwitchToLatestCheckpoint, );
             EVENT(SaveCheckpoint, std::optional<int> iteration;);
-            EVENT(SaveProject, std::filesystem::path project_dir;);
             EVENT(LoadFile, std::filesystem::path path; bool is_dataset;);
-            EVENT(LoadProject, std::filesystem::path path;);
             EVENT(LoadCheckpointForTraining, std::filesystem::path path;);
             EVENT(ClearScene, );
             EVENT(ResetCamera, );

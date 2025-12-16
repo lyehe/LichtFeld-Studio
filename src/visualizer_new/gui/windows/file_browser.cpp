@@ -4,13 +4,8 @@
 
 #include "gui/windows/file_browser.hpp"
 #include "io/loader.hpp"
-#include "project_new/project.hpp"
 #include <algorithm>
 #include <imgui.h>
-
-namespace lfs::vis::gui {
-    using lfs::project::Project;
-}
 
 namespace lfs::vis::gui {
 
@@ -70,8 +65,8 @@ namespace lfs::vis::gui {
                         auto ext = entry.path().extension().string();
                         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-                        // Add .sog to the list of supported file extensions
-                        if (ext == ".ply" || ext == ".sog" || ext == ".json" || ext == Project::EXTENSION ||
+                        // Supported file extensions
+                        if (ext == ".ply" || ext == ".sog" || ext == ".json" ||
                             entry.path().filename() == "cameras.bin" ||
                             entry.path().filename() == "cameras.txt" ||
                             entry.path().filename() == "images.bin" ||
@@ -155,8 +150,6 @@ namespace lfs::vis::gui {
                     color = ImVec4(0.3f, 0.8f, 0.3f, 1.0f); // Green for PLY
                 } else if (file.path().extension() == ".sog") {
                     color = ImVec4(0.9f, 0.6f, 0.2f, 1.0f); // Orange for SOG
-                } else if (file.path().extension() == Project::EXTENSION) {
-                    color = ImVec4(0.9f, 0.4f, 0.9f, 1.0f); // Pink/purple for project files
                 } else if (filename == "cameras.bin" || filename == "cameras.txt" ||
                            filename == "images.bin" || filename == "images.txt" ||
                            filename == "transforms.json" || filename == "transforms_train.json") {
@@ -271,15 +264,6 @@ namespace lfs::vis::gui {
                 } else if (ext == ".sog") {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.5f, 0.1f, 1.0f)); // Orange button
                     if (ImGui::Button("Load SOG", ImVec2(120, 0))) {
-                        if (on_file_selected_) {
-                            on_file_selected_(selected_path, false);
-                            *p_open = false;
-                        }
-                    }
-                    ImGui::PopStyleColor();
-                } else if (ext == Project::EXTENSION) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.7f, 1.0f));
-                    if (ImGui::Button("Load LichtFeldStudio Project", ImVec2(200, 0))) {
                         if (on_file_selected_) {
                             on_file_selected_(selected_path, false);
                             *p_open = false;

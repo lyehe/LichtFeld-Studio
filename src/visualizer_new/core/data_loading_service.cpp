@@ -49,10 +49,7 @@ namespace lfs::vis {
         scene_manager_->changeContentType(SceneManager::ContentType::SplatFiles);
 
         const std::string name = path.stem().string();
-        const std::string actual_name = scene_manager_->addSplatFile(path, name);
-        if (const auto project = scene_manager_->getProject()) {
-            project->addPly(true, path, -1, actual_name);
-        }
+        scene_manager_->addSplatFile(path, name);
     }
 
     void DataLoadingService::handleLoadCheckpointForTrainingCommand(const std::filesystem::path& path) {

@@ -25,12 +25,8 @@ namespace lfs::vis::gui {
         void render();
         void setFonts(const FontSet& fonts) { fonts_ = fonts; }
 
-        void setOnNewProject(std::function<void()> callback);
         void setOnImportDataset(std::function<void()> callback);
-        void setOnOpenProject(std::function<void()> callback);
         void setOnImportPLY(std::function<void()> callback);
-        void setOnSaveProjectAs(std::function<void()> callback);
-        void setOnSaveProject(std::function<void()> callback);
         void setOnExport(std::function<void()> callback);
         void setOnExit(std::function<void()> callback);
 
@@ -38,9 +34,6 @@ namespace lfs::vis::gui {
         void renderAboutWindow();
         void renderInputSettingsWindow();
         void renderDebugWindow();
-
-        void setIsProjectTemp(bool is_temp) { is_project_temp_ = is_temp; }
-        [[nodiscard]] bool getIsProjectTemp() const { return is_project_temp_; }
 
         void setInputBindings(input::InputBindings* bindings) { input_bindings_ = bindings; }
 
@@ -67,12 +60,8 @@ namespace lfs::vis::gui {
         void updateThumbnails();
         void renderVideoCard(const char* title, const char* video_id, const char* url);
 
-        std::function<void()> on_new_project_;
         std::function<void()> on_import_dataset_;
-        std::function<void()> on_open_project_;
         std::function<void()> on_import_ply_;
-        std::function<void()> on_save_project_as_;
-        std::function<void()> on_save_project_;
         std::function<void()> on_export_;
         std::function<void()> on_exit_;
 
@@ -80,7 +69,6 @@ namespace lfs::vis::gui {
         bool show_getting_started_ = false;
         bool show_input_settings_ = false;
         bool show_debug_window_ = false;
-        bool is_project_temp_ = true;
 
         input::InputBindings* input_bindings_ = nullptr;
 

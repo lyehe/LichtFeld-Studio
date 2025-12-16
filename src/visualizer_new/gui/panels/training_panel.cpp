@@ -78,19 +78,6 @@ namespace lfs::vis::gui::panels {
         }
     };
 
-#ifdef WIN32
-    void SaveProjectFileDialog(bool* p_open) {
-        // show native windows file dialog for project directory selection
-        PWSTR filePath = nullptr;
-        if (SUCCEEDED(lfs::vis::gui::utils::selectFileNative(filePath, nullptr, 0, true))) {
-            std::filesystem::path project_path(filePath);
-            lfs::core::events::cmd::SaveProject{project_path}.emit();
-            LOG_INFO("Saving project file into : {}", std::filesystem::path(project_path).string());
-            *p_open = false;
-        }
-    }
-#endif // WIN32
-
     namespace {
         constexpr const char* PARAMETER_DIR = "parameter";
 
@@ -260,38 +247,20 @@ namespace lfs::vis::gui::panels {
             return;
         }
 
-        // Get current state to determine if we can edit
+        // Get current state
         auto trainer_state = trainer_manager->getState();
-        bool can_edit = (trainer_state == TrainerManager::State::Ready);
 
-        // Get project to modify parameters if we're in edit mode
-        auto project = ctx.viewer->getProject();
-        if (!project) {
+        // Get parameters from trainer (read-only)
+        const auto* trainer = trainer_manager->getTrainer();
+        if (!trainer) {
             return;
         }
+        const auto& params = trainer->getParams();
+        lfs::core::param::OptimizationParameters opt_params = params.optimization;
+        lfs::core::param::DatasetConfig dataset_params = params.dataset;
 
-        // Get parameters - either from project (if Ready) or from trainer (if training/completed)
-        lfs::core::param::OptimizationParameters opt_params;
-        lfs::core::param::DatasetConfig dataset_params;
-
-        if (trainer_state == TrainerManager::State::Ready) {
-            // Before training - get from project (editable) - no conversion needed
-            opt_params = project->getOptimizationParams();
-
-            // Convert DataSetInfo to DatasetConfig
-            const auto& old_dataset = project->getProjectData().data_set_info;
-            dataset_params = static_cast<lfs::core::param::DatasetConfig>(old_dataset);
-
-        } else {
-            // During/after training - get from trainer (read-only)
-            const auto* trainer = trainer_manager->getTrainer();
-            if (!trainer) {
-                return;
-            }
-            const auto& params = trainer->getParams();
-            opt_params = params.optimization;
-            dataset_params = params.dataset;
-        }
+        // Parameter editing is not available without a project
+        bool can_edit = false;
 
         // Strategy parameter cache - preserves settings when switching strategies
         static StrategyParamsCache strategy_cache;
@@ -1603,36 +1572,9 @@ namespace lfs::vis::gui::panels {
         ImGui::TreePop();
         } // End Advanced Training Params
 
-        // Apply changes if any were made and we can edit
-        if ((opt_params_changed || dataset_params_changed) && can_edit) {
-            // Update optimization parameters if they changed - no conversion needed
-            if (opt_params_changed) {
-                // Update cache with modified parameters
-                strategy_cache.storeCurrentParams(opt_params);
-                project->setOptimizationParams(opt_params);
-            }
-
-            // Update dataset parameters if they changed
-            if (dataset_params_changed) {
-                auto project_data = project->getProjectData();
-
-                // Only update the fields from DatasetConfig that we allow editing
-                project_data.data_set_info.output_path = dataset_params.output_path;
-                project_data.data_set_info.resize_factor = dataset_params.resize_factor;
-                project_data.data_set_info.max_width = dataset_params.max_width;
-                project_data.data_set_info.test_every = dataset_params.test_every;
-
-                project_data.data_set_info.loading_params.use_cpu_memory = dataset_params.loading_params.use_cpu_memory;
-                project_data.data_set_info.loading_params.use_fs_cache = dataset_params.loading_params.use_fs_cache;
-
-                // Set the updated project data back
-                project->setProjectData(project_data);
-            }
-
-            ImGui::Separator();
-            ImGui::TextColored(theme().palette.warning,
-                               "Parameters updated - will be applied when training starts");
-        }
+        // Note: Parameter editing is disabled - parameters are read-only from trainer
+        (void)opt_params_changed;
+        (void)dataset_params_changed;
 
         ImGui::PopStyleVar();
     }

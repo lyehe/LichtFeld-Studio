@@ -1020,14 +1020,6 @@ namespace lfs::vis {
             cmd::LoadFile{.path = *dataset_path, .is_dataset = true}.emit();
             LOG_INFO("Loading dataset via drag-and-drop: {}", dataset_path->filename().string());
         }
-
-        if (paths.size() == 1) {
-            auto project_path = std::filesystem::path(paths[0]);
-            if (project_path.extension() == lfs::project::Project::EXTENSION) {
-                cmd::LoadProject{.path = project_path}.emit();
-                LOG_INFO("Loading LS Project via drag-and-drop: {}", project_path.filename().string());
-            }
-        }
     }
 
     void InputController::handleGoToCamView(const lfs::core::events::cmd::GoToCamView& event) {

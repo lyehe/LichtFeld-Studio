@@ -38,7 +38,6 @@ namespace lfs::vis {
         if (trainer) {
             LOG_DEBUG("Setting new trainer");
             trainer_ = std::move(trainer);
-            trainer_->setProject(project_);
             setState(State::Ready);
 
             // Trainer is ready
@@ -56,7 +55,6 @@ namespace lfs::vis {
         if (trainer) {
             LOG_DEBUG("Setting trainer from checkpoint (iteration {})", checkpoint_iteration);
             trainer_ = std::move(trainer);
-            trainer_->setProject(project_);
 
             // Set to Ready state - user will click "Resume" or "Start" to begin training
             // The iteration is already set in the trainer from load_checkpoint
@@ -115,35 +113,6 @@ namespace lfs::vis {
         LOG_INFO("Trainer cleared");
     }
 
-    std::expected<bool, std::string> TrainerManager::initializeTrainerFromProject() {
-        if (!trainer_) {
-            return std::unexpected("No trainer available");
-        }
-
-        if (!project_) {
-            return std::unexpected("No project available");
-        }
-
-        // Create training parameters from project
-        lfs::core::param::TrainingParameters params;
-
-        // Convert lfs::project::DataSetInfo to lfs::core::param::DatasetConfig
-        // DataSetInfo inherits from DatasetConfig, so we can slice-copy the base
-        const auto& updated_dataset = project_->getProjectData().data_set_info;
-        params.dataset = static_cast<lfs::core::param::DatasetConfig>(updated_dataset);
-
-        // Project now returns lfs::core::param::OptimizationParameters directly (no conversion needed)
-        params.optimization = project_->getOptimizationParams();
-
-        // Initialize trainer
-        auto init_result = trainer_->initialize(params);
-        if (!init_result) {
-            return std::unexpected(init_result.error());
-        }
-
-        return true;
-    }
-
     bool TrainerManager::startTraining() {
         LOG_TIMER("TrainerManager::startTraining");
 
@@ -161,33 +130,6 @@ namespace lfs::vis {
         if (trainer_->isInitialized()) {
             LOG_INFO("Trainer already initialized (resuming from iteration {}), skipping reinitialization",
                      trainer_->get_current_iteration());
-        } else {
-            // Initialize training model from PointCloud if needed
-            // This converts PointCloud node to SplatData, applying any CropBox filtering
-            if (scene_ && project_) {
-                lfs::core::param::TrainingParameters params;
-                const auto& updated_dataset = project_->getProjectData().data_set_info;
-                params.dataset = static_cast<lfs::core::param::DatasetConfig>(updated_dataset);
-                params.optimization = project_->getOptimizationParams();
-
-                auto model_init_result = lfs::training::initializeTrainingModel(params, *scene_);
-                if (!model_init_result) {
-                    LOG_ERROR("Failed to initialize training model: {}", model_init_result.error());
-                    last_error_ = model_init_result.error();
-                    setState(State::Error);
-                    return false;
-                }
-            }
-
-            // Reinitialize trainer to pick up any parameter changes from the project
-            LOG_INFO("Initializing trainer with current project parameters");
-            auto init_result = initializeTrainerFromProject();
-            if (!init_result) {
-                LOG_ERROR("Failed to initialize trainer: {}", init_result.error());
-                last_error_ = init_result.error();
-                setState(State::Error);
-                return false;
-            }
         }
 
         // Reset completion state
@@ -348,7 +290,6 @@ namespace lfs::vis {
                 return false;
             }
             trainer_ = std::make_unique<lfs::training::Trainer>(*scene_);
-            trainer_->setProject(project_);
         }
 
         // Clear loss buffer
@@ -568,13 +509,6 @@ namespace lfs::vis {
         }
         LOG_ERROR("getCamList called but scene is not set");
         return {};
-    }
-
-    void TrainerManager::setProject(std::shared_ptr<lfs::project::Project> project) {
-        project_ = project;
-        if (trainer_) {
-            trainer_->setProject(project);
-        }
     }
 
 } // namespace lfs::vis

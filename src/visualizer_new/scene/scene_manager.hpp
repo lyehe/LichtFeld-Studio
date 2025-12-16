@@ -12,7 +12,6 @@
 #include <filesystem>
 #include <mutex>
 #include <set>
-#include <project_new/project.hpp>
 
 namespace lfs::vis {
 
@@ -180,10 +179,6 @@ namespace lfs::vis {
 
         SceneInfo getSceneInfo() const;
 
-        void setProject(std::shared_ptr<lfs::project::Project> project) { lfs_project_ = project; }
-
-        [[nodiscard]] std::shared_ptr<lfs::project::Project> getProject() const { return lfs_project_; }
-
         bool renamePLY(const std::string& old_name, const std::string& new_name);
         void updatePlyPath(const std::string& ply_name, const std::filesystem::path& ply_path);
 
@@ -230,8 +225,6 @@ namespace lfs::vis {
 
         // Cache for parameters
         std::optional<lfs::core::param::TrainingParameters> cached_params_;
-        // project
-        std::shared_ptr<lfs::project::Project> lfs_project_ = nullptr;
 
         std::set<std::string> selected_nodes_;
 

@@ -157,25 +157,11 @@ namespace lfs::vis::gui {
 
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("File")) {
-                if (ImGui::MenuItem("New Project") && on_new_project_) {
-                    on_new_project_();
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Open Project") && on_open_project_) {
-                    on_open_project_();
-                }
                 if (ImGui::MenuItem("Import Dataset") && on_import_dataset_) {
                     on_import_dataset_();
                 }
                 if (ImGui::MenuItem("Import Ply") && on_import_ply_) {
                     on_import_ply_();
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Save Project As...") && on_save_project_as_) {
-                    on_save_project_as_();
-                }
-                if (ImGui::MenuItem("Save Project", nullptr, false, !is_project_temp_) && on_save_project_) {
-                    on_save_project_();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Export...") && on_export_) {
@@ -478,28 +464,12 @@ namespace lfs::vis::gui {
         ImGui::PopStyleVar(3);
     }
 
-    void MenuBar::setOnNewProject(std::function<void()> callback) {
-        on_new_project_ = std::move(callback);
-    }
-
     void MenuBar::setOnImportDataset(std::function<void()> callback) {
         on_import_dataset_ = std::move(callback);
     }
 
-    void MenuBar::setOnOpenProject(std::function<void()> callback) {
-        on_open_project_ = std::move(callback);
-    }
-
     void MenuBar::setOnImportPLY(std::function<void()> callback) {
         on_import_ply_ = std::move(callback);
-    }
-
-    void MenuBar::setOnSaveProjectAs(std::function<void()> callback) {
-        on_save_project_as_ = std::move(callback);
-    }
-
-    void MenuBar::setOnSaveProject(std::function<void()> callback) {
-        on_save_project_ = std::move(callback);
     }
 
     void MenuBar::setOnExport(std::function<void()> callback) {

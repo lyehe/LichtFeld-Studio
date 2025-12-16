@@ -15,7 +15,6 @@
 #include "core_new/splat_data_export.hpp"
 #include "gui/html_viewer_export.hpp"
 #include "io/exporter.hpp"
-#include "project_new/project.hpp"
 #include "gui/panels/main_panel.hpp"
 #include "gui/panels/scene_panel.hpp"
 #include "gui/panels/tools_panel.hpp"
@@ -23,7 +22,6 @@
 #include "gui/ui_widgets.hpp"
 #include "gui/utils/windows_utils.hpp"
 #include "gui/windows/file_browser.hpp"
-#include "gui/windows/project_changed_dialog_box.hpp"
 
 #include "input/input_controller.hpp"
 #include "internal/resource_paths.hpp"
@@ -87,9 +85,7 @@ namespace lfs::vis::gui {
 
         // Create components
         file_browser_ = std::make_unique<FileBrowser>();
-        project_changed_dialog_box_ = std::make_unique<ProjectChangedDialogBox>();
         scene_panel_ = std::make_unique<ScenePanel>(viewer->trainer_manager_);
-        save_project_browser_ = std::make_unique<SaveProjectBrowser>();
         menu_bar_ = std::make_unique<MenuBar>();
         export_dialog_ = std::make_unique<ExportDialog>();
         notification_popup_ = std::make_unique<NotificationPopup>();
@@ -97,9 +93,6 @@ namespace lfs::vis::gui {
         // Initialize window states
         window_states_["file_browser"] = false;
         window_states_["scene_panel"] = true;
-        window_states_["project_changed_dialog_box"] = false;
-        window_states_["save_project_browser_before_exit"] = false;
-        window_states_["show_save_browser"] = false;
         window_states_["system_console"] = false;
         window_states_["training_tab"] = false;
         window_states_["export_dialog"] = false;
@@ -126,51 +119,20 @@ namespace lfs::vis::gui {
     }
 
     void GuiManager::initMenuBar() {
-        menu_bar_->setOnNewProject([this]() {
-            viewer_->clearScene();
-        });
-
         menu_bar_->setOnImportDataset([this]() {
             window_states_["file_browser"] = true;
 #ifdef WIN32
-            // show native windows file dialog for project file selection
             OpenDatasetFolderDialog();
-
-            // hide the file browser
             lfs::core::events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif // WIN32
-        });
-
-        menu_bar_->setOnOpenProject([this]() {
-            window_states_["file_browser"] = true;
-#ifdef WIN32
-            // show native windows file dialog for project file selection
-            OpenProjectFileDialog();
-
-            // hide the file browser
-            lfs::core::events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif // WIN32
+#endif
         });
 
         menu_bar_->setOnImportPLY([this]() {
             window_states_["file_browser"] = true;
 #ifdef WIN32
-            // show native windows file dialog for project file selection
             OpenPlyFileDialog();
-
-            // hide the file browser
             lfs::core::events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif // WIN32
-        });
-
-        menu_bar_->setOnSaveProjectAs([this]() {
-            window_states_["show_save_browser"] = true;
-        });
-
-        menu_bar_->setOnSaveProject([this]() {
-            if (viewer_->project_) {
-                lfs::core::events::cmd::SaveProject{viewer_->project_->getProjectOutputFolder().string()}.emit();
-            }
+#endif
         });
 
         menu_bar_->setOnExport([this]() {
@@ -313,24 +275,8 @@ namespace lfs::vis::gui {
 
         // Configure file browser callback
         setFileSelectedCallback([this](const std::filesystem::path& path, bool is_dataset) {
-            if (path.extension() == lfs::project::Project::EXTENSION) {
-                lfs::core::events::cmd::LoadProject{.path = path}.emit();
-            } else {
-                lfs::core::events::cmd::LoadFile{.path = path, .is_dataset = is_dataset}.emit();
-            }
-
+            lfs::core::events::cmd::LoadFile{.path = path, .is_dataset = is_dataset}.emit();
             window_states_["file_browser"] = false;
-        });
-
-        handleProjectChangedDialogCallback([this](bool save) {
-            if (save) {
-                window_states_["save_project_browser_before_exit"] = true;
-            } else {
-                force_exit_ = true;
-                glfwSetWindowShouldClose(viewer_->getWindow(), true);
-                LOG_INFO("Exiting LichtFeldStudio gracefully without saving");
-            }
-            window_states_["project_changed_dialog_box"] = false;
         });
 
         scene_panel_->setOnDatasetLoad([this](const std::filesystem::path& path) {
@@ -579,36 +525,6 @@ namespace lfs::vis::gui {
         // Render floating windows
         if (window_states_["file_browser"]) {
             file_browser_->render(&window_states_["file_browser"]);
-        }
-
-        if (window_states_["project_changed_dialog_box"]) {
-            project_changed_dialog_box_->render(&window_states_["project_changed_dialog_box"]);
-        }
-
-        if (window_states_["save_project_browser_before_exit"]) {
-#ifdef WIN32
-            bool was_project_saved = save_project_browser_->SaveProjectFileDialog(&window_states_["save_project_browser_before_exit"]);
-#else
-            bool was_project_saved = save_project_browser_->render(&window_states_["save_project_browser_before_exit"]);
-#endif
-            if (was_project_saved) {
-                force_exit_ = true;
-                glfwSetWindowShouldClose(viewer_->getWindow(), true);
-                LOG_INFO("Exiting LichtFeldStudio gracefully after project save");
-            }
-        }
-
-        if (window_states_["show_save_browser"]) {
-#ifdef WIN32
-            save_project_browser_->SaveProjectFileDialog(&window_states_["show_save_browser"]);
-#else
-            save_project_browser_->render(&window_states_["show_save_browser"]);
-#endif
-        }
-
-        if (menu_bar_ && viewer_) {
-            auto project = viewer_->getProject();
-            menu_bar_->setIsProjectTemp(project ? project->getIsTempProject() : false);
         }
 
         // Export dialog
@@ -1684,12 +1600,6 @@ namespace lfs::vis::gui {
     void GuiManager::setFileSelectedCallback(std::function<void(const std::filesystem::path&, bool)> callback) {
         if (file_browser_) {
             file_browser_->setOnFileSelected(callback);
-        }
-    }
-
-    void GuiManager::handleProjectChangedDialogCallback(std::function<void(bool)> callback) {
-        if (project_changed_dialog_box_) {
-            project_changed_dialog_box_->setOnDialogClose(callback);
         }
     }
 

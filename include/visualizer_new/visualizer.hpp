@@ -13,10 +13,6 @@ namespace lfs::core::param {
     struct TrainingParameters;
 }
 
-namespace lfs::project {
-    class Project;
-}
-
 namespace lfs::vis {
 
     struct ViewerOptions {
@@ -38,12 +34,6 @@ namespace lfs::vis {
         virtual std::expected<void, std::string> addSplatFile(const std::filesystem::path& path) = 0;
         virtual std::expected<void, std::string> loadDataset(const std::filesystem::path& path) = 0;
         virtual std::expected<void, std::string> loadCheckpointForTraining(const std::filesystem::path& path) = 0;
-
-        // project handling
-        virtual bool openProject(const std::filesystem::path& path) = 0;
-        virtual bool closeProject(const std::filesystem::path& path) = 0;
-        virtual std::shared_ptr<lfs::project::Project> getProject() = 0;
-        virtual void attachProject(std::shared_ptr<lfs::project::Project> _project) = 0;
 
         virtual void clearScene() = 0;
 

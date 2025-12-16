@@ -10,7 +10,6 @@
 #include "gui/gui_manager.hpp"
 #include "input/input_controller.hpp"
 #include "internal/viewport.hpp"
-#include "project/project.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "rendering_new/rendering.hpp"
 #include "scene/scene_manager.hpp"
@@ -50,15 +49,6 @@ namespace lfs::vis {
         std::expected<void, std::string> loadDataset(const std::filesystem::path& path) override;
         std::expected<void, std::string> loadCheckpointForTraining(const std::filesystem::path& path) override;
         void clearScene() override;
-
-        // open project file and attach it to viewer
-        bool openProject(const std::filesystem::path& path) override;
-        bool closeProject(const std::filesystem::path& path = {}) override;
-        std::shared_ptr<lfs::project::Project> getProject() override;
-        void attachProject(std::shared_ptr<lfs::project::Project> _project) override;
-        // load project content to viewer
-        bool LoadProject();
-        void LoadProjectPlys();
 
         // Getters for GUI (delegating to state manager)
         lfs::training::Trainer* getTrainer() const { return trainer_manager_->getTrainer(); }
@@ -149,10 +139,8 @@ namespace lfs::vis {
         // Event system
         void setupEventHandlers();
         void setupComponentConnections();
-        void handleLoadProjectCommand(const lfs::core::events::cmd::LoadProject& cmd);
         void handleTrainingCompleted(const lfs::core::events::state::TrainingCompleted& event);
         void handleLoadFileCommand(const lfs::core::events::cmd::LoadFile& cmd);
-        void handleSaveProject(const lfs::core::events::cmd::SaveProject& cmd);
         void handleSwitchToLatestCheckpoint();
 
         // Tool initialization
@@ -187,9 +175,6 @@ namespace lfs::vis {
         bool window_initialized_ = false;
         bool gui_initialized_ = false;
         bool tools_initialized_ = false;
-        // Project
-        std::shared_ptr<lfs::project::Project> project_ = nullptr;
-        void updateProjectOnModules();
     };
 
 } // namespace lfs::vis

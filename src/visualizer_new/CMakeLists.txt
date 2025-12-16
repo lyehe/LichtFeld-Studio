@@ -32,9 +32,7 @@ add_library(lfs_visualizer STATIC
         gui/panels/scene_panel.cpp
         gui/panels/tools_panel.cpp
         gui/windows/file_browser.cpp
-        gui/windows/project_changed_dialog_box.cpp
         gui/windows/image_preview.cpp
-        gui/windows/save_project_browser.cpp
         gui/windows/export_dialog.cpp
         gui/windows/notification_popup.cpp
 
@@ -84,8 +82,6 @@ target_link_libraries(lfs_visualizer
         PRIVATE
         lfs_core           # Use modular core library (LibTorch-free)
         lfs_geometry       # LibTorch-free geometry module
-        lfs_project        # LibTorch-free project management
-        # gs_kernels         # Temporarily disabled - requires LibTorch
         lfs_io
         lfs_rendering
         lfs_training

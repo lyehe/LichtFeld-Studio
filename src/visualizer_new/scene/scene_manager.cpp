@@ -385,8 +385,6 @@ namespace lfs::vis {
             selected_nodes_.erase(name);  // Remove from selection
         }
 
-        if (lfs_project_) lfs_project_->removePly(name);
-
         if (scene_.getNodeCount() == 0) {
             std::lock_guard lock(state_mutex_);
             content_type_ = ContentType::Empty;
@@ -1519,22 +1517,7 @@ namespace lfs::vis {
                     auto path = it->second;
 
                     splat_paths_.erase(it);
-                    std::filesystem::path new_ply_path;
-                    // chaning ply name and path
-                    std::filesystem::path new_path = path;
-                    // resposibility of file systems changes should be on the project
-                    if (lfs_project_) {
-                        auto parent = path.parent_path();
-                        auto extension = path.extension();
-                        new_path = parent / (new_name + extension.string());
-                        if (!lfs_project_->updatePlyPath(old_name, new_path)) {
-                            // os rename failed - reducing to old path
-                            new_path = path;
-                        }
-                        lfs_project_->renamePly(old_name, new_name);
-                    }
-
-                    splat_paths_[new_name] = new_path;
+                    splat_paths_[new_name] = path;
                 }
             }
 

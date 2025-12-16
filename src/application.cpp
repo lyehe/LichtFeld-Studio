@@ -6,7 +6,6 @@
 #include "core_new/argument_parser.hpp"
 #include "core_new/logger.hpp"
 #include "core_new/tensor/internal/memory_pool.hpp"
-#include "project_new/project.hpp"
 #include "training_new/training_setup.hpp"
 #include "training_new/trainer.hpp"
 #include "visualizer_new/scene/scene.hpp"  // Scene for unified data storage
@@ -25,14 +24,6 @@ namespace lfs::core {
         }
 
         LOG_INFO("Starting headless training (using unified Scene)...");
-
-        auto project = lfs::project::CreateNewProject(
-            params->dataset,
-            params->optimization);
-        if (!project) {
-            LOG_ERROR("Project creation failed");
-            return -1;
-        }
 
         // Create Scene to hold all training data
         lfs::vis::Scene scene;
@@ -53,7 +44,6 @@ namespace lfs::core {
 
         // Create Trainer from Scene
         auto trainer = std::make_unique<lfs::training::Trainer>(scene);
-        trainer->setProject(project);
 
         // Initialize trainer with parameters (creates strategy internally)
         auto init_result = trainer->initialize(*params);
@@ -85,9 +75,6 @@ namespace lfs::core {
     int run_gui_app(std::unique_ptr<param::TrainingParameters> params) {
         LOG_INFO("Starting viewer mode...");
 
-        LOG_DEBUG("removing temporary projects");
-        lfs::project::RemoveTempUnlockedProjects();
-
         // Create visualizer with options
         auto viewer = lfs::vis::Visualizer::create({.title = "LichtFeld Studio",
                                                     .width = 1280,
@@ -95,32 +82,6 @@ namespace lfs::core {
                                                     .antialiasing = false,
                                                     .enable_cuda_interop = true,
                                                     .gut = params->optimization.gut});
-
-        // create temporary project until user will save it in desired location
-        {
-            std::shared_ptr<lfs::project::Project> project = nullptr;
-            if (params->dataset.output_path.empty()) {
-                project = lfs::project::CreateTempNewProject(
-                    params->dataset,
-                    params->optimization);
-                if (!project) {
-                    LOG_ERROR("Temporary project creation failed");
-                    return -1;
-                }
-                params->dataset.output_path = project->getProjectOutputFolder();
-                LOG_DEBUG("Created temporary project at: {}", params->dataset.output_path.string());
-            } else {
-                project = lfs::project::CreateNewProject(
-                    params->dataset,
-                    params->optimization);
-                if (!project) {
-                    LOG_ERROR("Project creation failed");
-                    return -1;
-                }
-                LOG_DEBUG("Created project at: {}", params->dataset.output_path.string());
-            }
-            viewer->attachProject(project);
-        }
 
         // Set parameters
         viewer->setParameters(*params);

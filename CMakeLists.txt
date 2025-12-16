@@ -498,7 +498,6 @@ endif(BUILD_LEGACY)
 add_subdirectory(src/core_new)     # New core module (lfs::core namespace)
 add_subdirectory(src/training_new) # New training module (lfs::training namespace)
 add_subdirectory(src/io)           # I/O module (lfs::io namespace)
-add_subdirectory(src/project_new)  # New project management module (lfs::project namespace)
 add_subdirectory(src/rendering_new) # New rendering module (lfs::rendering namespace)
 add_subdirectory(src/visualizer_new) # New visualizer module (lfs::vis namespace)
 add_subdirectory(src/geometry_new) # LibTorch-free geometry utilities
@@ -550,7 +549,6 @@ target_link_libraries(${PROJECT_NAME}
         # Application layer dependencies (needed by application.cpp)
         lfs_visualizer     # For Visualizer class
         lfs_training       # For training setup
-        lfs_project        # For Project management
         lfs_geometry       # For EuclideanTransform
         lfs_core           # LibTorch-free core library (new implementation)
         lfs_io             # For CacheLoader
@@ -777,7 +775,6 @@ configure_build_type(lfs_rendering)
 configure_build_type(lfs_visualizer)
 configure_build_type(lfs_io)
 configure_build_type(lfs_geometry)
-configure_build_type(lfs_project)
 configure_build_type(${PROJECT_NAME})
 
 # =============================================================================

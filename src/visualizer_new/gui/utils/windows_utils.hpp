@@ -44,11 +44,8 @@ namespace lfs::vis::gui {
                                const wchar_t* defaultName = nullptr);
     } // namespace utils
 
-    // in windows- open file browser that search for lfs project
-    void OpenProjectFileDialog();
-    // in windows- open file browser that search for ply files
+    // Windows native file dialogs
     void OpenPlyFileDialog();
-    // in windows- open file browser that search directories
     void OpenDatasetFolderDialog();
 #endif
 

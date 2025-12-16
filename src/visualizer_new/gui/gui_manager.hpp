@@ -13,10 +13,8 @@
 #include "gui/panels/transform_panel.hpp"
 #include "gui/ui_context.hpp"
 #include "gui/utils/drag_drop_native.hpp"
-#include "gui/windows/save_project_browser.hpp"
 #include "windows/export_dialog.hpp"
 #include "windows/notification_popup.hpp"
-#include "windows/project_changed_dialog_box.hpp"
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <atomic>
@@ -60,9 +58,7 @@ namespace lfs::vis {
             void showWindow(const std::string& name, bool show = true);
             void toggleWindow(const std::string& name);
 
-            // Missing methods that visualizer_impl expects
             void setFileSelectedCallback(std::function<void(const std::filesystem::path&, bool)> callback);
-            void handleProjectChangedDialogCallback(std::function<void(bool)> callback);
 
             // Viewport region access
             ImVec2 getViewportPos() const;
@@ -107,7 +103,6 @@ namespace lfs::vis {
 
             // Owned components
             std::unique_ptr<FileBrowser> file_browser_;
-            std::unique_ptr<ProjectChangedDialogBox> project_changed_dialog_box_;
             std::unique_ptr<ScenePanel> scene_panel_;
             std::unique_ptr<ExportDialog> export_dialog_;
             std::unique_ptr<NotificationPopup> notification_popup_;
@@ -161,7 +156,6 @@ namespace lfs::vis {
             void renderCropBoxGizmo(const UIContext& ctx);
             void renderNodeTransformGizmo(const UIContext& ctx);
 
-            std::unique_ptr<SaveProjectBrowser> save_project_browser_;
             std::unique_ptr<MenuBar> menu_bar_;
             bool menu_bar_input_bindings_set_ = false;
 

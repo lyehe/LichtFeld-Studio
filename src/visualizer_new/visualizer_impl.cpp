@@ -140,16 +140,6 @@ namespace lfs::vis {
         // Training commands
         cmd::StartTraining::when([this](const auto&) {
             if (trainer_manager_) {
-                // Sync viewer GUT mode with training GUT setting
-                if (trainer_manager_->getProject()) {
-                    const bool training_gut = trainer_manager_->getProject()->getOptimizationParams().gut;
-                    auto settings = rendering_manager_->getSettings();
-                    if (settings.gut != training_gut) {
-                        settings.gut = training_gut;
-                        rendering_manager_->updateSettings(settings);
-                        LOG_INFO("Viewer GUT mode synced with training: {}", training_gut);
-                    }
-                }
                 trainer_manager_->startTraining();
             }
         });
@@ -255,11 +245,6 @@ namespace lfs::vis {
             // The 1 FPS throttle will handle rendering
         });
 
-        // Listen for file load commands
-        cmd::LoadProject::when([this](const auto& cmd) {
-            handleLoadProjectCommand(cmd);
-        });
-
         // Listen to TrainingStarted - switch to splat rendering and select training model
         state::TrainingStarted::when([this](const auto&) {
             ui::PointCloudModeChanged{
@@ -285,13 +270,8 @@ namespace lfs::vis {
             handleTrainingCompleted(event);
         });
 
-        // Listen to load dataset (we need to update project)
         cmd::LoadFile::when([this](const auto& cmd) {
             handleLoadFileCommand(cmd);
-        });
-
-        cmd::SaveProject::when([this](const auto& cmd) {
-            handleSaveProject(cmd);
         });
 
         cmd::SwitchToLatestCheckpoint::when([this](const auto&) {
@@ -465,24 +445,6 @@ namespace lfs::vis {
     }
 
     bool VisualizerImpl::allowclose() {
-        // If we are trying to close and the project is temporary, show dialog
-        if (window_manager_->shouldClose() && !gui_manager_->isForceExit()) {
-            if (project_) {
-                if (project_->getIsTempProject() && !project_->getIsProjectEmpty()) {
-                    gui_manager_->showWindow("project_changed_dialog_box", true);
-                    window_manager_->cancelClose();
-                }
-            }
-        }
-        // If we are trying to close and the project is temporary and we are forcing exit, unlock project
-        if (window_manager_->shouldClose() && gui_manager_->isForceExit()) {
-            if (project_) {
-                if (project_->getIsTempProject()) {
-                    project_->unlockProject();
-                }
-            }
-        }
-
 #ifdef WIN32
         // show console in case it was hidden to prevent cmd window to stay hidden/in memory after closing the application
         if (window_manager_->shouldClose()) {
@@ -727,84 +689,7 @@ namespace lfs::vis {
         if (rendering_manager_) rendering_manager_->markDirty();
     }
 
-    bool VisualizerImpl::LoadProject() {
-        if (project_) {
-            try {
-                LOG_TIMER("LoadProject");
-                // write to project file on every change - maybe configurable in the future?
-                project_->setUpdateFileOnChange(true);
-
-                // Load dataset from project if available and not already loaded
-                auto dataset = static_cast<const lfs::core::param::DatasetConfig&>(project_->getProjectData().data_set_info);
-                if (!dataset.data_path.empty() && !scene_manager_->hasDataset()) {
-                    LOG_DEBUG("Loading dataset from project: {}", dataset.data_path.string());
-                    auto result = data_loader_->loadDataset(dataset.data_path);
-                    if (!result) {
-                        LOG_ERROR("Failed to load dataset from project: {}", result.error());
-                        throw std::runtime_error(std::format("Failed to load dataset from project: {}", result.error()));
-                    }
-                } else if (scene_manager_->hasDataset()) {
-                    LOG_DEBUG("Dataset already loaded, skipping project load");
-                }
-                // update the project of all the different managers
-                updateProjectOnModules();
-                // load plys
-                LoadProjectPlys();
-
-                auto plys = project_->getPlys();
-                LOG_INFO("Project loaded successfully with {} PLY files", plys.size());
-            } catch (const std::exception& e) {
-                LOG_ERROR("Failed to load project: {}", e.what());
-                throw std::runtime_error(std::format("Failed to load project: {}", e.what()));
-            }
-
-            return true;
-        }
-        return false;
-    }
-
-    void VisualizerImpl::LoadProjectPlys() {
-        if (!project_) {
-            LOG_ERROR("LoadProjectPlys: project is not initialized");
-            return;
-        }
-
-        auto plys = project_->getPlys();
-        LOG_DEBUG("Loading {} PLY files from project", plys.size());
-
-        // sort according to iter numbers
-        std::sort(plys.begin(), plys.end(),
-                  [](const lfs::project::PlyData& a, const lfs::project::PlyData& b) {
-                      return a.ply_training_iter_number < b.ply_training_iter_number;
-                  });
-
-        if (!plys.empty()) {
-            scene_manager_->changeContentType(SceneManager::ContentType::SplatFiles);
-        }
-
-        // set all of the nodes to invisible except the last one
-        for (auto it = plys.begin(); it != plys.end(); ++it) {
-            std::string ply_name = it->ply_name;
-            if (!std::filesystem::exists(it->ply_path)) {
-                LOG_ERROR("ply path not exists {}. skip loading", it->ply_path.string());
-                continue;
-            }
-            bool is_last = (std::next(it) == plys.end());
-
-            LOG_TRACE("Adding PLY '{}' to scene (visible: {})", ply_name, is_last);
-            try {
-                scene_manager_->addSplatFile(it->ply_path, ply_name, is_last);
-                scene_manager_->setPLYVisibility(ply_name, is_last);
-            } catch (const std::exception& e) {
-                LOG_ERROR("failed loading ply path {}. reason {} ", it->ply_path.string(), e.what());
-            }
-        }
-    }
-
     void VisualizerImpl::run() {
-        // The main loop will call initialize() as its init callback
-        // Don't duplicate initialization here
-        LoadProject();
         main_loop_->run();
     }
 
@@ -840,26 +725,12 @@ namespace lfs::vis {
     std::expected<void, std::string> VisualizerImpl::loadDataset(const std::filesystem::path& path) {
         LOG_TIMER("LoadDataset");
 
-        // Ensure full initialization before loading dataset
-        // This will only initialize once due to the guard in initialize()
         if (!initialize()) {
             return std::unexpected("Failed to initialize visualizer");
         }
 
         LOG_INFO("Loading dataset: {}", path.string());
-        auto result = data_loader_->loadDataset(path);
-        if (result && project_) {
-            auto data_config = project_->getProjectData().data_set_info;
-            if (data_config.data_path.empty() || data_config.data_path == path) { // empty project or same data
-                data_config.data_path = path;
-                project_->setDataInfo(data_config);
-            } else {
-                project_ = lfs::project::CreateTempNewProject(data_config, project_->getOptimizationParams());
-                updateProjectOnModules();
-            }
-        }
-
-        return result;
+        return data_loader_->loadDataset(path);
     }
 
     std::expected<void, std::string> VisualizerImpl::loadCheckpointForTraining(const std::filesystem::path& path) {
@@ -878,184 +749,18 @@ namespace lfs::vis {
         data_loader_->clearScene();
     }
 
-    bool VisualizerImpl::openProject(const std::filesystem::path& path) {
-        LOG_TIMER("OpenProject");
-
-        auto project = std::make_shared<lfs::project::Project>();
-
-        if (!project) {
-            LOG_ERROR("Failed to create project object");
-            throw std::runtime_error("Failed to create project object");
-        }
-
-        if (!project->readFromFile(path)) {
-            LOG_ERROR("Failed to read project file: {}", path.string());
-            throw std::runtime_error(std::format("Failed to read project file: {}", path.string()));
-        }
-
-        if (!project->validateProjectData()) {
-            LOG_ERROR("Failed to validate project data from: {}", path.string());
-            throw std::runtime_error(std::format("Failed to validate project data from: {}", path.string()));
-        }
-
-        project_ = project;
-        LOG_INFO("Project opened successfully: {}", path.string());
-
-        return true;
-    }
-
-    bool VisualizerImpl::closeProject(const std::filesystem::path& path) {
-        if (!project_) {
-            LOG_WARN("No project to close");
-            return false;
-        }
-
-        if (!path.empty()) {
-            project_->setProjectFileName(path);
-        }
-
-        bool success = project_->writeToFile();
-        if (success) {
-            LOG_INFO("Project saved successfully");
-        } else {
-            LOG_ERROR("Failed to save project");
-        }
-
-        return success;
-    }
-
-    void VisualizerImpl::attachProject(std::shared_ptr<lfs::project::Project> _project) {
-        project_ = _project;
-        updateProjectOnModules();
-    }
-
-    std::shared_ptr<lfs::project::Project> VisualizerImpl::getProject() {
-        return project_;
-    }
-
-    void VisualizerImpl::handleLoadProjectCommand(const lfs::core::events::cmd::LoadProject& cmd) {
-        try {
-            bool success = openProject(cmd.path);
-            if (!success) {
-                throw std::runtime_error(std::format("Failed opening project: {}", cmd.path.string()));
-            }
-
-            success = LoadProject();
-            if (!success) {
-                throw std::runtime_error(std::format("Failed to load project content: {}", cmd.path.string()));
-            }
-        } catch (const std::exception& e) {
-            LOG_ERROR("Error handling LoadProject command: {}", e.what());
-
-            // Re-throw to let higher level handle it
-            throw;
-        }
-    }
-
-    void VisualizerImpl::handleLoadFileCommand(const lfs::core::events::cmd::LoadFile& cmd) {
-        if (cmd.is_dataset && project_) {
-            auto data_config = project_->getProjectData().data_set_info;
-            data_config.data_path = cmd.path;
-
-            if (project_->getIsTempProject()) {
-                data_config.output_path.clear();
-                project_ = lfs::project::CreateTempNewProject(data_config, project_->getOptimizationParams());
-            } else { // else: project already exits (with output dir) - only need to replace data path
-                project_->setDataInfo(data_config);
-            }
-
-            updateProjectOnModules();
-        }
-    }
-
-    void VisualizerImpl::handleSaveProject(const lfs::core::events::cmd::SaveProject& cmd) {
-        if (project_) {
-            const auto& dst_dir = cmd.project_dir;
-            if (!std::filesystem::exists(dst_dir)) {
-                bool success = std::filesystem::create_directories(dst_dir);
-                if (!success) {
-                    LOG_ERROR("Directory creation failed {}", dst_dir.string());
-                    return;
-                }
-                LOG_INFO("created directory successfully {}", dst_dir.string());
-            }
-            if (project_->getIsTempProject()) {
-                if (!project_->portProjectToDir(dst_dir)) {
-                    LOG_ERROR("porting project failed. Dst dir {} ", project_->getProjectOutputFolder().string());
-                }
-                project_->setIsTempProject(false);
-
-                for (const auto& ply : project_->getPlys()) {
-                    scene_manager_->updatePlyPath(ply.ply_name, ply.ply_path);
-                }
-
-            } else {
-                if (!project_->writeToFile()) {
-                    LOG_ERROR("save project failed {} ", project_->getProjectFileName().string());
-                }
-            }
-            LOG_INFO("Project was saved successfully to {}", project_->getProjectFileName().string());
-        }
+    void VisualizerImpl::handleLoadFileCommand([[maybe_unused]] const lfs::core::events::cmd::LoadFile& cmd) {
+        // File loading is handled by the data_loader_ service
     }
 
     void VisualizerImpl::handleTrainingCompleted([[maybe_unused]] const state::TrainingCompleted& event) {
-
-        if (!scene_manager_) {
-            LOG_ERROR("scene manager is not initialized");
-            return;
-        }
-        if (!project_) {
-            LOG_ERROR("project is not initialized");
-            return;
-        }
-        // load plys
-        LoadProjectPlys();
-
         if (scene_manager_) {
             scene_manager_->changeContentType(SceneManager::ContentType::Dataset);
         }
     }
 
     void VisualizerImpl::handleSwitchToLatestCheckpoint() {
-        if (!scene_manager_ || !project_) {
-            LOG_ERROR("Cannot switch to checkpoint: missing scene_manager or project");
-            return;
-        }
-
-        const auto plys = project_->getPlys();
-        if (plys.empty()) {
-            LOG_WARN("No PLY files in project");
-            return;
-        }
-
-        const auto latest = std::max_element(plys.begin(), plys.end(),
-            [](const auto& a, const auto& b) {
-                return a.ply_training_iter_number < b.ply_training_iter_number;
-            });
-
-        if (!std::filesystem::exists(latest->ply_path)) {
-            LOG_ERROR("PLY not found: {}", latest->ply_path.string());
-            return;
-        }
-
-        scene_manager_->clear();
-        scene_manager_->changeContentType(SceneManager::ContentType::SplatFiles);
-
-        try {
-            const auto node_name = scene_manager_->addSplatFile(latest->ply_path, latest->ply_name, true);
-            scene_manager_->selectNode(node_name);
-            LOG_INFO("Loaded checkpoint: {} (iter {})", node_name, latest->ply_training_iter_number);
-        } catch (const std::exception& e) {
-            LOG_ERROR("Failed to load PLY: {}", e.what());
-        }
+        LOG_WARN("Switch to latest checkpoint not implemented without project management");
     }
 
-    void VisualizerImpl::updateProjectOnModules() {
-        if (trainer_manager_) {
-            trainer_manager_->setProject(project_);
-        }
-        if (scene_manager_) {
-            scene_manager_->setProject(project_);
-        }
-    }
 } // namespace lfs::vis

@@ -77,17 +77,6 @@ namespace lfs::vis::gui {
         }
     } // namespace utils
 
-    void OpenProjectFileDialog() {
-        PWSTR filePath = nullptr;
-        COMDLG_FILTERSPEC rgSpec[] = {{L"LichtFeldStudio Project File", L"*.lfs;*.ls"}};
-
-        if (SUCCEEDED(utils::selectFileNative(filePath, rgSpec, 1, false))) {
-            const std::filesystem::path project_path(filePath);
-            lfs::core::events::cmd::LoadProject{.path = project_path}.emit();
-            LOG_INFO("Loading project: {}", project_path.string());
-        }
-    }
-
     void OpenPlyFileDialog() {
         PWSTR filePath = nullptr;
         COMDLG_FILTERSPEC rgSpec[] = {{L"Point Cloud", L"*.ply;"}};
@@ -107,16 +96,6 @@ namespace lfs::vis::gui {
                 lfs::core::events::cmd::LoadFile{.path = dataset_path, .is_dataset = true}.emit();
                 LOG_INFO("Loading dataset: {}", dataset_path.string());
             }
-        }
-    }
-
-    void SaveProjectFileDialog(bool* p_open) {
-        PWSTR filePath = nullptr;
-        if (SUCCEEDED(utils::selectFileNative(filePath, nullptr, 0, true))) {
-            const std::filesystem::path project_path(filePath);
-            lfs::core::events::cmd::SaveProject{project_path}.emit();
-            LOG_INFO("Saving project: {}", project_path.string());
-            *p_open = false;
         }
     }
 
