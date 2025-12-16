@@ -703,7 +703,7 @@ namespace lfs::rendering {
                 request.viewport_size.y / 2.0f,
                 Tensor::empty({0}, lfs::core::Device::CPU, lfs::core::DataType::Float32),
                 Tensor::empty({0}, lfs::core::Device::CPU, lfs::core::DataType::Float32),
-                ::gsplat::CameraModelType::PINHOLE,  // Use global gsplat namespace
+                lfs::core::CameraModelType::PINHOLE,
                 "render_camera",
                 "none",
                 std::filesystem::path{},  // No mask path for render camera

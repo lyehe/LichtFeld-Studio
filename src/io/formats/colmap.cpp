@@ -695,7 +695,7 @@ namespace lfs::io {
 
             float focal_x = 0, focal_y = 0, center_x = 0, center_y = 0;
             Tensor radial_dist, tangential_dist;
-            gsplat::CameraModelType camera_model_type = gsplat::CameraModelType::PINHOLE;
+            lfs::core::CameraModelType camera_model_type = lfs::core::CameraModelType::PINHOLE;
 
             switch (model) {
             case CAMERA_MODEL::SIMPLE_PINHOLE:
@@ -727,7 +727,7 @@ namespace lfs::io {
                     radial_dist = Tensor::empty({0}, Device::CPU);
                 }
                 tangential_dist = Tensor::empty({0}, Device::CPU);
-                camera_model_type = gsplat::CameraModelType::PINHOLE;
+                camera_model_type = lfs::core::CameraModelType::PINHOLE;
                 break;
 
             case CAMERA_MODEL::RADIAL:
@@ -763,7 +763,7 @@ namespace lfs::io {
                 center_y = params[3];
                 radial_dist = Tensor::from_vector({params[4], params[5], params[6], params[7]}, {4}, Device::CPU);
                 tangential_dist = Tensor::empty({0}, Device::CPU);
-                camera_model_type = gsplat::CameraModelType::FISHEYE;
+                camera_model_type = lfs::core::CameraModelType::FISHEYE;
                 break;
 
             case CAMERA_MODEL::RADIAL_FISHEYE:
@@ -772,7 +772,7 @@ namespace lfs::io {
                 center_y = params[2];
                 radial_dist = Tensor::from_vector({params[3], params[4]}, {2}, Device::CPU);
                 tangential_dist = Tensor::empty({0}, Device::CPU);
-                camera_model_type = gsplat::CameraModelType::FISHEYE;
+                camera_model_type = lfs::core::CameraModelType::FISHEYE;
                 break;
 
             case CAMERA_MODEL::SIMPLE_RADIAL_FISHEYE:
@@ -781,7 +781,7 @@ namespace lfs::io {
                 center_y = params[2];
                 radial_dist = Tensor::from_vector({params[3]}, {1}, Device::CPU);
                 tangential_dist = Tensor::empty({0}, Device::CPU);
-                camera_model_type = gsplat::CameraModelType::FISHEYE;
+                camera_model_type = lfs::core::CameraModelType::FISHEYE;
                 break;
 
             case CAMERA_MODEL::THIN_PRISM_FISHEYE:
@@ -792,7 +792,7 @@ namespace lfs::io {
                 center_y = params[3];
                 radial_dist = Tensor::from_vector({params[4], params[5], params[8], params[9]}, {4}, Device::CPU);  // k1,k2,k3,k4
                 tangential_dist = Tensor::from_vector({params[6], params[7], params[10], params[11]}, {4}, Device::CPU);  // p1,p2,sx1,sy1
-                camera_model_type = gsplat::CameraModelType::THIN_PRISM_FISHEYE;
+                camera_model_type = lfs::core::CameraModelType::THIN_PRISM_FISHEYE;
                 break;
 
             case CAMERA_MODEL::FOV:

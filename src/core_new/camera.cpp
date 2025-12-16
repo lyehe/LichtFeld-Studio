@@ -44,7 +44,7 @@ namespace lfs::core {
                    float center_x, float center_y,
                    const Tensor radial_distortion,
                    const Tensor tangential_distortion,
-                   gsplat::CameraModelType camera_model_type,
+                   CameraModelType camera_model_type,
                    const std::string& image_name,
                    const std::filesystem::path& image_path,
                    const std::filesystem::path& mask_path,

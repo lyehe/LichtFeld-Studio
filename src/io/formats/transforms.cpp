@@ -158,7 +158,7 @@ namespace lfs::io {
         }
 
         float fl_x = -1, fl_y = -1;
-        auto camera_model = gsplat::CameraModelType::PINHOLE;
+        auto camera_model = lfs::core::CameraModelType::PINHOLE;
         if (transforms.contains("fl_x")) {
             fl_x = float(transforms["fl_x"]);
         } else if (transforms.contains("camera_angle_x")) {
@@ -176,7 +176,7 @@ namespace lfs::io {
                 LOG_WARN("No camera intrinsics found, assuming equirectangular");
                 fl_x = 20.0;
                 fl_y = 20.0;
-                camera_model = gsplat::CameraModelType::EQUIRECTANGULAR;
+                camera_model = lfs::core::CameraModelType::EQUIRECTANGULAR;
             } else {
                 // we should be  here in this scope only for blender - if w!=h then we must throw exception
                 if (w != h) {

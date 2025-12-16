@@ -123,7 +123,7 @@ protected:
             500.0f, 500.0f,
             320.0f, 240.0f,
             lfs::core::Tensor(), lfs::core::Tensor(),
-            gsplat::CameraModelType::PINHOLE,
+            lfs::core::CameraModelType::PINHOLE,
             "test_image", "",
             std::filesystem::path{},  // No mask path
             640, 480, 0

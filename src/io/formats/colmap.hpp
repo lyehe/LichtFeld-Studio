@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include "Common.h"
 #include "core_new/camera.hpp"
 #include "core_new/point_cloud.hpp"
 #include "core_new/tensor.hpp"
@@ -33,7 +32,7 @@ namespace lfs::io {
         float _center_y = 0.f;
         std::string _image_name;
         std::filesystem::path _image_path;
-        gsplat::CameraModelType _camera_model_type = gsplat::CameraModelType::PINHOLE;
+        lfs::core::CameraModelType _camera_model_type = lfs::core::CameraModelType::PINHOLE;
         int _width = 0;
         int _height = 0;
         Tensor _radial_distortion;

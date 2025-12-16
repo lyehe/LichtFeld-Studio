@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "Common.h"
+#include "core_new/camera_types.h"
 #include "core_new/tensor.hpp"
 #include <cuda_runtime.h>
 #include <filesystem>
@@ -23,7 +23,7 @@ namespace lfs::core {
                float center_x, float center_y,
                Tensor radial_distortion,
                Tensor tangential_distortion,
-               gsplat::CameraModelType camera_model_type,
+               CameraModelType camera_model_type,
                const std::string& image_name,
                const std::filesystem::path& image_path,
                const std::filesystem::path& mask_path,
@@ -90,7 +90,7 @@ namespace lfs::core {
         float center_y() const noexcept { return _center_y; }
         Tensor radial_distortion() const noexcept { return _radial_distortion; }
         Tensor tangential_distortion() const noexcept { return _tangential_distortion; }
-        gsplat::CameraModelType camera_model_type() const noexcept { return _camera_model_type; }
+        CameraModelType camera_model_type() const noexcept { return _camera_model_type; }
         const std::string& image_name() const noexcept { return _image_name; }
         const std::filesystem::path& image_path() const noexcept { return _image_path; }
         const std::filesystem::path& mask_path() const noexcept { return _mask_path; }
@@ -116,7 +116,7 @@ namespace lfs::core {
 
         Tensor _radial_distortion;
         Tensor _tangential_distortion;
-        gsplat::CameraModelType _camera_model_type = gsplat::CameraModelType::PINHOLE;
+        CameraModelType _camera_model_type = CameraModelType::PINHOLE;
 
         // Image info
         std::string _image_name;

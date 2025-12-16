@@ -67,7 +67,9 @@ namespace lfs::training {
         constexpr float radius_clip = 0.0f;
         constexpr uint32_t tile_size = 16;
         const bool calc_compensations = antialiased;
-        const CameraModelType camera_model = static_cast<CameraModelType>(viewpoint_camera.camera_model_type());
+        // Convert from lfs::core::CameraModelType (enum class) to global CameraModelType (plain enum) for CUDA kernels
+        const ::CameraModelType camera_model = static_cast<::CameraModelType>(
+            static_cast<int>(viewpoint_camera.camera_model_type()));
 
         // Distortion coefficients
         const core::Tensor radial_dist = viewpoint_camera.radial_distortion();

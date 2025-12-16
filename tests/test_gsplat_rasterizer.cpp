@@ -51,7 +51,7 @@ protected:
             320.0f, 240.0f,  // center_x, center_y
             Tensor(),        // radial_distortion
             Tensor(),        // tangential_distortion
-            gsplat::CameraModelType::PINHOLE,
+            lfs::core::CameraModelType::PINHOLE,
             "test_image",
             "",
             std::filesystem::path{},  // mask_path

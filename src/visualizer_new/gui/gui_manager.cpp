@@ -1236,13 +1236,13 @@ namespace lfs::vis::gui {
                         const auto model_type = cam->camera_model_type();
                         const char* model = "PINHOLE";
                         switch (model_type) {
-                        case gsplat::CameraModelType::FISHEYE: model = "FISHEYE"; break;
-                        case gsplat::CameraModelType::ORTHO: model = "ORTHO"; break;
-                        case gsplat::CameraModelType::EQUIRECTANGULAR: model = "EQUIRECT"; break;
-                        case gsplat::CameraModelType::THIN_PRISM_FISHEYE: model = "THIN_PRISM"; break;
+                        case lfs::core::CameraModelType::FISHEYE: model = "FISHEYE"; break;
+                        case lfs::core::CameraModelType::ORTHO: model = "ORTHO"; break;
+                        case lfs::core::CameraModelType::EQUIRECTANGULAR: model = "EQUIRECT"; break;
+                        case lfs::core::CameraModelType::THIN_PRISM_FISHEYE: model = "THIN_PRISM"; break;
                         default: break;
                         }
-                        const bool is_pinhole = (model_type == gsplat::CameraModelType::PINHOLE);
+                        const bool is_pinhole = (model_type == lfs::core::CameraModelType::PINHOLE);
                         ImGui::TextColored(is_pinhole ? t.palette.text_dim : t.palette.warning, "%s", model);
                     } else {
                         ImGui::TextColored(t.palette.warning, "GT Compare");
