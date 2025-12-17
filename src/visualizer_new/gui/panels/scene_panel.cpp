@@ -259,8 +259,8 @@ namespace lfs::vis::gui {
         if (ImGui::BeginPopupContextItem("##ModelsMenu")) {
             if (ImGui::MenuItem("Add PLY...")) {
                 cmd::ShowWindow{.window_name = "file_browser", .show = true}.emit();
-#ifdef WIN32
-                OpenPlyFileDialog();
+#ifdef _WIN32
+                OpenPlyFileDialogNative();
                 cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
 #endif
             }
