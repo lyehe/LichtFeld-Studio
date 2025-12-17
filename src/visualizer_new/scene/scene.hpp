@@ -257,10 +257,12 @@ namespace lfs::vis {
         void setTrainCameras(std::shared_ptr<lfs::training::CameraDataset> dataset);
         void setValCameras(std::shared_ptr<lfs::training::CameraDataset> dataset);
         void setInitialPointCloud(std::shared_ptr<lfs::core::PointCloud> point_cloud);
+        void setSceneCenter(lfs::core::Tensor scene_center);
 
         [[nodiscard]] std::shared_ptr<lfs::training::CameraDataset> getTrainCameras() const { return train_cameras_; }
         [[nodiscard]] std::shared_ptr<lfs::training::CameraDataset> getValCameras() const { return val_cameras_; }
         [[nodiscard]] std::shared_ptr<lfs::core::PointCloud> getInitialPointCloud() const { return initial_point_cloud_; }
+        [[nodiscard]] const lfs::core::Tensor& getSceneCenter() const { return scene_center_; }
 
         [[nodiscard]] bool hasTrainingData() const { return train_cameras_ != nullptr; }
 
@@ -344,6 +346,7 @@ namespace lfs::vis {
         std::shared_ptr<lfs::training::CameraDataset> train_cameras_;
         std::shared_ptr<lfs::training::CameraDataset> val_cameras_;
         std::shared_ptr<lfs::core::PointCloud> initial_point_cloud_;
+        lfs::core::Tensor scene_center_;  // Scene center (mean of camera positions)
         std::string training_model_node_;  // Name of the node being trained
     };
 

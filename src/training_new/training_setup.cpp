@@ -76,9 +76,10 @@ namespace lfs::training {
             } else if constexpr (std::is_same_v<T, lfs::io::LoadedScene>) {
                 // Full scene data - store cameras and point cloud (defer SplatData creation)
 
-                // Store cameras in Scene
+                // Store cameras and scene center in Scene
                 scene.setTrainCameras(data.cameras);
                 scene.setInitialPointCloud(data.point_cloud);
+                scene.setSceneCenter(load_result->scene_center);
 
                 // Create dataset hierarchy:
                 // [Dataset] bicycle
@@ -119,9 +120,9 @@ namespace lfs::training {
                                 params.init_path.value(), pc_result.error()));
                         }
 
-                        const auto scene_center = pc_result->means.mean({0});
+                        // Use scene_center from loader (camera centroid) for correct scene_scale
                         auto splat_result = lfs::core::init_model_from_pointcloud(
-                            params, scene_center, *pc_result, static_cast<int>(pc_result->size()));
+                            params, load_result->scene_center, *pc_result, static_cast<int>(pc_result->size()));
 
                         if (!splat_result) {
                             return std::unexpected(std::format("Init failed: {}", splat_result.error()));
@@ -353,14 +354,21 @@ namespace lfs::training {
             point_cloud_to_use = lfs::core::PointCloud(positions, colors);
         }
 
-        // Compute scene center from the point cloud
-        lfs::core::Tensor scene_center;
-        if (point_cloud_to_use.size() > 0) {
-            auto means_cpu = point_cloud_to_use.means.cpu();
-            auto mean = means_cpu.mean({0});
-            scene_center = max_cap > 0 ? mean : mean.cuda();
+        // Use scene center from loader (camera centroid) if available, otherwise compute from point cloud
+        lfs::core::Tensor scene_center = scene.getSceneCenter();
+        if (!scene_center.is_valid() || scene_center.numel() == 0) {
+            // Fallback: compute from point cloud (less accurate for scene_scale)
+            LOG_WARN("No scene center from loader, computing from point cloud (may affect densification)");
+            if (point_cloud_to_use.size() > 0) {
+                auto means_cpu = point_cloud_to_use.means.cpu();
+                auto mean = means_cpu.mean({0});
+                scene_center = max_cap > 0 ? mean : mean.cuda();
+            } else {
+                scene_center = lfs::core::Tensor::zeros({3}, lfs::core::Device::CPU);
+            }
         } else {
-            scene_center = lfs::core::Tensor::zeros({3}, lfs::core::Device::CPU);
+            // Ensure scene_center is on the correct device
+            scene_center = max_cap > 0 ? scene_center.cpu() : scene_center.cuda();
         }
 
         // Initialize SplatData from point cloud

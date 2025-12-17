@@ -1614,6 +1614,17 @@ namespace lfs::vis {
         LOG_DEBUG("Scene: set initial point cloud ({})", initial_point_cloud_ ? "valid" : "null");
     }
 
+    void Scene::setSceneCenter(lfs::core::Tensor scene_center) {
+        scene_center_ = std::move(scene_center);
+        if (scene_center_.is_valid()) {
+            auto sc_cpu = scene_center_.cpu();
+            const float* ptr = sc_cpu.ptr<float>();
+            LOG_DEBUG("Scene: set scene center to [{:.3f}, {:.3f}, {:.3f}]", ptr[0], ptr[1], ptr[2]);
+        } else {
+            LOG_DEBUG("Scene: set scene center (invalid/empty)");
+        }
+    }
+
     void Scene::setTrainingModelNode(const std::string& name) {
         training_model_node_ = name;
         LOG_DEBUG("Scene: set training model node to '{}'", name);
