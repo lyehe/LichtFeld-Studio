@@ -56,10 +56,11 @@ namespace fast_lfs::rasterization::kernels::backward {
 
         const float4 w2c_r3 = w2c[2];
         const float depth = w2c_r3.x * mean3d.x + w2c_r3.y * mean3d.y + w2c_r3.z * mean3d.z + w2c_r3.w;
+        const float depth_safe = fmaxf(depth, 1e-4f);
         const float4 w2c_r1 = w2c[0];
-        const float x = (w2c_r1.x * mean3d.x + w2c_r1.y * mean3d.y + w2c_r1.z * mean3d.z + w2c_r1.w) / depth;
+        const float x = (w2c_r1.x * mean3d.x + w2c_r1.y * mean3d.y + w2c_r1.z * mean3d.z + w2c_r1.w) / depth_safe;
         const float4 w2c_r2 = w2c[1];
-        const float y = (w2c_r2.x * mean3d.x + w2c_r2.y * mean3d.y + w2c_r2.z * mean3d.z + w2c_r2.w) / depth;
+        const float y = (w2c_r2.x * mean3d.x + w2c_r2.y * mean3d.y + w2c_r2.z * mean3d.z + w2c_r2.w) / depth_safe;
 
         // compute 3d covariance from raw scale and rotation
         const float3 raw_scale = raw_scales[primitive_idx];
@@ -67,9 +68,10 @@ namespace fast_lfs::rasterization::kernels::backward {
         auto [qr, qx, qy, qz] = raw_rotations[primitive_idx];
         const float qrr_raw = qr * qr, qxx_raw = qx * qx, qyy_raw = qy * qy, qzz_raw = qz * qz;
         const float q_norm_sq = qrr_raw + qxx_raw + qyy_raw + qzz_raw;
-        const float qxx = 2.0f * qxx_raw / q_norm_sq, qyy = 2.0f * qyy_raw / q_norm_sq, qzz = 2.0f * qzz_raw / q_norm_sq;
-        const float qxy = 2.0f * qx * qy / q_norm_sq, qxz = 2.0f * qx * qz / q_norm_sq, qyz = 2.0f * qy * qz / q_norm_sq;
-        const float qrx = 2.0f * qr * qx / q_norm_sq, qry = 2.0f * qr * qy / q_norm_sq, qrz = 2.0f * qr * qz / q_norm_sq;
+        const float q_norm_sq_safe = fmaxf(q_norm_sq, 1e-7f);
+        const float qxx = 2.0f * qxx_raw / q_norm_sq_safe, qyy = 2.0f * qyy_raw / q_norm_sq_safe, qzz = 2.0f * qzz_raw / q_norm_sq_safe;
+        const float qxy = 2.0f * qx * qy / q_norm_sq_safe, qxz = 2.0f * qx * qz / q_norm_sq_safe, qyz = 2.0f * qy * qz / q_norm_sq_safe;
+        const float qrx = 2.0f * qr * qx / q_norm_sq_safe, qry = 2.0f * qr * qy / q_norm_sq_safe, qrz = 2.0f * qr * qz / q_norm_sq_safe;
         const mat3x3 rotation = {
             1.0f - (qyy + qzz), qxy - qrz, qry + qxz,
             qrz + qxy, 1.0f - (qxx + qzz), qyz - qrx,
@@ -94,9 +96,9 @@ namespace fast_lfs::rasterization::kernels::backward {
         const float clip_bottom = (1.15f * h - cy) / fy;
         const float tx = clamp(x, clip_left, clip_right);
         const float ty = clamp(y, clip_top, clip_bottom);
-        const float j11 = fx / depth;
+        const float j11 = fx / depth_safe;
         const float j13 = -j11 * tx;
-        const float j22 = fy / depth;
+        const float j22 = fy / depth_safe;
         const float j23 = -j22 * ty;
         const float3 jw_r1 = make_float3(
             j11 * w2c_r1.x + j13 * w2c_r3.x,
@@ -120,7 +122,8 @@ namespace fast_lfs::rasterization::kernels::backward {
         const float aa = a * a, bb = b * b, cc = c * c;
         const float ac = a * c, ab = a * b, bc = b * c;
         const float determinant = ac - bb;
-        const float determinant_rcp = 1.0f / determinant;
+        const float determinant_safe = fmaxf(determinant, 1e-8f);
+        const float determinant_rcp = 1.0f / determinant_safe;
         const float determinant_rcp_sq = determinant_rcp * determinant_rcp;
         const float3 dL_dconic = make_float3(
             grad_conic[primitive_idx],
@@ -163,9 +166,9 @@ namespace fast_lfs::rasterization::kernels::backward {
         float djwr2_dz_helper = dL_dj22 - 2.0f * ty * dL_dj23;
         const float2 dL_dmean2d = grad_mean2d[primitive_idx];
         const float3 dL_dmean3d_cam = make_float3(
-            j11 * (dL_dmean2d.x - dL_dj13 / depth),
-            j22 * (dL_dmean2d.y - dL_dj23 / depth),
-            -j11 * (x * dL_dmean2d.x + djwr1_dz_helper / depth) - j22 * (y * dL_dmean2d.y + djwr2_dz_helper / depth));
+            j11 * (dL_dmean2d.x - dL_dj13 / depth_safe),
+            j22 * (dL_dmean2d.y - dL_dj23 / depth_safe),
+            -j11 * (x * dL_dmean2d.x + djwr1_dz_helper / depth_safe) - j22 * (y * dL_dmean2d.y + djwr2_dz_helper / depth_safe));
 
         if (grad_w2c != nullptr) {
             atomicAdd(&grad_w2c[0].w, dL_dmean3d_cam.x);
@@ -226,7 +229,7 @@ namespace fast_lfs::rasterization::kernels::backward {
         const float dL_dqry = dL_drotation.m13 - dL_drotation.m31;
         const float dL_dqrz = dL_drotation.m21 - dL_drotation.m12;
         const float dL_dq_norm_helper = qxx * dL_dqxx + qyy * dL_dqyy + qzz * dL_dqzz + qxy * dL_dqxy + qxz * dL_dqxz + qyz * dL_dqyz + qrx * dL_dqrx + qry * dL_dqry + qrz * dL_dqrz;
-        const float4 dL_draw_rotation = 2.0f * make_float4(qx * dL_dqrx + qy * dL_dqry + qz * dL_dqrz - qr * dL_dq_norm_helper, 2.0f * qx * dL_dqxx + qy * dL_dqxy + qz * dL_dqxz + qr * dL_dqrx - qx * dL_dq_norm_helper, 2.0f * qy * dL_dqyy + qx * dL_dqxy + qz * dL_dqyz + qr * dL_dqry - qy * dL_dq_norm_helper, 2.0f * qz * dL_dqzz + qx * dL_dqxz + qy * dL_dqyz + qr * dL_dqrz - qz * dL_dq_norm_helper) / q_norm_sq;
+        const float4 dL_draw_rotation = 2.0f * make_float4(qx * dL_dqrx + qy * dL_dqry + qz * dL_dqrz - qr * dL_dq_norm_helper, 2.0f * qx * dL_dqxx + qy * dL_dqxy + qz * dL_dqxz + qr * dL_dqrx - qx * dL_dq_norm_helper, 2.0f * qy * dL_dqyy + qx * dL_dqxy + qz * dL_dqyz + qr * dL_dqry - qy * dL_dq_norm_helper, 2.0f * qz * dL_dqzz + qx * dL_dqxz + qy * dL_dqyz + qr * dL_dqrz - qz * dL_dq_norm_helper) / q_norm_sq_safe;
         grad_raw_rotations[primitive_idx] += dL_draw_rotation;
 
         // TODO: only needed for adaptive density control from the original 3dgs
@@ -336,8 +339,11 @@ namespace fast_lfs::rasterization::kernels::backward {
                 const uint2 pixel_coords = {start_pixel_coords.x + local_idx % config::tile_width, start_pixel_coords.y + local_idx / config::tile_width};
                 const uint pixel_idx = width * pixel_coords.y + pixel_coords.x;
                 // final values from forward pass before background blend and the respective gradients
-                float3 color_pixel, grad_color_pixel;
-                float alpha_pixel, grad_alpha_pixel;
+                float3 color_pixel = {0.0f, 0.0f, 0.0f};
+                float3 grad_color_pixel = {0.0f, 0.0f, 0.0f};
+                float alpha_pixel = 0.0f;
+                float grad_alpha_pixel = 0.0f;
+                uint last_contrib_val = 0;
                 if (pixel_coords.x < width && pixel_coords.y < height) {
                     color_pixel = make_float3(
                         image[pixel_idx],
@@ -349,6 +355,7 @@ namespace fast_lfs::rasterization::kernels::backward {
                         grad_image[2 * n_pixels + pixel_idx]);
                     alpha_pixel = alpha_map[pixel_idx];
                     grad_alpha_pixel = grad_alpha_map[pixel_idx];
+                    last_contrib_val = tile_n_contributions[pixel_idx];
                 }
                 collected_color_pixel_after_transmittance[lane_idx] = make_float4(
                     color_pixel - make_float3(color_transmittance),
@@ -356,7 +363,7 @@ namespace fast_lfs::rasterization::kernels::backward {
                 collected_grad_info_pixel[lane_idx] = make_float4(
                     grad_color_pixel,
                     grad_alpha_pixel * (1.0f - alpha_pixel));
-                collected_last_contributor[lane_idx] = tile_n_contributions[pixel_idx];
+                collected_last_contributor[lane_idx] = last_contrib_val;
                 __syncwarp();
             }
 
@@ -413,7 +420,8 @@ namespace fast_lfs::rasterization::kernels::backward {
             color_pixel_after -= blending_weight * color;
 
             // alpha gradient
-            const float one_minus_alpha_rcp = 1.0f / one_minus_alpha;
+            const float one_minus_alpha_safe = fmaxf(one_minus_alpha, 1e-4f);
+            const float one_minus_alpha_rcp = 1.0f / one_minus_alpha_safe;
             const float dL_dalpha_from_color = dot(transmittance * color - color_pixel_after * one_minus_alpha_rcp, grad_color_pixel);
             const float dL_dalpha_from_alpha = grad_alpha_common * one_minus_alpha_rcp;
             const float dL_dalpha = dL_dalpha_from_color + dL_dalpha_from_alpha;

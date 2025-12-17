@@ -95,11 +95,12 @@ namespace fast_lfs::rasterization::kernels {
             const float xx_raw = x_raw * x_raw, yy_raw = y_raw * y_raw, zz_raw = z_raw * z_raw;
             const float xy_raw = x_raw * y_raw, xz_raw = x_raw * z_raw, yz_raw = y_raw * z_raw;
             const float norm_sq = xx_raw + yy_raw + zz_raw;
+            const float norm_sq_safe = fmaxf(norm_sq, 1e-12f);
             dcolor_dposition = make_float3(
                                    (yy_raw + zz_raw) * grad_direction.x - xy_raw * grad_direction.y - xz_raw * grad_direction.z,
                                    -xy_raw * grad_direction.x + (xx_raw + zz_raw) * grad_direction.y - yz_raw * grad_direction.z,
                                    -xz_raw * grad_direction.x - yz_raw * grad_direction.y + (xx_raw + yy_raw) * grad_direction.z) *
-                               rsqrtf(norm_sq * norm_sq * norm_sq);
+                               rsqrtf(norm_sq_safe * norm_sq_safe * norm_sq_safe);
         }
         return dcolor_dposition;
     }

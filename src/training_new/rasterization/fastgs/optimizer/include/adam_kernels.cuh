@@ -116,7 +116,7 @@ namespace fast_lfs::optimizer::kernels::adam {
         if (idx >= n_indices) return;
 
         const int64_t row_idx = indices[idx];
-        const int row_start = row_idx * row_size;
+        const int64_t row_start = row_idx * static_cast<int64_t>(row_size);
 
         // Zero out the entire row
         #pragma unroll 4
