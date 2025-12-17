@@ -2268,11 +2268,11 @@ namespace lfs::vis::gui {
 
         static constexpr const char* TITLE = "Drop files here to get started";
         static constexpr const char* SUBTITLE = "PLY, SOG, COLMAP dataset, or Project file";
-        static constexpr const char* HINT = "Or use File > Open to browse";
+        static constexpr const char* HINT = "Or use File > Import Dataset / Import Ply";
 
         const ImVec2 title_size = calcTextSize(TITLE, font_heading_);
         const ImVec2 subtitle_size = calcTextSize(SUBTITLE, font_bold_);
-        const ImVec2 hint_size = calcTextSize(HINT, font_bold_);
+        const ImVec2 hint_size = calcTextSize(HINT, font_heading_);
 
         if (font_heading_) ImGui::PushFont(font_heading_);
         draw_list->AddText({center_x - title_size.x * 0.5f, center_y + 10.0f}, TITLE_COLOR, TITLE);
@@ -2280,8 +2280,11 @@ namespace lfs::vis::gui {
 
         if (font_bold_) ImGui::PushFont(font_bold_);
         draw_list->AddText({center_x - subtitle_size.x * 0.5f, center_y + 40.0f}, SUBTITLE_COLOR, SUBTITLE);
-        draw_list->AddText({center_x - hint_size.x * 0.5f, center_y + 70.0f}, HINT_COLOR, HINT);
         if (font_bold_) ImGui::PopFont();
+
+        if (font_heading_) ImGui::PushFont(font_heading_);
+        draw_list->AddText({center_x - hint_size.x * 0.5f, center_y + 70.0f}, HINT_COLOR, HINT);
+        if (font_heading_) ImGui::PopFont();
     }
 
     void GuiManager::renderDragDropOverlay() {
