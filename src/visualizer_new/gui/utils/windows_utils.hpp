@@ -15,41 +15,23 @@
 namespace lfs::vis::gui {
 
 #ifdef WIN32
-
     namespace utils {
-        /**
-         * Opens a native Windows file/folder selection dialog
-         * @param strDirectory Output path selected by the user
-         * @param rgSpec File type filters (can be nullptr)
-         * @param cFileTypes Number of file type filters
-         * @param blnDirectory True to select folders, false for files
-         * @return HRESULT indicating success or failure
-         */
         HRESULT selectFileNative(PWSTR& strDirectory,
                                  COMDLG_FILTERSPEC rgSpec[] = nullptr,
                                  UINT cFileTypes = 0,
                                  bool blnDirectory = false);
-
-        /**
-         * Opens a native Windows save file dialog
-         * @param outPath Output path selected by the user
-         * @param rgSpec File type filters (can be nullptr)
-         * @param cFileTypes Number of file type filters
-         * @param defaultName Default filename
-         * @return HRESULT indicating success or failure
-         */
         HRESULT saveFileNative(PWSTR& outPath,
                                COMDLG_FILTERSPEC rgSpec[] = nullptr,
                                UINT cFileTypes = 0,
                                const wchar_t* defaultName = nullptr);
     } // namespace utils
-
-    // Windows native file dialogs
-    void OpenPlyFileDialog();
-    void OpenDatasetFolderDialog();
 #endif
 
-    // Cross-platform file dialogs
+    // Cross-platform file open dialogs (return path, empty if cancelled)
+    std::filesystem::path OpenPlyFileDialogNative();
+    std::filesystem::path OpenDatasetFolderDialogNative();
+
+    // Cross-platform file save/open dialogs
     std::filesystem::path SavePlyFileDialog(const std::string& defaultName);
     std::filesystem::path SaveJsonFileDialog(const std::string& defaultName);
     std::filesystem::path OpenJsonFileDialog();

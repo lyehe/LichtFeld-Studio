@@ -90,6 +90,7 @@ namespace lfs::vis::gui {
         menu_bar_ = std::make_unique<MenuBar>();
         export_dialog_ = std::make_unique<ExportDialog>();
         notification_popup_ = std::make_unique<NotificationPopup>();
+        output_directory_popup_ = std::make_unique<OutputDirectoryPopup>();
 
         // Initialize window states
         window_states_["file_browser"] = false;
@@ -121,19 +122,17 @@ namespace lfs::vis::gui {
 
     void GuiManager::initMenuBar() {
         menu_bar_->setOnImportDataset([this]() {
-            window_states_["file_browser"] = true;
-#ifdef WIN32
-            OpenDatasetFolderDialog();
-            lfs::core::events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif
+            const auto path = OpenDatasetFolderDialogNative();
+            if (!path.empty() && std::filesystem::is_directory(path)) {
+                output_directory_popup_->show(path);
+            }
         });
 
         menu_bar_->setOnImportPLY([this]() {
-            window_states_["file_browser"] = true;
-#ifdef WIN32
-            OpenPlyFileDialog();
-            lfs::core::events::cmd::ShowWindow{.window_name = "file_browser", .show = false}.emit();
-#endif
+            const auto path = OpenPlyFileDialogNative();
+            if (!path.empty()) {
+                lfs::core::events::cmd::LoadFile{.path = path, .is_dataset = false}.emit();
+            }
         });
 
         menu_bar_->setOnExport([this]() {
@@ -284,17 +283,29 @@ namespace lfs::vis::gui {
             font_regular_ = font_bold_ = font_heading_ = font_small_ = font_section_ = fallback;
         }
 
-        // Configure file browser callback
-        setFileSelectedCallback([this](const std::filesystem::path& path, bool is_dataset) {
-            lfs::core::events::cmd::LoadFile{.path = path, .is_dataset = is_dataset}.emit();
+        output_directory_popup_->setOnConfirm([this](const std::filesystem::path& dataset_path,
+                                                      const std::filesystem::path& output_path) {
+            lfs::core::param::TrainingParameters params{};
+            params.dataset.data_path = dataset_path;
+            params.dataset.output_path = output_path;
+            viewer_->setParameters(params);
+            lfs::core::events::cmd::LoadFile{.path = dataset_path, .is_dataset = true}.emit();
+        });
+
+        setFileSelectedCallback([this](const std::filesystem::path& path, const bool is_dataset) {
             window_states_["file_browser"] = false;
+            if (is_dataset) {
+                output_directory_popup_->show(path);
+            } else {
+                lfs::core::events::cmd::LoadFile{.path = path, .is_dataset = false}.emit();
+            }
         });
 
         scene_panel_->setOnDatasetLoad([this](const std::filesystem::path& path) {
             if (path.empty()) {
                 window_states_["file_browser"] = true;
             } else {
-                lfs::core::events::cmd::LoadFile{.path = path, .is_dataset = true}.emit();
+                output_directory_popup_->show(path);
             }
         });
 
@@ -879,6 +890,10 @@ namespace lfs::vis::gui {
         // Render drag-drop overlay when files are being dragged over the window
         renderDragDropOverlay();
 
+        if (output_directory_popup_) {
+            output_directory_popup_->render(viewport_pos_, viewport_size_);
+        }
+
         // Render notification popups (errors, warnings, etc.)
         if (notification_popup_) {
             notification_popup_->render();
@@ -1432,6 +1447,12 @@ namespace lfs::vis::gui {
 
         cmd::ShowWindow::when([this](const auto& e) {
             showWindow(e.window_name, e.show);
+        });
+
+        cmd::ShowDatasetLoadPopup::when([this](const auto& e) {
+            if (output_directory_popup_) {
+                output_directory_popup_->show(e.dataset_path);
+            }
         });
 
         ui::NodeSelected::when([this](const auto&) {

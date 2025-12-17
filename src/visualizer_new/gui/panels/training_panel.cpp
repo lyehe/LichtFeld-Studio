@@ -673,36 +673,19 @@ namespace lfs::vis::gui::panels {
                     }
                 }
 
-                // Output Folder - EDITABLE with browse button
+                // Output Folder - read-only (set when loading dataset)
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 ImGui::Text("Output:");
                 ImGui::TableNextColumn();
-                if (can_edit) {
-                    std::string output_display = dataset_params.output_path.empty()
-                        ? "(default)"
+                {
+                    const std::string output_display = dataset_params.output_path.empty()
+                        ? "(not set)"
                         : dataset_params.output_path.filename().string();
                     ImGui::Text("%s", output_display.c_str());
                     if (!dataset_params.output_path.empty() && ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("%s", dataset_params.output_path.string().c_str());
                     }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Browse##output")) {
-                        // Start in output folder if set, otherwise data folder
-                        auto start_dir = dataset_params.output_path.empty()
-                            ? dataset_params.data_path
-                            : dataset_params.output_path;
-                        auto selected = SelectFolderDialog("Select Output Folder", start_dir);
-                        if (!selected.empty()) {
-                            dataset_params.output_path = selected;
-                            dataset_params_changed = true;
-                        }
-                    }
-                } else {
-                    std::string output_display = dataset_params.output_path.empty()
-                        ? "(default)"
-                        : dataset_params.output_path.filename().string();
-                    ImGui::Text("%s", output_display.c_str());
                 }
 
                 ImGui::EndTable();

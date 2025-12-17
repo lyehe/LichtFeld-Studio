@@ -77,28 +77,6 @@ namespace lfs::vis::gui {
         }
     } // namespace utils
 
-    void OpenPlyFileDialog() {
-        PWSTR filePath = nullptr;
-        COMDLG_FILTERSPEC rgSpec[] = {{L"Point Cloud", L"*.ply;"}};
-
-        if (SUCCEEDED(utils::selectFileNative(filePath, rgSpec, 1, false))) {
-            const std::filesystem::path ply_path(filePath);
-            lfs::core::events::cmd::LoadFile{.path = ply_path}.emit();
-            LOG_INFO("Loading PLY: {}", ply_path.string());
-        }
-    }
-
-    void OpenDatasetFolderDialog() {
-        PWSTR filePath = nullptr;
-        if (SUCCEEDED(utils::selectFileNative(filePath, nullptr, 0, true))) {
-            const std::filesystem::path dataset_path(filePath);
-            if (std::filesystem::is_directory(dataset_path)) {
-                lfs::core::events::cmd::LoadFile{.path = dataset_path, .is_dataset = true}.emit();
-                LOG_INFO("Loading dataset: {}", dataset_path.string());
-            }
-        }
-    }
-
     namespace utils {
         HRESULT saveFileNative(PWSTR& outPath,
                                COMDLG_FILTERSPEC rgSpec[],
@@ -424,6 +402,47 @@ namespace lfs::vis::gui {
                                     "--title='" + title + "'" + start_arg + " 2>/dev/null";
         const std::string fallback = "kdialog --getexistingdirectory '" +
                                      (has_valid_start ? abs_start_dir.string() : ".") + "' 2>/dev/null";
+
+        const std::string result = runDialogCommand(primary, fallback);
+        return result.empty() ? std::filesystem::path{} : std::filesystem::path(result);
+#endif
+    }
+
+    std::filesystem::path OpenPlyFileDialogNative() {
+#ifdef _WIN32
+        PWSTR filePath = nullptr;
+        COMDLG_FILTERSPEC rgSpec[] = {{L"Point Cloud", L"*.ply;*.sog;*.spz"}};
+
+        if (SUCCEEDED(utils::selectFileNative(filePath, rgSpec, 1, false))) {
+            std::filesystem::path result(filePath);
+            CoTaskMemFree(filePath);
+            return result;
+        }
+        return {};
+#else
+        const std::string primary = "zenity --file-selection "
+                                    "--file-filter='Point Cloud|*.ply *.sog *.spz' "
+                                    "--title='Open Point Cloud' 2>/dev/null";
+        const std::string fallback = "kdialog --getopenfilename . 'Point Cloud (*.ply *.sog *.spz)' 2>/dev/null";
+
+        const std::string result = runDialogCommand(primary, fallback);
+        return result.empty() ? std::filesystem::path{} : std::filesystem::path(result);
+#endif
+    }
+
+    std::filesystem::path OpenDatasetFolderDialogNative() {
+#ifdef _WIN32
+        PWSTR filePath = nullptr;
+        if (SUCCEEDED(utils::selectFileNative(filePath, nullptr, 0, true))) {
+            std::filesystem::path result(filePath);
+            CoTaskMemFree(filePath);
+            return result;
+        }
+        return {};
+#else
+        const std::string primary = "zenity --file-selection --directory "
+                                    "--title='Select Dataset Folder' 2>/dev/null";
+        const std::string fallback = "kdialog --getexistingdirectory . 2>/dev/null";
 
         const std::string result = runDialogCommand(primary, fallback);
         return result.empty() ? std::filesystem::path{} : std::filesystem::path(result);

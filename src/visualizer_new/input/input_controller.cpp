@@ -1016,10 +1016,8 @@ namespace lfs::vis {
                      splat.extension().string(), splat.filename().string());
         }
 
-        // Load dataset if found
         if (dataset_path) {
-            cmd::LoadFile{.path = *dataset_path, .is_dataset = true}.emit();
-            LOG_INFO("Loading dataset via drag-and-drop: {}", dataset_path->filename().string());
+            cmd::ShowDatasetLoadPopup{.dataset_path = *dataset_path}.emit();
         }
     }
 
