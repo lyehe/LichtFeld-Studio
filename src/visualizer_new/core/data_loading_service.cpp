@@ -262,10 +262,8 @@ namespace lfs::vis {
     std::expected<void, std::string> DataLoadingService::loadCheckpointForTraining(const std::filesystem::path& path) {
         LOG_TIMER("LoadCheckpointForTraining");
         try {
+            // Pass empty params; checkpoint contains all required params (dataset path, optimization, etc.)
             lfs::core::param::TrainingParameters params;
-            if (auto* const param_mgr = services().paramsOrNull(); param_mgr && param_mgr->ensureLoaded()) {
-                params = param_mgr->createForDataset(path.parent_path(), path.parent_path() / "output");
-            }
             scene_manager_->loadCheckpointForTraining(path, params);
             return {};
         } catch (const std::exception& e) {

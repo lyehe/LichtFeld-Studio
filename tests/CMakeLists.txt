@@ -136,6 +136,7 @@ set(OPTIONAL_TEST_FILES
     test_default_strategy_tensor_ops.cpp  # Exhaustive tensor ops tests for default_strategy.cpp vs libtorch
     test_tensor_zero_dimension.cpp  # Tests for zero-dimension tensor handling (sh-degree 0 bug)
     test_mask_loss.cpp  # Tests for masked photometric loss computation
+    test_checkpoint_resume.cpp  # Tests for checkpoint save/load/resume across strategies and SH degrees
 )
 
 foreach(TEST_FILE ${OPTIONAL_TEST_FILES})

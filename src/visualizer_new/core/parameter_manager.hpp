@@ -28,6 +28,9 @@ public:
     // Set session defaults (called once at startup)
     void setSessionDefaults(const lfs::core::param::OptimizationParameters& params);
 
+    // Set current params (e.g., from loaded checkpoint)
+    void setCurrentParams(const lfs::core::param::OptimizationParameters& params);
+
     [[nodiscard]] const std::string& getActiveStrategy() const { return active_strategy_; }
     void setActiveStrategy(std::string_view strategy);
 

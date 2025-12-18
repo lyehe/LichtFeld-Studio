@@ -234,15 +234,26 @@ namespace lfs::vis {
             LOG_TRACE("Cannot resume: {}", getActionBlockedReason(TrainingAction::Resume));
             return;
         }
+        if (!trainer_) return;
 
-        if (trainer_) {
+        const int iter = getCurrentIteration();
+        const bool need_thread = !training_thread_ || !training_thread_->joinable();
+
+        if (need_thread) {
+            // Checkpoint resume: no thread exists yet
+            training_complete_ = false;
+            accumulated_training_time_ = std::chrono::steady_clock::duration{0};
+            training_thread_ = std::make_unique<std::jthread>(
+                [this](std::stop_token st) { trainingThreadFunc(st); });
+        } else {
             trainer_->request_resume();
-            training_start_time_ = std::chrono::steady_clock::now();
-            state_machine_.transitionTo(TrainingState::Running);
-
-            state::TrainingResumed{.iteration = getCurrentIteration()}.emit();
-            LOG_INFO("Training resumed from iteration {}", getCurrentIteration());
         }
+
+        training_start_time_ = std::chrono::steady_clock::now();
+        updateResourceTracking();
+        state_machine_.transitionTo(TrainingState::Running);
+        state::TrainingResumed{.iteration = iter}.emit();
+        LOG_INFO("Training resumed at iteration {}", iter);
     }
 
     void TrainerManager::pauseTrainingTemporary() {

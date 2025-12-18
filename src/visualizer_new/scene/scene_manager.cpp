@@ -5,6 +5,7 @@
 #include "scene/scene_manager.hpp"
 #include "command/command_history.hpp"
 #include "command/commands/crop_command.hpp"
+#include "core/parameter_manager.hpp"
 #include "core/services.hpp"
 #include "core_new/logger.hpp"
 #include "core_new/splat_data_export.hpp"
@@ -1098,15 +1099,14 @@ namespace lfs::vis {
             }
             auto checkpoint_params = *params_result;
 
-            // CLI params override checkpoint params
+            // CLI params override checkpoint params (only if explicitly set)
             if (!params.dataset.data_path.empty()) {
                 checkpoint_params.dataset.data_path = params.dataset.data_path;
             }
             if (!params.dataset.output_path.empty()) {
                 checkpoint_params.dataset.output_path = params.dataset.output_path;
             }
-            constexpr int DEFAULT_ITERATIONS = 30000;
-            if (params.optimization.iterations != DEFAULT_ITERATIONS) {
+            if (params.optimization.iterations > 0) {
                 checkpoint_params.optimization.iterations = params.optimization.iterations;
             }
 
@@ -1179,6 +1179,11 @@ namespace lfs::vis {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 content_type_ = ContentType::Dataset;
                 dataset_path_ = checkpoint_params.dataset.data_path;
+            }
+
+            // Update current params from checkpoint (session params remain unchanged)
+            if (auto* param_mgr = services().paramsOrNull()) {
+                param_mgr->setCurrentParams(checkpoint_params.optimization);
             }
 
             LOG_INFO("Checkpoint loaded: {} gaussians, iteration {}", num_gaussians, checkpoint_iteration);

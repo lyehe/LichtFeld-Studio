@@ -543,6 +543,12 @@ namespace lfs::training {
         }
 
         if (is_refining(iter)) {
+            // Reinit if invalid (e.g., checkpoint resume with extended stop_refine)
+            const auto& info = _splat_data->_densification_info;
+            const size_t n = static_cast<size_t>(_splat_data->size());
+            if (!info.is_valid() || info.ndim() != 2 || info.shape()[1] != n) {
+                _splat_data->_densification_info = lfs::core::Tensor::zeros({2, n}, _splat_data->means().device());
+            }
             grow_gs(iter);
             prune_gs(iter);
 
@@ -640,6 +646,10 @@ namespace lfs::training {
             is.read(reinterpret_cast<char*>(&has_free_mask), sizeof(has_free_mask));
             if (has_free_mask) {
                 is >> _free_mask;
+                // Tensor deserialization loads to CPU; move to match splat data device
+                if (_splat_data->means().device() == lfs::core::Device::CUDA) {
+                    _free_mask = _free_mask.cuda();
+                }
             }
         }
 
