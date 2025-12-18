@@ -663,7 +663,7 @@ namespace lfs::vis {
     void VisualizerImpl::setParameters(const lfs::core::param::TrainingParameters& params) {
         data_loader_->setParameters(params);
         if (parameter_manager_) {
-            parameter_manager_->setSessionDefaults(params.optimization);
+            parameter_manager_->setSessionDefaults(params);
         }
     }
 

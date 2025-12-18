@@ -19,14 +19,14 @@ public:
     [[nodiscard]] lfs::core::param::OptimizationParameters& getCurrentParams(std::string_view strategy);
     [[nodiscard]] const lfs::core::param::OptimizationParameters& getCurrentParams(std::string_view strategy) const;
 
-    [[nodiscard]] lfs::core::param::LoadingParams& getLoadingParams() { return loading_params_; }
-    [[nodiscard]] const lfs::core::param::LoadingParams& getLoadingParams() const { return loading_params_; }
+    [[nodiscard]] lfs::core::param::DatasetConfig& getDatasetConfig() { return dataset_config_; }
+    [[nodiscard]] const lfs::core::param::DatasetConfig& getDatasetConfig() const { return dataset_config_; }
 
     // Reset current to session defaults
     void resetToDefaults(std::string_view strategy = "");
 
-    // Set session defaults (called once at startup)
-    void setSessionDefaults(const lfs::core::param::OptimizationParameters& params);
+    // Set session defaults from CLI params (called once at startup)
+    void setSessionDefaults(const lfs::core::param::TrainingParameters& params);
 
     // Set current params (e.g., from loaded checkpoint)
     void setCurrentParams(const lfs::core::param::OptimizationParameters& params);
@@ -56,7 +56,8 @@ private:
     lfs::core::param::OptimizationParameters mcmc_current_;
     lfs::core::param::OptimizationParameters default_current_;
 
-    lfs::core::param::LoadingParams loading_params_;
+    // Dataset config (CLI overrides JSON defaults)
+    lfs::core::param::DatasetConfig dataset_config_;
 };
 
 } // namespace lfs::vis

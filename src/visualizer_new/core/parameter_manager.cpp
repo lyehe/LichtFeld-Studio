@@ -37,7 +37,7 @@ std::expected<void, std::string> ParameterManager::ensureLoaded() {
     if (!loading_result) {
         return std::unexpected("Failed to load loading params: " + loading_result.error());
     }
-    loading_params_ = std::move(*loading_result);
+    dataset_config_.loading_params = std::move(*loading_result);
 
     loaded_ = true;
     return {};
@@ -60,31 +60,35 @@ void ParameterManager::resetToDefaults(const std::string_view strategy) {
     }
 }
 
-void ParameterManager::setSessionDefaults(const lfs::core::param::OptimizationParameters& params) {
+void ParameterManager::setSessionDefaults(const lfs::core::param::TrainingParameters& params) {
     if (const auto result = ensureLoaded(); !result) {
         LOG_ERROR("Failed to load params: {}", result.error());
         return;
     }
+    if (session_defaults_set_) return;
 
-    if (session_defaults_set_) {
-        return;
-    }
+    const auto& opt = params.optimization;
+    if (!opt.strategy.empty()) setActiveStrategy(opt.strategy);
 
-    if (!params.strategy.empty()) {
-        setActiveStrategy(params.strategy);
-    }
+    auto& session = (active_strategy_ == "mcmc") ? mcmc_session_ : default_session_;
+    auto& current = (active_strategy_ == "mcmc") ? mcmc_current_ : default_current_;
+    session = opt;
+    current = opt;
 
-    if (active_strategy_ == "mcmc") {
-        mcmc_session_ = params;
-        mcmc_current_ = params;
-    } else {
-        default_session_ = params;
-        default_current_ = params;
-    }
+    // Apply CLI overrides to dataset config
+    const auto& ds = params.dataset;
+    if (ds.resize_factor > 0) dataset_config_.resize_factor = ds.resize_factor;
+    if (ds.max_width > 0) dataset_config_.max_width = ds.max_width;
+    if (!ds.images.empty()) dataset_config_.images = ds.images;
+    if (ds.test_every > 0) dataset_config_.test_every = ds.test_every;
+    dataset_config_.loading_params = ds.loading_params;
+    dataset_config_.timelapse_images = ds.timelapse_images;
+    dataset_config_.timelapse_every = ds.timelapse_every;
+    dataset_config_.invert_masks = ds.invert_masks;
+    dataset_config_.mask_threshold = ds.mask_threshold;
 
     session_defaults_set_ = true;
-    LOG_INFO("Session params: strategy={}, iter={}, max_cap={}, sh={}",
-             params.strategy, params.iterations, params.max_cap, params.sh_degree);
+    LOG_INFO("Session: strategy={}, iter={}, resize={}", opt.strategy, opt.iterations, dataset_config_.resize_factor);
 }
 
 void ParameterManager::setCurrentParams(const lfs::core::param::OptimizationParameters& params) {
@@ -119,7 +123,7 @@ lfs::core::param::TrainingParameters ParameterManager::createForDataset(
 
     lfs::core::param::TrainingParameters params;
     params.optimization = getActiveParams();
-    params.dataset.loading_params = loading_params_;
+    params.dataset = dataset_config_;
     params.dataset.data_path = data_path;
     params.dataset.output_path = output_path;
     return params;
