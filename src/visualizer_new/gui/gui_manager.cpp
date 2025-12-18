@@ -289,6 +289,7 @@ namespace lfs::vis::gui {
                 LOG_ERROR("Failed to load parameter files: {}", result.error());
                 return;
             }
+            services().params().resetToDefaults();
             const auto params = services().params().createForDataset(dataset_path, output_path);
             viewer_->setParameters(params);
             lfs::core::events::cmd::LoadFile{.path = dataset_path, .is_dataset = true}.emit();

@@ -662,6 +662,9 @@ namespace lfs::vis {
 
     void VisualizerImpl::setParameters(const lfs::core::param::TrainingParameters& params) {
         data_loader_->setParameters(params);
+        if (parameter_manager_) {
+            parameter_manager_->setSessionDefaults(params.optimization);
+        }
     }
 
     std::expected<void, std::string> VisualizerImpl::loadPLY(const std::filesystem::path& path) {

@@ -565,11 +565,7 @@ namespace {
 
 std::expected<lfs::core::args::ParsedArgs, std::string>
 lfs::core::args::parse_args(int argc, const char* const argv[]) {
-    if (argc < 2) {
-        return TrainingMode{std::make_unique<param::TrainingParameters>()};
-    }
-
-    if (std::string_view(argv[1]) != "convert") {
+    if (argc < 2 || std::string_view(argv[1]) != "convert") {
         auto result = parse_args_and_params(argc, argv);
         if (!result) return std::unexpected(result.error());
         return TrainingMode{std::move(*result)};

@@ -94,9 +94,6 @@ namespace lfs::vis {
             pending_opt_params_ = params.optimization;
             pending_dataset_params_ = params.dataset;
 
-            if (auto* param_mgr = services().paramsOrNull()) {
-                param_mgr->applyCLIOverrides(params.optimization);
-            }
             trainer_ = std::move(trainer);
             updateResourceTracking();
             state_machine_.transitionTo(TrainingState::Ready);
@@ -115,9 +112,6 @@ namespace lfs::vis {
             pending_opt_params_ = params.optimization;
             pending_dataset_params_ = params.dataset;
 
-            if (auto* param_mgr = services().paramsOrNull()) {
-                param_mgr->applyCLIOverrides(params.optimization);
-            }
             trainer_ = std::move(trainer);
             updateResourceTracking();
             // Checkpoint load goes to Paused

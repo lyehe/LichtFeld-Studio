@@ -21,26 +21,25 @@ std::expected<void, std::string> ParameterManager::ensureLoaded() {
     if (!mcmc_result) {
         return std::unexpected("Failed to load MCMC params: " + mcmc_result.error());
     }
-    mcmc_gt_ = *mcmc_result;
-    mcmc_current_ = mcmc_gt_;
+    mcmc_session_ = std::move(*mcmc_result);
+    mcmc_current_ = mcmc_session_;
 
     const auto default_path = lfs::core::param::get_parameter_file_path(DEFAULT_CONFIG_FILE);
     auto default_result = lfs::core::param::read_optim_params_from_json(default_path);
     if (!default_result) {
         return std::unexpected("Failed to load default params: " + default_result.error());
     }
-    default_gt_ = *default_result;
-    default_current_ = default_gt_;
+    default_session_ = std::move(*default_result);
+    default_current_ = default_session_;
 
     const auto loading_path = lfs::core::param::get_parameter_file_path(LOADING_CONFIG_FILE);
     auto loading_result = lfs::core::param::read_loading_params_from_json(loading_path);
     if (!loading_result) {
         return std::unexpected("Failed to load loading params: " + loading_result.error());
     }
-    loading_params_ = *loading_result;
+    loading_params_ = std::move(*loading_result);
 
     loaded_ = true;
-    LOG_DEBUG("Parameters loaded from JSON config files");
     return {};
 }
 
@@ -52,41 +51,45 @@ const lfs::core::param::OptimizationParameters& ParameterManager::getCurrentPara
     return (strategy == "mcmc") ? mcmc_current_ : default_current_;
 }
 
-const lfs::core::param::OptimizationParameters& ParameterManager::getGTParams(const std::string_view strategy) const {
-    return (strategy == "mcmc") ? mcmc_gt_ : default_gt_;
-}
-
 void ParameterManager::resetToDefaults(const std::string_view strategy) {
     if (strategy.empty() || strategy == "mcmc") {
-        mcmc_current_ = mcmc_gt_;
+        mcmc_current_ = mcmc_session_;
     }
     if (strategy.empty() || strategy == "default") {
-        default_current_ = default_gt_;
+        default_current_ = default_session_;
     }
-    LOG_DEBUG("Reset params to defaults{}", strategy.empty() ? "" : " for " + std::string(strategy));
 }
 
-void ParameterManager::applyCLIOverrides(const lfs::core::param::OptimizationParameters& cli_params) {
+void ParameterManager::setSessionDefaults(const lfs::core::param::OptimizationParameters& params) {
     if (const auto result = ensureLoaded(); !result) {
         LOG_ERROR("Failed to load params: {}", result.error());
         return;
     }
 
-    if (!cli_params.strategy.empty()) {
-        setActiveStrategy(cli_params.strategy);
+    if (session_defaults_set_) {
+        return;
     }
 
-    getActiveParams() = cli_params;
+    if (!params.strategy.empty()) {
+        setActiveStrategy(params.strategy);
+    }
 
-    LOG_INFO("CLI overrides: strategy={}, iter={}, max_cap={}, sh_degree={}",
-             cli_params.strategy, cli_params.iterations, cli_params.max_cap, cli_params.sh_degree);
+    if (active_strategy_ == "mcmc") {
+        mcmc_session_ = params;
+        mcmc_current_ = params;
+    } else {
+        default_session_ = params;
+        default_current_ = params;
+    }
+
+    session_defaults_set_ = true;
+    LOG_INFO("Session params: strategy={}, iter={}, max_cap={}, sh={}",
+             params.strategy, params.iterations, params.max_cap, params.sh_degree);
 }
 
 void ParameterManager::setActiveStrategy(const std::string_view strategy) {
     if (strategy == "mcmc" || strategy == "default") {
         active_strategy_ = std::string(strategy);
-    } else {
-        LOG_WARN("Invalid strategy '{}', keeping '{}'", strategy, active_strategy_);
     }
 }
 
