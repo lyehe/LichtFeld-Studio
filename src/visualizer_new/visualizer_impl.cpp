@@ -50,6 +50,9 @@ namespace lfs::vis {
         // Create data loading service
         data_loader_ = std::make_unique<DataLoadingService>(scene_manager_.get());
 
+        // Create parameter manager (lazy-loads JSON files on first use)
+        parameter_manager_ = std::make_unique<ParameterManager>();
+
         // Create main loop
         main_loop_ = std::make_unique<MainLoop>();
 
@@ -60,6 +63,7 @@ namespace lfs::vis {
         services().set(window_manager_.get());
         services().set(&command_history_);
         services().set(gui_manager_.get());
+        services().set(parameter_manager_.get());
 
         // Setup connections
         setupEventHandlers();
@@ -145,27 +149,29 @@ namespace lfs::vis {
         // NOTE: Training control commands (Start/Pause/Resume/Stop/SaveCheckpoint)
         // are now handled by TrainerManager::setupEventHandlers()
 
-        // Reset training requires data_loader_ which lives here
         cmd::ResetTraining::when([this](const auto&) {
             if (!scene_manager_ || !scene_manager_->hasDataset()) {
-                LOG_WARN("Cannot reset: no dataset loaded");
+                LOG_WARN("Cannot reset: no dataset");
                 return;
             }
-
             if (trainer_manager_ && trainer_manager_->isTrainingActive()) {
                 trainer_manager_->stopTraining();
                 trainer_manager_->waitForCompletion();
             }
-
             const auto& path = scene_manager_->getDatasetPath();
             if (path.empty()) {
-                LOG_ERROR("Cannot reset: dataset path is empty");
+                LOG_ERROR("Cannot reset: empty path");
                 return;
             }
-
-            LOG_INFO("Resetting training: {}", path.string());
+            LOG_DEBUG("Resetting: reloading {}", path.string());
             if (const auto result = data_loader_->loadDataset(path); !result) {
-                LOG_ERROR("Failed to reload dataset: {}", result.error());
+                LOG_ERROR("Reload failed: {}", result.error());
+            }
+        });
+
+        cmd::ClearScene::when([this](const auto&) {
+            if (auto* const param_mgr = services().paramsOrNull()) {
+                param_mgr->resetToDefaults();
             }
         });
 

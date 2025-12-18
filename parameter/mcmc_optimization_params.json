@@ -43,5 +43,10 @@
   "random": false,
   "init_num_pts": 100000,
   "init_extent": 3.0,
-  "tile_mode": 1
+  "tile_mode": 1,
+  "num_workers": 2,
+  "enable_sparsity": false,
+  "sparsify_steps": 15000,
+  "init_rho": 0.0005,
+  "prune_ratio": 0.6
 }

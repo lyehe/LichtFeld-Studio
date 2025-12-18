@@ -9,6 +9,7 @@ add_library(lfs_visualizer STATIC
         core/main_loop.cpp
         core/data_loading_service.cpp
         core/editor_context.cpp
+        core/parameter_manager.cpp
 
         # Window management
         window/window_manager.cpp

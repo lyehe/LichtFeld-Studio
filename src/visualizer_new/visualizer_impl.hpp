@@ -6,6 +6,7 @@
 
 #include "core/editor_context.hpp"
 #include "core/main_loop.hpp"
+#include "core/parameter_manager.hpp"
 #include "core_new/parameters.hpp"
 #include "gui/gui_manager.hpp"
 #include "input/input_controller.hpp"
@@ -157,6 +158,7 @@ namespace lfs::vis {
         std::unique_ptr<SceneManager> scene_manager_;
         std::shared_ptr<TrainerManager> trainer_manager_;
         std::unique_ptr<DataLoadingService> data_loader_;
+        std::unique_ptr<ParameterManager> parameter_manager_;
         std::unique_ptr<MainLoop> main_loop_;
 
         // Tools

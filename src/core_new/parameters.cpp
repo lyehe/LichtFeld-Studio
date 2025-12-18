@@ -430,7 +430,7 @@ namespace lfs::core {
          * @param[in] json file to load
          * @return Expected OptimizationParameters or error message
          */
-        std::expected<OptimizationParameters, std::string> read_optim_params_from_json(std::filesystem::path& path) {
+        std::expected<OptimizationParameters, std::string> read_optim_params_from_json(const std::filesystem::path& path) {
             auto json_result = read_json_file(path);
 
             if (!json_result) {
@@ -569,7 +569,7 @@ namespace lfs::core {
             return dataset;
         }
 
-        std::expected<LoadingParams, std::string> read_loading_params_from_json(std::filesystem::path& path) {
+        std::expected<LoadingParams, std::string> read_loading_params_from_json(const std::filesystem::path& path) {
             auto json_result = read_json_file(path);
 
             if (!json_result) {
@@ -582,6 +582,26 @@ namespace lfs::core {
                 return std::unexpected(std::format("Error reading loading parameters: {}", e.what()));
             }
             return loading_params;
+        }
+
+        std::filesystem::path get_parameter_file_path(const std::string& filename) {
+            static constexpr const char* PARAM_DIR = "parameter";
+#ifdef _WIN32
+            char exe_buf[MAX_PATH];
+            GetModuleFileNameA(nullptr, exe_buf, MAX_PATH);
+            auto search_dir = std::filesystem::path(exe_buf).parent_path();
+#else
+            auto search_dir = std::filesystem::canonical("/proc/self/exe").parent_path();
+#endif
+            while (!search_dir.empty()) {
+                if (const auto path = search_dir / PARAM_DIR / filename; std::filesystem::exists(path)) {
+                    return path;
+                }
+                const auto parent = search_dir.parent_path();
+                if (parent == search_dir) break;
+                search_dir = parent;
+            }
+            return search_dir / PARAM_DIR / filename;
         }
 
     } // namespace param

@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "training/training_manager.hpp"
+#include "core/parameter_manager.hpp"
+#include "core/services.hpp"
 #include "core_new/events.hpp"
 #include "core_new/logger.hpp"
 #include "scene/scene.hpp"
@@ -305,35 +307,21 @@ namespace lfs::vis {
         }
 
         if (trainer_->isInitialized()) {
-            LOG_DEBUG("Clearing GPU memory from previous training");
-
-            // Save params before destroying
-            auto params = trainer_->getParams();
-
-            // Destroy the trainer to release all tensors
+            LOG_DEBUG("Releasing GPU memory");
             trainer_.reset();
-
-            // Synchronize to ensure all GPU operations are complete
             cudaDeviceSynchronize();
 
-            LOG_DEBUG("GPU memory released");
-
-            // Recreate trainer from Scene
             if (!scene_) {
-                LOG_ERROR("Cannot reset training: no scene set");
+                LOG_ERROR("Cannot reset: no scene");
                 state_machine_.transitionToFinished(FinishReason::Error);
                 return false;
             }
             trainer_ = std::make_unique<lfs::training::Trainer>(*scene_);
         }
 
-        // Clear loss buffer
         loss_buffer_.clear();
-
-        // Set to Ready state
         state_machine_.transitionTo(TrainingState::Ready);
-
-        LOG_INFO("Training reset complete - GPU memory freed, ready to start with current parameters");
+        LOG_DEBUG("Training reset complete");
         return true;
     }
 
@@ -559,9 +547,18 @@ namespace lfs::vis {
 
     void TrainerManager::applyPendingParams() {
         if (!trainer_) return;
+
         auto params = trainer_->getParams();
-        params.optimization = pending_opt_params_;
         params.dataset = pending_dataset_params_;
+
+        // Use ParameterManager in GUI mode, fallback to pending_opt_params_ for headless
+        if (auto* const param_mgr = services().paramsOrNull()) {
+            params.optimization = param_mgr->getActiveParams();
+            LOG_DEBUG("Applied params: strategy={}, iter={}, max_cap={}",
+                      params.optimization.strategy, params.optimization.iterations, params.optimization.max_cap);
+        } else {
+            params.optimization = pending_opt_params_;
+        }
         trainer_->setParams(params);
     }
 

@@ -156,13 +156,16 @@ namespace lfs::core {
         };
 
         // Modern C++23 functions returning expected values
-        std::expected<OptimizationParameters, std::string> read_optim_params_from_json(std::filesystem::path& path);
+        std::expected<OptimizationParameters, std::string> read_optim_params_from_json(const std::filesystem::path& path);
 
         // Save training parameters to JSON
         std::expected<void, std::string> save_training_parameters_to_json(
             const TrainingParameters& params,
             const std::filesystem::path& output_path);
 
-        std::expected<LoadingParams, std::string> read_loading_params_from_json(std::filesystem::path& path);
+        std::expected<LoadingParams, std::string> read_loading_params_from_json(const std::filesystem::path& path);
+
+        // Find parameter file by searching up from executable directory
+        std::filesystem::path get_parameter_file_path(const std::string& filename);
     } // namespace param
 } // namespace lfs::core

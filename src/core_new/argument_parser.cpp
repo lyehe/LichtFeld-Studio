@@ -22,36 +22,6 @@
 
 namespace {
 
-    /**
-     * @brief Get the path to a configuration file
-     * @param filename Name of the configuration file
-     * @return std::filesystem::path Full path to the configuration file
-     */
-    std::filesystem::path get_config_path(const std::string& filename) {
-#ifdef _WIN32
-        char executablePathWindows[MAX_PATH];
-        GetModuleFileNameA(nullptr, executablePathWindows, MAX_PATH);
-        std::filesystem::path executablePath = std::filesystem::path(executablePathWindows);
-        std::filesystem::path searchDir = executablePath.parent_path();
-        while (!searchDir.empty() && !std::filesystem::exists(searchDir / "parameter" / filename)) {
-            auto parent = searchDir.parent_path();
-            if (parent == searchDir) { // when we reach a folder which is parentless - its parent is itself
-                break;
-            }
-            searchDir = parent;
-        }
-
-        if (!std::filesystem::exists(searchDir / "parameter" / filename)) {
-            LOG_ERROR("could not find {}", (std::filesystem::path("parameter") / filename).string());
-            throw std::runtime_error("could not find " + (std::filesystem::path("parameter") / filename).string());
-        }
-#else
-        std::filesystem::path executablePath = std::filesystem::canonical("/proc/self/exe");
-        std::filesystem::path searchDir = executablePath.parent_path().parent_path();
-#endif
-        return searchDir / "parameter" / filename;
-    }
-
     enum class ParseResult {
         Success,
         Help
@@ -524,7 +494,7 @@ lfs::core::args::parse_args_and_params(int argc, const char* const argv[]) {
     std::string config_file = params->optimization.config_file;
     std::filesystem::path config_file_to_read = config_file != ""
                                                     ? std::filesystem::path(reinterpret_cast<const char8_t*>(config_file.c_str()))
-                                                    : get_config_path(params->optimization.strategy + "_optimization_params.json");
+                                                    : lfs::core::param::get_parameter_file_path(params->optimization.strategy + "_optimization_params.json");
 
     if (!parse_result) {
         return std::unexpected(parse_result.error());
@@ -544,7 +514,7 @@ lfs::core::args::parse_args_and_params(int argc, const char* const argv[]) {
     }
     params->optimization = *opt_params_result;
 
-    std::filesystem::path config_file_loading = get_config_path("loading_params.json");
+    std::filesystem::path config_file_loading = lfs::core::param::get_parameter_file_path("loading_params.json");
     auto loading_result = lfs::core::param::read_loading_params_from_json(config_file_loading);
     if (!loading_result) {
         return std::unexpected(std::format("Failed to load loading parameters: {}",

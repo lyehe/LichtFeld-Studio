@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "core/data_loading_service.hpp"
+#include "core/parameter_manager.hpp"
+#include "core/services.hpp"
 #include "core_new/logger.hpp"
 #include "scene/scene_manager.hpp"
 #include <algorithm>
@@ -259,19 +261,17 @@ namespace lfs::vis {
 
     std::expected<void, std::string> DataLoadingService::loadCheckpointForTraining(const std::filesystem::path& path) {
         LOG_TIMER("LoadCheckpointForTraining");
-
         try {
-            LOG_INFO("Loading checkpoint for training from: {}", path.string());
-
-            // Use default params - checkpoint's embedded paths take precedence
-            lfs::core::param::TrainingParameters default_params;
-            scene_manager_->loadCheckpointForTraining(path, default_params);
-
+            lfs::core::param::TrainingParameters params;
+            if (auto* const param_mgr = services().paramsOrNull(); param_mgr && param_mgr->ensureLoaded()) {
+                params = param_mgr->createForDataset(path.parent_path(), path.parent_path() / "output");
+            }
+            scene_manager_->loadCheckpointForTraining(path, params);
             return {};
         } catch (const std::exception& e) {
-            std::string error_msg = std::format("Failed to load checkpoint for training: {}", e.what());
-            LOG_ERROR("{} (Path: {})", error_msg, path.string());
-            return std::unexpected(error_msg);
+            const std::string error = std::format("Checkpoint load failed: {}", e.what());
+            LOG_ERROR("{}", error);
+            return std::unexpected(error);
         }
     }
 

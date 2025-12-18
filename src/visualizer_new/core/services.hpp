@@ -13,6 +13,7 @@ class SceneManager;
 class TrainerManager;
 class RenderingManager;
 class WindowManager;
+class ParameterManager;
 
 namespace command {
 class CommandHistory;
@@ -51,6 +52,7 @@ public:
     void set(WindowManager* wm) { window_manager_ = wm; }
     void set(command::CommandHistory* ch) { command_history_ = ch; }
     void set(gui::GuiManager* gm) { gui_manager_ = gm; }
+    void set(ParameterManager* pm) { parameter_manager_ = pm; }
 
     // Access - asserts if service not registered
     [[nodiscard]] SceneManager& scene() {
@@ -83,6 +85,11 @@ public:
         return *gui_manager_;
     }
 
+    [[nodiscard]] ParameterManager& params() {
+        assert(parameter_manager_ && "ParameterManager not registered");
+        return *parameter_manager_;
+    }
+
     // Optional access - returns nullptr if not registered
     [[nodiscard]] SceneManager* sceneOrNull() { return scene_manager_; }
     [[nodiscard]] TrainerManager* trainerOrNull() { return trainer_manager_; }
@@ -90,6 +97,7 @@ public:
     [[nodiscard]] WindowManager* windowOrNull() { return window_manager_; }
     [[nodiscard]] command::CommandHistory* commandsOrNull() { return command_history_; }
     [[nodiscard]] gui::GuiManager* guiOrNull() { return gui_manager_; }
+    [[nodiscard]] ParameterManager* paramsOrNull() { return parameter_manager_; }
 
     // Check if all core services are registered
     [[nodiscard]] bool isInitialized() const {
@@ -105,6 +113,7 @@ public:
         window_manager_ = nullptr;
         command_history_ = nullptr;
         gui_manager_ = nullptr;
+        parameter_manager_ = nullptr;
     }
 
 private:
@@ -119,6 +128,7 @@ private:
     WindowManager* window_manager_ = nullptr;
     command::CommandHistory* command_history_ = nullptr;
     gui::GuiManager* gui_manager_ = nullptr;
+    ParameterManager* parameter_manager_ = nullptr;
 };
 
 // Convenience function

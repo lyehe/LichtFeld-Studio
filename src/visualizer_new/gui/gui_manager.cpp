@@ -285,9 +285,11 @@ namespace lfs::vis::gui {
 
         save_directory_popup_->setOnConfirm([this](const std::filesystem::path& dataset_path,
                                                    const std::filesystem::path& output_path) {
-            lfs::core::param::TrainingParameters params{};
-            params.dataset.data_path = dataset_path;
-            params.dataset.output_path = output_path;
+            if (const auto result = services().params().ensureLoaded(); !result) {
+                LOG_ERROR("Failed to load parameter files: {}", result.error());
+                return;
+            }
+            const auto params = services().params().createForDataset(dataset_path, output_path);
             viewer_->setParameters(params);
             lfs::core::events::cmd::LoadFile{.path = dataset_path, .is_dataset = true}.emit();
         });
