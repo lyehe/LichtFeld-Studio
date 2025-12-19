@@ -156,6 +156,15 @@ namespace lfs::vis {
         // Main render function
         void renderFrame(const RenderContext& context, SceneManager* scene_manager);
 
+        // Render preview to external texture (for PiP preview)
+        bool renderPreviewFrame(SceneManager* scene_manager,
+                               const glm::mat3& camera_rotation,
+                               const glm::vec3& camera_position,
+                               float fov,
+                               unsigned int target_fbo,
+                               unsigned int target_texture,
+                               int width, int height);
+
         void markDirty();
 
         [[nodiscard]] bool needsRender() const {
@@ -175,6 +184,7 @@ namespace lfs::vis {
                 selection_flash_active_.store(false);
             }
 
+            if (overlay_animation_active_.load()) return true;
             return needs_render_.load();
         }
 
@@ -188,6 +198,8 @@ namespace lfs::vis {
             selection_flash_active_.store(true);
             markDirty();
         }
+
+        void setOverlayAnimationActive(const bool active) { overlay_animation_active_.store(active); }
 
         [[nodiscard]] float getSelectionFlashIntensity() const {
             if (!selection_flash_active_.load())
@@ -306,6 +318,8 @@ namespace lfs::vis {
         mutable std::atomic<bool> selection_flash_active_{false};
         std::chrono::steady_clock::time_point selection_flash_start_time_;
         static constexpr float SELECTION_FLASH_DURATION_SEC = 0.5f;
+
+        mutable std::atomic<bool> overlay_animation_active_{false};
 
         size_t last_model_ptr_ = 0;
         glm::ivec2 last_render_size_{0, 0};

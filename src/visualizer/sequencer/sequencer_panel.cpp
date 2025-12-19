@@ -361,7 +361,6 @@ void SequencerPanel::renderTimeline(const ImVec2& pos, const float width, const 
                 editing_keyframe_time_ = true;
                 editing_keyframe_index_ = i;
                 std::snprintf(time_edit_buffer_, sizeof(time_edit_buffer_), "%.2f", keyframes[i].time);
-                ImGui::OpenPopup("EditKeyframeTime");
                 last_clicked_keyframe_ = std::nullopt;
             } else {
                 last_click_time_ = current_time;
@@ -476,7 +475,6 @@ void SequencerPanel::renderTimeline(const ImVec2& pos, const float width, const 
                 editing_keyframe_time_ = true;
                 editing_keyframe_index_ = idx;
                 std::snprintf(time_edit_buffer_, sizeof(time_edit_buffer_), "%.2f", keyframes[idx].time);
-                ImGui::OpenPopup("EditKeyframeTime");
             }
 
             // Easing submenu (only for non-last keyframes - easing controls outgoing segment)
@@ -531,6 +529,11 @@ void SequencerPanel::renderTimeline(const ImVec2& pos, const float width, const 
 
 void SequencerPanel::renderTimeEditPopup() {
     if (!editing_keyframe_time_) return;
+
+    // Open popup if not already open (must be done outside context menu scope)
+    if (!ImGui::IsPopupOpen("EditKeyframeTime")) {
+        ImGui::OpenPopup("EditKeyframeTime");
+    }
 
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, {0.5f, 0.5f});
     if (ImGui::BeginPopupModal("EditKeyframeTime", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {

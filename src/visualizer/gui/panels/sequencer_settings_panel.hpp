@@ -14,6 +14,10 @@ struct SequencerUIState {
     float snap_interval = 0.5f;
     float playback_speed = 1.0f;
 
+    // Playback preview
+    bool follow_playback = false;  // Main camera follows playhead (default: off)
+    float pip_preview_scale = 1.0f; // Preview window scale (0.5 to 2.0)
+
     // Video export
     lfs::io::video::VideoPreset preset = lfs::io::video::VideoPreset::YOUTUBE_1080P;
     int custom_width = 1920;

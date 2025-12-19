@@ -9,6 +9,7 @@
 
 #include "gui/gui_manager.hpp"
 #include "command/command_history.hpp"
+#include "command/commands/sequencer_command.hpp"
 #include "core/image_io.hpp"
 #include "core/logger.hpp"
 #include "core/sogs.hpp"
@@ -825,8 +826,11 @@ namespace lfs::vis::gui {
         if (!ui_hidden_ && ctx.editor && !ctx.editor->isToolsDisabled()) {
             if (sequencer_ui_state_.show_camera_path) {
                 renderCameraPath(ctx);
+                renderKeyframeGizmo(ctx);
+                renderKeyframePreview(ctx);
             }
             renderSequencerPanel(ctx);
+            drawPipPreviewWindow(ctx);
         }
 
         // Render status bar at bottom of viewport
@@ -952,6 +956,41 @@ namespace lfs::vis::gui {
                         sequencer_controller_.seek(timeline.keyframes()[*context_menu_keyframe_].time);
                     }
                     ImGui::Separator();
+                    const bool translate_active = keyframe_gizmo_op_ == ImGuizmo::TRANSLATE;
+                    const bool rotate_active = keyframe_gizmo_op_ == ImGuizmo::ROTATE;
+                    if (ImGui::MenuItem("Move (Translate)", nullptr, translate_active)) {
+                        sequencer_controller_.selectKeyframe(*context_menu_keyframe_);
+                        keyframe_gizmo_op_ = translate_active ? ImGuizmo::OPERATION(0) : ImGuizmo::TRANSLATE;
+                    }
+                    if (ImGui::MenuItem("Rotate", nullptr, rotate_active)) {
+                        sequencer_controller_.selectKeyframe(*context_menu_keyframe_);
+                        keyframe_gizmo_op_ = rotate_active ? ImGuizmo::OPERATION(0) : ImGuizmo::ROTATE;
+                    }
+                    ImGui::Separator();
+                    // Easing submenu (only for non-last keyframes)
+                    const size_t idx = *context_menu_keyframe_;
+                    const bool is_last = (idx == timeline.size() - 1);
+                    if (ImGui::BeginMenu("Easing", !is_last)) {
+                        static constexpr const char* EASING_NAMES[] = {"Linear", "Ease In", "Ease Out", "Ease In-Out"};
+                        const auto current_easing = timeline.keyframes()[idx].easing;
+                        for (int e = 0; e < 4; ++e) {
+                            const auto easing = static_cast<sequencer::EasingType>(e);
+                            if (ImGui::MenuItem(EASING_NAMES[e], nullptr, current_easing == easing)) {
+                                if (current_easing != easing) {
+                                    sequencer_controller_.timeline().setKeyframeEasing(idx, easing);
+                                    if (auto* cmd_history = services().commandsOrNull()) {
+                                        cmd_history->execute(std::make_unique<command::SetKeyframeEasingCommand>(
+                                            idx, current_easing, easing));
+                                    }
+                                }
+                            }
+                        }
+                        ImGui::EndMenu();
+                    }
+                    if (is_last && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("Easing controls outgoing motion\n(last keyframe has no outgoing segment)");
+                    }
+                    ImGui::Separator();
                     const bool is_first = (*context_menu_keyframe_ == 0);
                     if (ImGui::MenuItem("Delete Keyframe", "Del", false, !is_first)) {
                         sequencer_controller_.selectKeyframe(*context_menu_keyframe_);
@@ -1063,28 +1102,27 @@ namespace lfs::vis::gui {
     void GuiManager::renderSequencerPanel(const UIContext& /*ctx*/) {
         sequencer_controller_.update(ImGui::GetIO().DeltaTime);
 
-        if (sequencer_controller_.isPlaying() && !sequencer_controller_.timeline().empty()) {
-            const auto state = sequencer_controller_.currentCameraState();
-            auto& viewport = viewer_->getViewport();
-            viewport.camera.R = glm::mat3_cast(state.rotation);
-            viewport.camera.t = state.position;
+        const bool is_playing = sequencer_controller_.isPlaying() && !sequencer_controller_.timeline().empty();
 
-            if (auto* const rm = viewer_->getRenderingManager()) {
+        if (auto* const rm = viewer_->getRenderingManager()) {
+            rm->setOverlayAnimationActive(is_playing);
+            if (is_playing && sequencer_ui_state_.follow_playback) {
                 rm->markDirty();
+                const auto state = sequencer_controller_.currentCameraState();
+                auto& viewport = viewer_->getViewport();
+                viewport.camera.R = glm::mat3_cast(state.rotation);
+                viewport.camera.t = state.position;
             }
         }
 
-        // Pass snap settings from UI state to panel
         sequencer_panel_->setSnapEnabled(sequencer_ui_state_.snap_to_grid);
         sequencer_panel_->setSnapInterval(sequencer_ui_state_.snap_interval);
-
         sequencer_panel_->render(viewport_pos_.x, viewport_size_.x, viewport_pos_.y + viewport_size_.y);
     }
 
     void GuiManager::renderCameraPath(const UIContext& /*ctx*/) {
         constexpr float PATH_THICKNESS = 2.0f;
         constexpr float FRUSTUM_THICKNESS = 1.5f;
-        constexpr float PLAYHEAD_SIZE = 8.0f;
         constexpr float NDC_CULL_MARGIN = 1.5f;
         constexpr int PATH_SAMPLES = 20;
         constexpr float FRUSTUM_SIZE = 0.15f;   // Size of frustum base
@@ -1203,30 +1241,298 @@ namespace lfs::vis::gui {
         }
 
         // Handle keyframe clicking
-        if (mouse_in_viewport && !ImGui::IsAnyItemHovered() && !ImGuizmo::IsOver()) {
-            // Left click to select
-            if (hovered_keyframe.has_value() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (mouse_in_viewport && !ImGui::IsAnyItemHovered()) {
+            // Left click to select (blocked when gizmo is active to avoid accidental selection)
+            if (hovered_keyframe.has_value() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGuizmo::IsOver()) {
                 sequencer_controller_.selectKeyframe(*hovered_keyframe);
             }
-            // Right click for context menu
+            // Right click for context menu (always allowed, even with gizmo active)
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-                context_menu_keyframe_ = hovered_keyframe;  // Can be nullopt if not on a keyframe
+                context_menu_keyframe_ = hovered_keyframe;
                 keyframe_context_menu_open_ = true;
                 ImGui::OpenPopup("KeyframeContextMenu");
             }
         }
 
-        // Playhead marker
+        // Playhead camera frustum (during playback/scrubbing)
         if (!sequencer_controller_.isStopped()) {
             const auto state = sequencer_controller_.currentCameraState();
             if (isVisible(state.position)) {
-                const ImVec2 sp = projectToScreen(state.position);
-                dl->AddTriangleFilled({sp.x, sp.y - PLAYHEAD_SIZE},
-                                       {sp.x - PLAYHEAD_SIZE * 0.7f, sp.y + PLAYHEAD_SIZE * 0.5f},
-                                       {sp.x + PLAYHEAD_SIZE * 0.7f, sp.y + PLAYHEAD_SIZE * 0.5f},
-                                       t.error_u32());
+                const ImU32 playhead_color = t.error_u32();
+                constexpr float PLAYHEAD_FRUSTUM_SIZE = 0.12f;
+                constexpr float PLAYHEAD_FRUSTUM_DEPTH = 0.20f;
+
+                // Build frustum from interpolated camera state
+                const glm::mat3 rot_mat = glm::mat3_cast(state.rotation);
+                const glm::vec3 forward = rot_mat[2];
+                const glm::vec3 up = -rot_mat[1];
+                const glm::vec3 right = rot_mat[0];
+
+                const glm::vec3 apex = state.position;
+                const glm::vec3 base_center = apex + forward * PLAYHEAD_FRUSTUM_DEPTH;
+                const glm::vec3 tl = base_center + up * PLAYHEAD_FRUSTUM_SIZE - right * PLAYHEAD_FRUSTUM_SIZE;
+                const glm::vec3 tr = base_center + up * PLAYHEAD_FRUSTUM_SIZE + right * PLAYHEAD_FRUSTUM_SIZE;
+                const glm::vec3 bl = base_center - up * PLAYHEAD_FRUSTUM_SIZE - right * PLAYHEAD_FRUSTUM_SIZE;
+                const glm::vec3 br = base_center - up * PLAYHEAD_FRUSTUM_SIZE + right * PLAYHEAD_FRUSTUM_SIZE;
+
+                const ImVec2 s_apex = projectToScreen(apex);
+                const ImVec2 s_tl = projectToScreen(tl);
+                const ImVec2 s_tr = projectToScreen(tr);
+                const ImVec2 s_bl = projectToScreen(bl);
+                const ImVec2 s_br = projectToScreen(br);
+
+                // Draw frustum edges
+                dl->AddLine(s_apex, s_tl, playhead_color, FRUSTUM_THICKNESS);
+                dl->AddLine(s_apex, s_tr, playhead_color, FRUSTUM_THICKNESS);
+                dl->AddLine(s_apex, s_bl, playhead_color, FRUSTUM_THICKNESS);
+                dl->AddLine(s_apex, s_br, playhead_color, FRUSTUM_THICKNESS);
+
+                // Draw base rectangle
+                dl->AddLine(s_tl, s_tr, playhead_color, FRUSTUM_THICKNESS);
+                dl->AddLine(s_tr, s_br, playhead_color, FRUSTUM_THICKNESS);
+                dl->AddLine(s_br, s_bl, playhead_color, FRUSTUM_THICKNESS);
+                dl->AddLine(s_bl, s_tl, playhead_color, FRUSTUM_THICKNESS);
+
+                // Draw "up" indicator
+                const glm::vec3 up_tip = base_center + up * PLAYHEAD_FRUSTUM_SIZE * 1.3f;
+                const ImVec2 s_up = projectToScreen(up_tip);
+                dl->AddTriangleFilled(s_up, s_tl, s_tr, playhead_color);
             }
         }
+    }
+
+    void GuiManager::renderKeyframeGizmo(const UIContext& ctx) {
+        if (keyframe_gizmo_op_ == ImGuizmo::OPERATION(0)) return;
+
+        const auto selected = sequencer_controller_.selectedKeyframe();
+        if (!selected.has_value()) {
+            keyframe_gizmo_op_ = ImGuizmo::OPERATION(0);
+            return;
+        }
+
+        const auto& timeline = sequencer_controller_.timeline();
+        if (*selected >= timeline.size()) return;
+
+        const auto* kf = timeline.getKeyframe(*selected);
+        if (!kf || kf->is_loop_point) {
+            keyframe_gizmo_op_ = ImGuizmo::OPERATION(0);
+            return;
+        }
+
+        auto* const rendering_manager = ctx.viewer->getRenderingManager();
+        if (!rendering_manager) return;
+
+        const auto& settings = rendering_manager->getSettings();
+        auto& viewport = ctx.viewer->getViewport();
+        const glm::mat4 view = viewport.getViewMatrix();
+        const glm::ivec2 vp_size(static_cast<int>(viewport_size_.x), static_cast<int>(viewport_size_.y));
+        const glm::mat4 projection = lfs::rendering::createProjectionMatrix(
+            vp_size, settings.fov, settings.orthographic, settings.ortho_scale);
+
+        const glm::mat3 rot_mat = glm::mat3_cast(kf->rotation);
+        glm::mat4 gizmo_matrix(rot_mat);
+        gizmo_matrix[3] = glm::vec4(kf->position, 1.0f);
+
+        ImGuizmo::SetOrthographic(settings.orthographic);
+        ImGuizmo::SetRect(viewport_pos_.x, viewport_pos_.y, viewport_size_.x, viewport_size_.y);
+
+        ImDrawList* const dl = ImGui::GetForegroundDrawList();
+        const ImVec2 clip_min(viewport_pos_.x, viewport_pos_.y);
+        const ImVec2 clip_max(clip_min.x + viewport_size_.x, clip_min.y + viewport_size_.y);
+        dl->PushClipRect(clip_min, clip_max, true);
+        ImGuizmo::SetDrawlist(dl);
+
+        const ImGuizmo::MODE mode = (keyframe_gizmo_op_ == ImGuizmo::ROTATE) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+        glm::mat4 delta;
+        const bool changed = ImGuizmo::Manipulate(
+            glm::value_ptr(view), glm::value_ptr(projection),
+            keyframe_gizmo_op_, mode,
+            glm::value_ptr(gizmo_matrix), glm::value_ptr(delta), nullptr);
+
+        const bool is_using = ImGuizmo::IsUsing();
+
+        if (is_using && !keyframe_gizmo_active_) {
+            keyframe_gizmo_active_ = true;
+            keyframe_pos_before_drag_ = kf->position;
+            keyframe_rot_before_drag_ = kf->rotation;
+        }
+
+        if (changed) {
+            const glm::vec3 new_pos(gizmo_matrix[3]);
+            const glm::quat new_rot = glm::quat_cast(glm::mat3(gizmo_matrix));
+            sequencer_controller_.timeline().updateKeyframe(*selected, new_pos, new_rot, kf->fov);
+            sequencer_controller_.updateLoopKeyframe();
+            pip_needs_update_ = true;
+        }
+
+        if (!is_using && keyframe_gizmo_active_) {
+            keyframe_gizmo_active_ = false;
+
+            const auto* const final_kf = timeline.getKeyframe(*selected);
+            if (final_kf) {
+                const bool position_changed = glm::any(glm::notEqual(
+                    keyframe_pos_before_drag_, final_kf->position, 0.0001f));
+                const bool rotation_changed = glm::abs(glm::dot(
+                    keyframe_rot_before_drag_, final_kf->rotation) - 1.0f) > 0.0001f;
+
+                if (position_changed || rotation_changed) {
+                    sequencer::Keyframe old_kf = *final_kf;
+                    old_kf.position = keyframe_pos_before_drag_;
+                    old_kf.rotation = keyframe_rot_before_drag_;
+
+                    if (auto* cmd_history = services().commandsOrNull()) {
+                        cmd_history->execute(std::make_unique<command::UpdateKeyframeCommand>(
+                            *selected, old_kf, *final_kf));
+                    }
+                }
+            }
+        }
+
+        dl->PopClipRect();
+    }
+
+    void GuiManager::initPipPreview() {
+        if (pip_initialized_) return;
+
+        glGenFramebuffers(1, &pip_fbo_);
+        glGenTextures(1, &pip_texture_);
+        glGenRenderbuffers(1, &pip_depth_rbo_);
+
+        glBindTexture(GL_TEXTURE_2D, pip_texture_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, PREVIEW_WIDTH, PREVIEW_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, pip_depth_rbo_);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, pip_fbo_);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pip_texture_, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, pip_depth_rbo_);
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            LOG_ERROR("PiP preview FBO incomplete");
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        pip_initialized_ = true;
+    }
+
+    void GuiManager::renderKeyframePreview(const UIContext& ctx) {
+        const bool is_playing = !sequencer_controller_.isStopped();
+        const auto selected = sequencer_controller_.selectedKeyframe();
+
+        if (!is_playing && !selected.has_value()) {
+            pip_last_keyframe_ = std::nullopt;
+            return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        if (is_playing) {
+            const float elapsed = std::chrono::duration<float>(now - pip_last_render_time_).count();
+            if (elapsed < 1.0f / PREVIEW_TARGET_FPS) return;
+        }
+
+        auto* const rm = ctx.viewer->getRenderingManager();
+        auto* const sm = ctx.viewer->getSceneManager();
+        if (!rm || !sm) return;
+
+        if (!pip_initialized_) initPipPreview();
+
+        glm::mat3 cam_rot;
+        glm::vec3 cam_pos;
+        float cam_fov;
+
+        if (is_playing) {
+            const auto state = sequencer_controller_.currentCameraState();
+            cam_rot = glm::mat3_cast(state.rotation);
+            cam_pos = state.position;
+            cam_fov = state.fov;
+        } else {
+            if (pip_last_keyframe_ == selected && !pip_needs_update_) return;
+
+            const auto& timeline = sequencer_controller_.timeline();
+            if (*selected >= timeline.size()) return;
+
+            const auto* const kf = timeline.getKeyframe(*selected);
+            if (!kf) return;
+
+            cam_rot = glm::mat3_cast(kf->rotation);
+            cam_pos = kf->position;
+            cam_fov = kf->fov;
+        }
+
+        if (rm->renderPreviewFrame(sm, cam_rot, cam_pos, cam_fov, pip_fbo_, pip_texture_, PREVIEW_WIDTH, PREVIEW_HEIGHT)) {
+            pip_last_render_time_ = now;
+            if (!is_playing) {
+                pip_last_keyframe_ = selected;
+                pip_needs_update_ = false;
+            }
+        }
+    }
+
+    void GuiManager::drawPipPreviewWindow([[maybe_unused]] const UIContext& ctx) {
+        const bool is_playing = !sequencer_controller_.isStopped();
+        const auto selected = sequencer_controller_.selectedKeyframe();
+
+        if (!is_playing && !selected.has_value()) return;
+        if (!pip_initialized_ || pip_texture_ == 0) return;
+
+        if (!is_playing) {
+            const auto& timeline = sequencer_controller_.timeline();
+            if (*selected >= timeline.size()) return;
+            const auto* const kf = timeline.getKeyframe(*selected);
+            if (!kf || kf->is_loop_point) return;
+        }
+
+        const auto& t = theme();
+        const float scale = sequencer_ui_state_.pip_preview_scale;
+        constexpr float MARGIN = 16.0f;
+        constexpr float PANEL_HEIGHT = 90.0f;
+        const float scaled_width = static_cast<float>(PREVIEW_WIDTH) * scale;
+        const float scaled_height = static_cast<float>(PREVIEW_HEIGHT) * scale;
+        const ImVec2 window_size(scaled_width, scaled_height + 24.0f);
+        const ImVec2 window_pos(
+            viewport_pos_.x + MARGIN,
+            viewport_pos_.y + viewport_size_.y - PANEL_HEIGHT - window_size.y - MARGIN);
+
+        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(window_size, ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.95f);
+
+        // Use different border color during playback
+        const ImU32 border_color = is_playing
+            ? t.error_u32()
+            : toU32WithAlpha(t.palette.primary, 0.6f);
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, toU32(t.palette.surface));
+        ImGui::PushStyleColor(ImGuiCol_Border, border_color);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, t.sizes.window_rounding);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {4.0f, 4.0f});
+
+        constexpr ImGuiWindowFlags flags =
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoScrollbar;
+
+        if (ImGui::Begin("##KeyframePreview", nullptr, flags)) {
+            const std::string title = is_playing
+                ? std::format("Playback {:.2f}s", sequencer_controller_.playhead())
+                : std::format("Keyframe {} Preview", *selected + 1);
+            ImGui::TextColored({t.palette.text.x, t.palette.text.y, t.palette.text.z, 0.8f}, "%s", title.c_str());
+            ImGui::Image(static_cast<ImTextureID>(pip_texture_),
+                         {scaled_width - 8.0f, scaled_height - 8.0f}, {0, 1}, {1, 0});
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
     }
 
     void GuiManager::renderStatusBar(const UIContext& ctx) {

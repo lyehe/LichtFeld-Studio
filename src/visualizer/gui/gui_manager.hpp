@@ -175,6 +175,28 @@ namespace lfs::vis {
             bool keyframe_context_menu_open_ = false;
             std::optional<size_t> context_menu_keyframe_;
 
+            // Keyframe gizmo
+            ImGuizmo::OPERATION keyframe_gizmo_op_ = ImGuizmo::OPERATION(0);
+            bool keyframe_gizmo_active_ = false;
+            glm::vec3 keyframe_pos_before_drag_{0.0f};
+            glm::quat keyframe_rot_before_drag_{1.0f, 0.0f, 0.0f, 0.0f};
+            void renderKeyframeGizmo(const UIContext& ctx);
+
+            // Keyframe preview (PiP)
+            static constexpr int PREVIEW_WIDTH = 320;
+            static constexpr int PREVIEW_HEIGHT = 180;
+            static constexpr float PREVIEW_TARGET_FPS = 30.0f;
+            unsigned int pip_fbo_ = 0;
+            unsigned int pip_texture_ = 0;
+            unsigned int pip_depth_rbo_ = 0;
+            bool pip_initialized_ = false;
+            std::optional<size_t> pip_last_keyframe_;
+            bool pip_needs_update_ = true;
+            std::chrono::steady_clock::time_point pip_last_render_time_;
+            void initPipPreview();
+            void renderKeyframePreview(const UIContext& ctx);
+            void drawPipPreviewWindow(const UIContext& ctx);
+
             // Node transform gizmo state
             bool show_node_gizmo_ = true;
             ImGuizmo::OPERATION node_gizmo_operation_ = ImGuizmo::TRANSLATE;

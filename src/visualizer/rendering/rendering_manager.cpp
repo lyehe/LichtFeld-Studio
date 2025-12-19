@@ -701,6 +701,48 @@ namespace lfs::vis {
         glBindFramebuffer(GL_FRAMEBUFFER, current_fbo);
     }
 
+    bool RenderingManager::renderPreviewFrame(SceneManager* const scene_manager,
+                                              const glm::mat3& rotation,
+                                              const glm::vec3& position,
+                                              const float fov,
+                                              const unsigned int fbo,
+                                              [[maybe_unused]] const unsigned int texture,
+                                              const int width, const int height) {
+        if (!initialized_ || !engine_) return false;
+
+        const auto* const model = scene_manager ? scene_manager->getModelForRendering() : nullptr;
+        if (!model || model->size() == 0) return false;
+
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glViewport(0, 0, width, height);
+        const auto& bg = settings_.background_color;
+        glClearColor(bg.r, bg.g, bg.b, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        const lfs::rendering::RenderRequest request{
+            .viewport = {rotation, position, {width, height}, fov, false, 1.0f},
+            .scaling_modifier = settings_.scaling_modifier,
+            .antialiasing = false,
+            .sh_degree = 0,
+            .background_color = bg,
+            .crop_box = std::nullopt,
+            .point_cloud_mode = settings_.point_cloud_mode,
+            .voxel_size = settings_.voxel_size,
+            .gut = false,
+            .show_rings = false,
+            .ring_width = 0.0f,
+            .show_center_markers = false};
+
+        if (const auto result = engine_->renderGaussians(*model, request)) {
+            engine_->presentToScreen(*result, {0, 0}, {width, height});
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return true;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return false;
+    }
+
     void RenderingManager::renderFrame(const RenderContext& context, SceneManager* scene_manager) {
         framerate_controller_.beginFrame();
 

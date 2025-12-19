@@ -81,6 +81,13 @@ void DrawSequencerSection(const UIContext& ctx, SequencerUIState& state) {
         }
     }
 
+    ImGui::Checkbox("Follow Playback", &state.follow_playback);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Camera follows playhead during playback");
+
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    ImGui::SliderFloat("Preview Size", &state.pip_preview_scale, 0.5f, 2.0f, "%.1fx");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale the preview window");
+
     ImGui::Spacing();
 
     // Save/Load camera path
