@@ -6,6 +6,10 @@
 
 namespace lfs::vis {
 
+namespace {
+constexpr float LOOP_KEYFRAME_OFFSET = 1.0f;
+} // namespace
+
     void SequencerController::play() {
         if (timeline_.empty()) return;
         if (state_ == PlaybackState::STOPPED) {
@@ -54,7 +58,52 @@ namespace lfs::vis {
     }
 
     void SequencerController::toggleLoop() {
-        loop_mode_ = (loop_mode_ == LoopMode::ONCE) ? LoopMode::LOOP : LoopMode::ONCE;
+        if (loop_mode_ == LoopMode::ONCE) {
+            loop_mode_ = LoopMode::LOOP;
+            addLoopKeyframe();
+        } else {
+            loop_mode_ = LoopMode::ONCE;
+            removeLoopKeyframe();
+        }
+    }
+
+    void SequencerController::addLoopKeyframe() {
+        if (timeline_.size() < 2) return;
+        removeLoopKeyframe();
+
+        const auto& first = timeline_.keyframes().front();
+        sequencer::Keyframe loop_kf;
+        loop_kf.time = timeline_.endTime() + LOOP_KEYFRAME_OFFSET;
+        loop_kf.position = first.position;
+        loop_kf.rotation = first.rotation;
+        loop_kf.fov = first.fov;
+        loop_kf.easing = sequencer::EasingType::EASE_IN_OUT;
+        loop_kf.is_loop_point = true;
+        timeline_.addKeyframe(loop_kf);
+    }
+
+    void SequencerController::removeLoopKeyframe() {
+        const auto& keyframes = timeline_.keyframes();
+        for (size_t i = keyframes.size(); i > 0; --i) {
+            if (keyframes[i - 1].is_loop_point) {
+                timeline_.removeKeyframe(i - 1);
+                break;
+            }
+        }
+    }
+
+    void SequencerController::updateLoopKeyframe() {
+        if (loop_mode_ != LoopMode::LOOP || timeline_.size() < 2) return;
+
+        const auto& keyframes = timeline_.keyframes();
+        const auto& first = keyframes.front();
+
+        for (size_t i = 0; i < keyframes.size(); ++i) {
+            if (keyframes[i].is_loop_point) {
+                timeline_.updateKeyframe(i, first.position, first.rotation, first.fov);
+                break;
+            }
+        }
     }
 
     void SequencerController::beginScrub() {

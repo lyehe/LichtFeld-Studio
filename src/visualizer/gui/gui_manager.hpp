@@ -90,6 +90,9 @@ namespace lfs::vis {
 
             bool isForceExit() const { return force_exit_; }
 
+            [[nodiscard]] SequencerController& sequencer() { return sequencer_controller_; }
+            [[nodiscard]] const SequencerController& sequencer() const { return sequencer_controller_; }
+
             // Input capture for key rebinding
             bool isCapturingInput() const;
             bool isModalWindowOpen() const;

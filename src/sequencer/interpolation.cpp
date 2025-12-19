@@ -6,19 +6,36 @@
 
 namespace lfs::sequencer {
 
+    namespace {
+        [[nodiscard]] float easeIn(const float t) {
+            return t * t * t;
+        }
+
+        [[nodiscard]] float easeOut(const float t) {
+            const float u = 1.0f - t;
+            return 1.0f - u * u * u;
+        }
+
+        [[nodiscard]] float easeInOut(const float t) {
+            if (t < 0.5f) {
+                return 4.0f * t * t * t;
+            }
+            const float u = -2.0f * t + 2.0f;
+            return 1.0f - 0.5f * u * u * u;
+        }
+    } // namespace
+
     float applyEasing(const float t, const EasingType easing) {
         const float clamped = std::clamp(t, 0.0f, 1.0f);
         switch (easing) {
             case EasingType::LINEAR:
                 return clamped;
             case EasingType::EASE_IN:
-                return clamped * clamped;
+                return easeIn(clamped);
             case EasingType::EASE_OUT:
-                return clamped * (2.0f - clamped);
+                return easeOut(clamped);
             case EasingType::EASE_IN_OUT:
-                return clamped < 0.5f
-                    ? 2.0f * clamped * clamped
-                    : -1.0f + (4.0f - 2.0f * clamped) * clamped;
+                return easeInOut(clamped);
         }
         return clamped;
     }
@@ -81,15 +98,22 @@ namespace lfs::sequencer {
             return keyframes.empty() ? std::vector<glm::vec3>{} : std::vector<glm::vec3>{keyframes[0].position};
         }
 
-        const float total_duration = keyframes.back().time - keyframes.front().time;
-        const int total_samples = static_cast<int>(keyframes.size() - 1) * samples_per_segment;
-
         std::vector<glm::vec3> points;
-        points.reserve(static_cast<size_t>(total_samples + 1));
+        points.reserve((keyframes.size() - 1) * static_cast<size_t>(samples_per_segment) + 1);
 
-        for (int i = 0; i <= total_samples; ++i) {
-            const float t = keyframes.front().time + (static_cast<float>(i) / static_cast<float>(total_samples)) * total_duration;
-            points.push_back(interpolateSpline(keyframes, t).position);
+        // Generate points per-segment to avoid redundant segment lookups
+        for (size_t seg = 0; seg < keyframes.size() - 1; ++seg) {
+            const Keyframe& k0 = keyframes[seg > 0 ? seg - 1 : seg];
+            const Keyframe& k1 = keyframes[seg];
+            const Keyframe& k2 = keyframes[seg + 1];
+            const Keyframe& k3 = keyframes[seg + 2 < keyframes.size() ? seg + 2 : seg + 1];
+
+            const int samples = (seg == keyframes.size() - 2) ? samples_per_segment + 1 : samples_per_segment;
+            for (int i = 0; i < samples; ++i) {
+                const float t = static_cast<float>(i) / static_cast<float>(samples_per_segment);
+                const float eased_t = applyEasing(t, k1.easing);
+                points.push_back(catmullRom(k0.position, k1.position, k2.position, k3.position, eased_t));
+            }
         }
         return points;
     }

@@ -5,9 +5,13 @@
 
 #include "sequencer/keyframe.hpp"
 #include "sequencer/timeline.hpp"
+#include <algorithm>
 #include <optional>
 
 namespace lfs::vis {
+
+    inline constexpr float MIN_PLAYBACK_SPEED = 0.1f;
+    inline constexpr float MAX_PLAYBACK_SPEED = 4.0f;
 
     enum class PlaybackState : uint8_t {
         STOPPED,
@@ -58,11 +62,18 @@ namespace lfs::vis {
         [[nodiscard]] LoopMode loopMode() const { return loop_mode_; }
         void setLoopMode(LoopMode mode) { loop_mode_ = mode; }
         void toggleLoop();
+        void updateLoopKeyframe();  // Sync loop keyframe with first keyframe
+
+        [[nodiscard]] float playbackSpeed() const { return playback_speed_; }
+        void setPlaybackSpeed(const float speed) { playback_speed_ = std::clamp(speed, MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED); }
 
         [[nodiscard]] float playhead() const { return playhead_; }
         [[nodiscard]] sequencer::CameraState currentCameraState() const;
 
     private:
+        void addLoopKeyframe();
+        void removeLoopKeyframe();
+
         sequencer::Timeline timeline_;
         PlaybackState state_ = PlaybackState::STOPPED;
         LoopMode loop_mode_ = LoopMode::ONCE;

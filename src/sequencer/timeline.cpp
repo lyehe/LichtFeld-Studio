@@ -39,6 +39,15 @@ namespace lfs::sequencer {
         keyframes_[index].fov = fov;
     }
 
+    void Timeline::setKeyframeEasing(const size_t index, const EasingType easing) {
+        if (index >= keyframes_.size()) return;
+        keyframes_[index].easing = easing;
+    }
+
+    const Keyframe* Timeline::getKeyframe(const size_t index) const {
+        return index < keyframes_.size() ? &keyframes_[index] : nullptr;
+    }
+
     void Timeline::clear() {
         keyframes_.clear();
     }

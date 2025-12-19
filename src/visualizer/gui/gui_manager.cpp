@@ -1074,6 +1074,10 @@ namespace lfs::vis::gui {
             }
         }
 
+        // Pass snap settings from UI state to panel
+        sequencer_panel_->setSnapEnabled(sequencer_ui_state_.snap_to_grid);
+        sequencer_panel_->setSnapInterval(sequencer_ui_state_.snap_interval);
+
         sequencer_panel_->render(viewport_pos_.x, viewport_size_.x, viewport_pos_.y + viewport_size_.y);
     }
 
@@ -1883,7 +1887,12 @@ namespace lfs::vis::gui {
         cmd::SequencerAddKeyframe::when([this](const auto&) {
             const auto& cam = viewer_->getViewport().camera;
             auto& timeline = sequencer_controller_.timeline();
-            const float time = timeline.empty() ? 0.0f : timeline.endTime() + 1.0f;
+
+            // Use snap interval if enabled, otherwise default to 1.0f
+            const float interval = sequencer_ui_state_.snap_to_grid
+                ? sequencer_ui_state_.snap_interval
+                : 1.0f;
+            const float time = timeline.empty() ? 0.0f : timeline.endTime() + interval;
 
             lfs::sequencer::Keyframe kf;
             kf.time = time;
