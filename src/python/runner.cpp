@@ -12,9 +12,14 @@
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
 #include <Python.h>
+#include <mutex>
 #endif
 
 namespace lfs::python {
+
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+    static std::once_flag g_py_init_once;
+#endif
 
     std::expected<void, std::string> run_scripts(const std::vector<std::filesystem::path>& scripts) {
         if (scripts.empty()) {
@@ -24,10 +29,12 @@ namespace lfs::python {
 #ifndef LFS_BUILD_PYTHON_BINDINGS
         return std::unexpected("Python bindings disabled; rebuild with -DBUILD_PYTHON_BINDINGS=ON");
 #else
-        if (!Py_IsInitialized()) {
+        std::call_once(g_py_init_once, [] {
             Py_Initialize();
-            PyEval_InitThreads();
-        }
+            PyEval_InitThreads(); // legacy but harmless
+            PyEval_SaveThread();  // release GIL so other threads can acquire
+            LOG_INFO("Python interpreter initialized and GIL released (SaveThread)");
+        });
 
         PyGILState_STATE gil_state = PyGILState_Ensure();
 
@@ -72,6 +79,8 @@ namespace lfs::python {
                 PyGILState_Release(gil_state);
                 return std::unexpected(std::format("Python script failed: {} (rc={})", script.string(), rc));
             }
+
+            LOG_INFO("Python script completed: {}", script.string());
         }
 
         PyGILState_Release(gil_state);

@@ -4,6 +4,9 @@
 
 #include "control/control_boundary.hpp"
 
+#include "core/logger.hpp"
+#include <cuda_runtime.h>
+
 #include <algorithm>
 
 namespace lfs::training {
@@ -44,7 +47,7 @@ namespace lfs::training {
     }
 
     void ControlBoundary::notify(ControlHook hook, const HookContext& ctx) {
-        // Copy callbacks under lock, then invoke outside to avoid deadlocks.
+        // Copy callbacks under lock, then enqueue for deferred execution.
         std::vector<Registration> local;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -54,16 +57,54 @@ namespace lfs::training {
             }
         }
 
-        for (const auto& reg : local) {
-            if (reg.cb) {
-                reg.cb(ctx);
+        if (local.empty()) {
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& reg : local) {
+                if (reg.cb) {
+                    pending_callbacks_.push_back(PendingCallback{reg.cb, ctx});
+                }
+            }
+        }
+
+        LOG_DEBUG("ControlBoundary: enqueued {} callbacks for hook {}", local.size(), static_cast<int>(hook));
+    }
+
+    void ControlBoundary::drain_callbacks() {
+        std::vector<PendingCallback> local;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_callbacks_.empty()) {
+                return;
+            }
+            local.swap(pending_callbacks_);
+        }
+
+        cudaError_t err = cudaSetDevice(0);
+        if (err != cudaSuccess) {
+            LOG_ERROR("ControlBoundary: cudaSetDevice(0) failed: {}",
+                    cudaGetErrorString(err));
+            return;
+        }
+
+        for (auto& pending : local) {
+            try {
+                pending.cb(pending.ctx);
+            } catch (...) {
+                LOG_ERROR("ControlBoundary callback threw");
             }
         }
     }
 
+
+
     void ControlBoundary::clear_all() {
         std::lock_guard<std::mutex> lock(mutex_);
         callbacks_.clear();
+        pending_callbacks_.clear();
     }
 
 } // namespace lfs::training

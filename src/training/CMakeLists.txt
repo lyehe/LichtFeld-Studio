@@ -76,6 +76,7 @@ set(TRAINING_NEW_SOURCES
     components/bilateral_grid.cpp
     components/sparsity_optimizer.cpp
     control/control_boundary.cpp
+    control/command_api.cpp
     metrics/metrics.cpp
     checkpoint.cpp
     trainer.cpp

@@ -56,6 +56,9 @@ namespace lfs::training {
         // Notify all callbacks for a hook. Safe to call from the training thread.
         void notify(ControlHook hook, const HookContext& ctx);
 
+    // Drain and execute pending callbacks in a safe control phase (with GIL acquisition done in the callback).
+    void drain_callbacks();
+
         // Remove all callbacks (used by sessions for cleanup).
         void clear_all();
 
@@ -69,8 +72,14 @@ namespace lfs::training {
             Callback cb;
         };
 
+        struct PendingCallback {
+            Callback cb;
+            HookContext ctx;
+        };
+
         std::mutex mutex_;
         std::unordered_map<ControlHook, std::vector<Registration>, ControlHookHash> callbacks_;
+        std::vector<PendingCallback> pending_callbacks_;
         std::atomic<std::size_t> next_id_{1};
     };
 

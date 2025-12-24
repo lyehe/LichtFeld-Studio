@@ -12,6 +12,7 @@
 #include "core/splat_data_export.hpp"
 #include "core/splat_data_transform.hpp"
 #include "control/control_boundary.hpp"
+#include "control/command_api.hpp"
 #include "core/tensor/internal/memory_pool.hpp"
 #include "io/cache_image_loader.hpp"
 #include "io/filesystem_utils.hpp"
@@ -498,9 +499,23 @@ namespace lfs::training {
                 LOG_INFO("Starting from iteration: {}", current_iteration_.load());
             }
 
+            // Expose initial snapshot for Python control (iteration 0)
+            {
+                lfs::training::HookContext ctx{
+                    .iteration = current_iteration_.load(),
+                    .loss = current_loss_.load(),
+                    .num_gaussians = strategy_ ? strategy_->get_model().size() : 0,
+                    .is_refining = strategy_ ? strategy_->is_refining(current_iteration_.load()) : false,
+                    .trainer = this};
+                lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::SafeControl);
+                lfs::training::CommandCenter::instance().update_snapshot(
+                    ctx, params_.optimization.iterations, is_paused_.load(), is_running_.load(), stop_requested_.load(),
+                    lfs::training::TrainingPhase::SafeControl);
+            }
+
             // Default Python control script if none provided
             if (python_scripts_.empty()) {
-                std::filesystem::path default_script = std::filesystem::path(PROJECT_ROOT_PATH) / "src/python/sample/iter_hooks.py";
+                std::filesystem::path default_script = std::filesystem::path(PROJECT_ROOT_PATH) / "src/python/sample/command_demo.py";
                 if (std::filesystem::exists(default_script)) {
                     set_python_scripts({default_script});
                     LOG_INFO("No Python scripts specified; using default: {}", default_script.string());
@@ -708,8 +723,17 @@ namespace lfs::training {
                     .num_gaussians = strategy_ ? strategy_->get_model().size() : 0,
                     .is_refining = strategy_ ? strategy_->is_refining(iter) : false,
                     .trainer = this};
+                lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::IterationStart);
+                lfs::training::CommandCenter::instance().update_snapshot(
+                    ctx, params_.optimization.iterations, is_paused_.load(), is_running_.load(), stop_requested_.load(),
+                    lfs::training::TrainingPhase::IterationStart);
                 lfs::training::ControlBoundary::instance().notify(lfs::training::ControlHook::IterationStart, ctx);
+                auto view = lfs::training::CommandCenter::instance().snapshot();
+                lfs::training::CommandCenter::instance().drain_enqueued(view);
             }
+
+            // Training step entering forward/backward/optimizer region (commands blocked)
+            lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::Forward);
 
             // If stop requested, return Stop
             if (stop_requested_.load() || stop_token.stop_requested()) {
@@ -1056,6 +1080,10 @@ namespace lfs::training {
                             .num_gaussians = strategy_ ? strategy_->get_model().size() : 0,
                             .is_refining = strategy_ ? strategy_->is_refining(iter) : false,
                             .trainer = this};
+                        lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::OptimizerStep);
+                        lfs::training::CommandCenter::instance().update_snapshot(
+                            ctx, params_.optimization.iterations, is_paused_.load(), is_running_.load(), stop_requested_.load(),
+                            lfs::training::TrainingPhase::OptimizerStep);
                         lfs::training::ControlBoundary::instance().notify(lfs::training::ControlHook::PreOptimizerStep, ctx);
                     }
 
@@ -1140,6 +1168,10 @@ namespace lfs::training {
                     .num_gaussians = strategy_ ? strategy_->get_model().size() : 0,
                     .is_refining = strategy_ ? strategy_->is_refining(iter) : false,
                     .trainer = this};
+                lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::SafeControl);
+                lfs::training::CommandCenter::instance().update_snapshot(
+                    ctx, params_.optimization.iterations, is_paused_.load(), is_running_.load(), stop_requested_.load(),
+                    lfs::training::TrainingPhase::SafeControl);
                 lfs::training::ControlBoundary::instance().notify(lfs::training::ControlHook::PostStep, ctx);
             }
 
@@ -1163,6 +1195,7 @@ namespace lfs::training {
         is_running_ = false;
         training_complete_ = false;
         ready_to_start_ = false; // Reset the flag
+        lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::SafeControl);
 
         ready_to_start_ = true; // Skip GUI wait for now
 
@@ -1188,6 +1221,10 @@ namespace lfs::training {
                 .num_gaussians = strategy_ ? strategy_->get_model().size() : 0,
                 .is_refining = strategy_ ? strategy_->is_refining(0) : false,
                 .trainer = this};
+            lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::SafeControl);
+            lfs::training::CommandCenter::instance().update_snapshot(
+                ctx, params_.optimization.iterations, is_paused_.load(), is_running_.load(), stop_requested_.load(),
+                lfs::training::TrainingPhase::SafeControl);
             lfs::training::ControlBoundary::instance().notify(lfs::training::ControlHook::TrainingStart, ctx);
         }
 
@@ -1217,9 +1254,9 @@ namespace lfs::training {
                 }
 
                 // Wait for previous callback if still running
-                if (callback_busy_.load()) {
-                    cudaStreamSynchronize(callback_stream_);
-                }
+                // if (callback_busy_.load()) {
+                //     cudaStreamSynchronize(callback_stream_);
+                // }
 
                 // Get next batch from dataloader
                 auto batch_opt = train_dataloader->next();
@@ -1284,6 +1321,10 @@ namespace lfs::training {
                     }
                 }
 
+                // Transition to safe control phase and execute deferred Python callbacks
+                lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::SafeControl);
+                lfs::training::ControlBoundary::instance().drain_callbacks();
+
                 if (*step_result == StepResult::Stop) {
                     break;
                 }
@@ -1343,8 +1384,14 @@ namespace lfs::training {
                     .num_gaussians = strategy_ ? strategy_->get_model().size() : 0,
                     .is_refining = strategy_ ? strategy_->is_refining(current_iteration_.load()) : false,
                     .trainer = this};
+                lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::SafeControl);
+                lfs::training::CommandCenter::instance().update_snapshot(
+                    ctx, params_.optimization.iterations, is_paused_.load(), is_running_.load(), stop_requested_.load(),
+                    lfs::training::TrainingPhase::SafeControl);
                 lfs::training::ControlBoundary::instance().notify(lfs::training::ControlHook::TrainingEnd, ctx);
             }
+
+            lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::Idle);
 
             LOG_INFO("Training completed successfully");
             return {};
@@ -1352,6 +1399,7 @@ namespace lfs::training {
             is_running_ = false;
             cache_loader.clear_cpu_cache();
             lfs::core::image_io::wait_for_pending_saves();
+            lfs::training::CommandCenter::instance().set_phase(lfs::training::TrainingPhase::Idle);
 
             return std::unexpected(std::format("Training failed: {}", e.what()));
         }
