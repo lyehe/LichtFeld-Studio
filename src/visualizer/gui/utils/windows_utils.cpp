@@ -61,7 +61,7 @@ namespace lfs::vis::gui {
 
                             if (SUCCEEDED(hr)) {
                                 strDirectory = filePath;
-                                CoTaskMemFree(filePath);
+                                // Caller is responsible for calling CoTaskMemFree(strDirectory)
                             }
                             pItem->Release();
                         }
