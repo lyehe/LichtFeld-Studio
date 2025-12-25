@@ -74,7 +74,7 @@ namespace lfs::vis::gui {
             } else {
                 // Format error message for better clarity
                 std::string error_msg = e.error.value_or("Unknown error occurred during training.");
-                
+
                 // Check if this is an OOM error and format it clearly
                 if (error_msg.find("OUT_OF_MEMORY") != std::string::npos) {
                     error_msg = "Out of GPU memory!\n\n"
@@ -84,7 +84,7 @@ namespace lfs::vis::gui {
                                 "  - Enable tile mode (--tile-mode 2 or 4)\n"
                                 "  - Reduce max Gaussians (--max-cap)";
                 }
-                
+
                 show(Type::FAILURE, "Training Failed", error_msg);
             }
         });
