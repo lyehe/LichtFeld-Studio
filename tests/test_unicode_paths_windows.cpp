@@ -3033,7 +3033,7 @@ TEST_F(UnicodePathTest, Utf8ToPathHandlesEmbeddedNullCharacters) {
     constexpr size_t BUFFER_SIZE = 1024;
     std::string buffer = path_to_utf8(test_root_ / "output");
     size_t original_length = buffer.size();
-    buffer.resize(BUFFER_SIZE);  // Pads with null characters like ImGui does
+    buffer.resize(BUFFER_SIZE); // Pads with null characters like ImGui does
 
     // Verify buffer has embedded nulls
     ASSERT_GT(buffer.size(), original_length);
@@ -3048,7 +3048,7 @@ TEST_F(UnicodePathTest, Utf8ToPathHandlesEmbeddedNullCharacters) {
 
     // Critical test: path append should work correctly
     fs::path with_subdir = converted / "checkpoints";
-    EXPECT_NE(with_subdir, converted);  // Should NOT be equal (append should work)
+    EXPECT_NE(with_subdir, converted); // Should NOT be equal (append should work)
     EXPECT_TRUE(with_subdir.string().find("checkpoints") != std::string::npos);
 
     // Verify we can actually create the directory
@@ -3071,7 +3071,7 @@ TEST_F(UnicodePathTest, Utf8ToPathHandlesUnicodeWithEmbeddedNulls) {
     constexpr size_t BUFFER_SIZE = 1024;
     std::string buffer = path_to_utf8(unicode_dir);
     size_t original_length = buffer.size();
-    buffer.resize(BUFFER_SIZE);  // Pad with nulls
+    buffer.resize(BUFFER_SIZE); // Pad with nulls
 
     // Convert and verify
     fs::path converted = utf8_to_path(buffer);
@@ -3116,7 +3116,7 @@ TEST_F(UnicodePathTest, CheckpointPathConstructionWithBufferPadding) {
         // 3. String is converted back to path via utf8_to_path
         constexpr size_t BUFFER_SIZE = 1024;
         std::string buffer = path_to_utf8(base_dir);
-        buffer.resize(BUFFER_SIZE);  // This was causing the bug!
+        buffer.resize(BUFFER_SIZE); // This was causing the bug!
 
         // This is what Trainer::save_checkpoint receives
         fs::path output_path = utf8_to_path(buffer);
@@ -3161,7 +3161,7 @@ TEST_F(UnicodePathTest, NativeStringSizeAfterUtf8ToPath) {
     // Create buffer-padded string
     constexpr size_t BUFFER_SIZE = 1024;
     std::string buffer = path_to_utf8(test_dir);
-    size_t utf8_length = std::strlen(buffer.c_str());  // Length without padding
+    size_t utf8_length = std::strlen(buffer.c_str()); // Length without padding
     buffer.resize(BUFFER_SIZE);
 
     // Convert to path
