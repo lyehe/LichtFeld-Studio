@@ -6,6 +6,7 @@
 
 #include "core/image_io.hpp"
 #include "core/logger.hpp"
+#include "core/parameter_manager.hpp"
 #include "core/path_utils.hpp"
 #include "gui/dpi_scale.hpp"
 #include "gui/localization_manager.hpp"
@@ -16,6 +17,7 @@
 #include "internal/resource_paths.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "scene/scene_manager.hpp"
+#include "core/services.hpp"
 #include "theme/theme.hpp"
 #include "visualizer_impl.hpp"
 
@@ -492,9 +494,13 @@ namespace lfs::vis::gui {
             }
 
             // [Mask] - indicator for cameras with masks
+            // Rotate 180° when masks are inverted
             if (has_mask && m_icons.mask) {
                 ImGui::SameLine(0.0f, ICON_SPACING);
-                ImGui::Image(static_cast<ImTextureID>(m_icons.mask), icon_sz, {0, 0}, {1, 1},
+                const bool inverted = services().paramsOrNull() && services().paramsOrNull()->getActiveParams().invert_masks;
+                const ImVec2 uv0 = inverted ? ImVec2(1, 1) : ImVec2(0, 0);
+                const ImVec2 uv1 = inverted ? ImVec2(0, 0) : ImVec2(1, 1);
+                ImGui::Image(static_cast<ImTextureID>(m_icons.mask), icon_sz, uv0, uv1,
                              ImVec4(0.9f, 0.5f, 0.6f, 0.8f), {0, 0, 0, 0});
             }
 
