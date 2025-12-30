@@ -17,6 +17,7 @@
 #include "gui/utils/drag_drop_native.hpp"
 #include "sequencer/sequencer_controller.hpp"
 #include "sequencer/sequencer_panel.hpp"
+#include "windows/exit_confirmation_popup.hpp"
 #include "windows/export_dialog.hpp"
 #include "windows/notification_popup.hpp"
 #include "windows/save_directory_popup.hpp"
@@ -93,6 +94,10 @@ namespace lfs::vis {
             [[nodiscard]] SequencerController& sequencer() { return sequencer_controller_; }
             [[nodiscard]] const SequencerController& sequencer() const { return sequencer_controller_; }
 
+            // Exit confirmation
+            void requestExitConfirmation();
+            bool isExitConfirmationPending() const;
+
             // Input capture for key rebinding
             bool isCapturingInput() const;
             bool isModalWindowOpen() const;
@@ -115,6 +120,7 @@ namespace lfs::vis {
             std::unique_ptr<ExportDialog> export_dialog_;
             std::unique_ptr<NotificationPopup> notification_popup_;
             std::unique_ptr<SaveDirectoryPopup> save_directory_popup_;
+            std::unique_ptr<ExitConfirmationPopup> exit_confirmation_popup_;
 
             // UI state only
             std::unordered_map<std::string, bool> window_states_;
@@ -278,6 +284,14 @@ namespace lfs::vis {
             void renderVideoExportOverlay();
             void renderEmptyStateOverlay();
             void renderDragDropOverlay();
+            void renderStartupOverlay();
+
+            // Startup overlay state
+            bool show_startup_overlay_ = true;
+            unsigned int startup_logo_texture_ = 0;
+            unsigned int startup_core11_texture_ = 0;
+            int startup_logo_width_ = 0, startup_logo_height_ = 0;
+            int startup_core11_width_ = 0, startup_core11_height_ = 0;
             void startAsyncExport(lfs::core::ExportFormat format,
                                   const std::filesystem::path& path,
                                   std::unique_ptr<lfs::core::SplatData> data);
@@ -288,7 +302,7 @@ namespace lfs::vis {
             bool isExporting() const { return export_state_.active.load(); }
             bool isExportingVideo() const { return video_export_state_.active.load(); }
 
-            // Native drag-drop handler for visual feedback
+            // Native drag-drop handler
             NativeDragDrop drag_drop_;
             bool drag_drop_hovering_ = false;
         };

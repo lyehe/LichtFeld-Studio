@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "core/parameters.hpp"
+#include "core/executable_path.hpp"
 #include "core/logger.hpp"
 #include <chrono>
 #include <ctime>
@@ -236,6 +237,7 @@ namespace lfs::core {
             opt_json["enable_eval"] = enable_eval;
             opt_json["enable_save_eval_images"] = enable_save_eval_images;
             opt_json["strategy"] = strategy;
+            opt_json["mip_filter"] = mip_filter;
             opt_json["use_bilateral_grid"] = use_bilateral_grid;
             opt_json["bilateral_grid_X"] = bilateral_grid_X;
             opt_json["bilateral_grid_Y"] = bilateral_grid_Y;
@@ -250,6 +252,7 @@ namespace lfs::core {
             opt_json["reset_every"] = reset_every;
             opt_json["pause_refine_after_reset"] = pause_refine_after_reset;
             opt_json["revised_opacity"] = revised_opacity;
+            opt_json["gut"] = gut;
             opt_json["steps_scaler"] = steps_scaler;
             opt_json["sh_degree_interval"] = sh_degree_interval;
             opt_json["random"] = random;
@@ -337,6 +340,9 @@ namespace lfs::core {
             }
             if (json.contains("enable_save_eval_images")) {
                 params.enable_save_eval_images = json["enable_save_eval_images"];
+            }
+            if (json.contains("mip_filter")) {
+                params.mip_filter = json["mip_filter"];
             }
             if (json.contains("use_bilateral_grid")) {
                 params.use_bilateral_grid = json["use_bilateral_grid"];
@@ -458,19 +464,16 @@ namespace lfs::core {
                 return std::unexpected(json_result.error());
             }
 
-            auto json = *json_result;
+            const auto& json = *json_result;
 
-            // Create default parameters for verification
+            // Extract optimization sub-object if present (supports both flat and nested formats)
+            const auto& opt_json = json.contains("optimization") ? json["optimization"] : json;
+
             OptimizationParameters defaults;
-
-            // Verify parameters before reading
-            verify_optimization_parameters(defaults, json);
+            verify_optimization_parameters(defaults, opt_json);
 
             try {
-                OptimizationParameters params = OptimizationParameters::from_json(json);
-
-                return params;
-
+                return OptimizationParameters::from_json(opt_json);
             } catch (const std::exception& e) {
                 return std::unexpected(std::format("Error parsing optimization parameters: {}", e.what()));
             }
@@ -504,8 +507,10 @@ namespace lfs::core {
                 ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
                 json["timestamp"] = ss.str();
 
-                // Save to file
-                std::filesystem::path filepath = output_path / "training_config.json";
+                // Use path directly if .json, otherwise append default filename
+                const std::filesystem::path filepath = (output_path.extension() == ".json")
+                                                           ? output_path
+                                                           : output_path / "training_config.json";
                 std::ofstream file(filepath);
                 if (!file.is_open()) {
                     return std::unexpected(std::format("Could not open file for writing: {}", filepath.string()));
@@ -615,6 +620,14 @@ namespace lfs::core {
 
         std::filesystem::path get_parameter_file_path(const std::string& filename) {
             static constexpr const char* PARAM_DIR = "parameter";
+
+            // Primary: Use runtime-detected resource directory
+            auto runtime_path = lfs::core::getResourceBaseDir() / PARAM_DIR / filename;
+            if (std::filesystem::exists(runtime_path)) {
+                return runtime_path;
+            }
+
+            // Fallback: Search up from executable directory
 #ifdef _WIN32
             char exe_buf[MAX_PATH];
             GetModuleFileNameA(nullptr, exe_buf, MAX_PATH);
@@ -631,7 +644,7 @@ namespace lfs::core {
                     break;
                 search_dir = parent;
             }
-            return search_dir / PARAM_DIR / filename;
+            return runtime_path; // Return runtime path even if not found (for error message)
         }
 
     } // namespace param

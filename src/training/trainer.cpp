@@ -24,7 +24,7 @@
 #include "visualizer/scene/scene.hpp"
 
 #include <atomic>
-#include <chrono>
+#include <cmath>
 #include <cuda_runtime.h>
 #include <expected>
 #include <memory>
@@ -439,23 +439,29 @@ namespace lfs::training {
 
             // Initialize sparsity optimizer
             if (params.optimization.enable_sparsity) {
-                constexpr int SPARSITY_UPDATE_INTERVAL = 50;
-                const int base_iterations = params.optimization.iterations;
-                const int total_iterations = base_iterations + params.optimization.sparsify_steps;
-                params_.optimization.iterations = total_iterations;
+                constexpr int UPDATE_INTERVAL = 50;
+                const int sparsify_steps = params.optimization.sparsify_steps;
+                const int stored_iters = static_cast<int>(params.optimization.iterations);
 
-                const ADMMSparsityOptimizer::Config sparsity_config{
-                    .sparsify_steps = params.optimization.sparsify_steps,
+                // Checkpoint already has total iterations; fresh start needs sparsify_steps added
+                const bool is_resume = params.resume_checkpoint.has_value();
+                const int base_iters = is_resume ? (stored_iters - sparsify_steps) : stored_iters;
+
+                if (!is_resume) {
+                    params_.optimization.iterations = static_cast<size_t>(base_iters + sparsify_steps);
+                }
+
+                const ADMMSparsityOptimizer::Config config{
+                    .sparsify_steps = sparsify_steps,
                     .init_rho = params.optimization.init_rho,
                     .prune_ratio = params.optimization.prune_ratio,
-                    .update_every = SPARSITY_UPDATE_INTERVAL,
-                    .start_iteration = base_iterations};
+                    .update_every = UPDATE_INTERVAL,
+                    .start_iteration = base_iters};
 
-                sparsity_optimizer_ = SparsityOptimizerFactory::create("admm", sparsity_config);
+                sparsity_optimizer_ = SparsityOptimizerFactory::create("admm", config);
                 if (sparsity_optimizer_) {
-                    LOG_INFO("Sparsity: base={}, start={}, steps={}, prune={}%, rho={}",
-                             base_iterations, base_iterations, params.optimization.sparsify_steps,
-                             params.optimization.prune_ratio * 100, params.optimization.init_rho);
+                    LOG_INFO("Sparsity: base={}, steps={}, prune={:.0f}%",
+                             base_iters, sparsify_steps, params.optimization.prune_ratio * 100);
                 }
             }
 
@@ -782,7 +788,8 @@ namespace lfs::training {
                         *cam, strategy_->get_model(), bg,
                         tile_x_offset, tile_y_offset,
                         (num_tiles > 1) ? tile_width : 0, // 0 means full image
-                        (num_tiles > 1) ? tile_height : 0);
+                        (num_tiles > 1) ? tile_height : 0,
+                        params_.optimization.mip_filter);
 
                     // Check for OOM error
                     if (!rasterize_result) {
@@ -793,10 +800,10 @@ namespace lfs::training {
 
                             // Handle OOM by switching tile mode
                             if (tile_mode == TileMode::Four) {
-                                // Already at maximum tiling - can't tile further, stop gracefully
-                                LOG_ERROR("OUT OF MEMORY at maximum tile mode (2x2). Stopping training gracefully.");
+                                // Already at maximum tiling - can't tile further, return error
+                                LOG_ERROR("OUT OF MEMORY at maximum tile mode (2x2). Cannot continue training.");
                                 LOG_ERROR("Arena error: {}", error);
-                                return StepResult::Stop;
+                                return std::unexpected(error);
                             } else {
                                 // Upgrade to next tile mode
                                 TileMode new_mode = (tile_mode == TileMode::One) ? TileMode::Two : TileMode::Four;
@@ -996,6 +1003,10 @@ namespace lfs::training {
                                       : loss_tensor_gpu;
                 loss_value = total_loss.item<float>();
 
+                if (std::isnan(loss_value) || std::isinf(loss_value)) {
+                    return std::unexpected(std::format("NaN/Inf loss at iteration {}", iter));
+                }
+
                 current_loss_ = loss_value;
                 if (progress_) {
                     progress_->update(iter, loss_value,
@@ -1136,34 +1147,46 @@ namespace lfs::training {
                                   strategy_->is_refining(iter));
             }
 
-            // Use infinite dataloader to avoid epoch restarts
-            auto train_dataloader = create_infinite_dataloader_from_dataset(train_dataset_, num_workers);
+            // Conservative prefetch to avoid VRAM exhaustion
+            lfs::io::PipelinedLoaderConfig pipelined_config;
+            pipelined_config.jpeg_batch_size = 8;
+            pipelined_config.prefetch_count = 8;
+            pipelined_config.output_queue_size = 4;
+            const size_t worker_threads = std::clamp(static_cast<size_t>(num_workers), size_t{2}, size_t{4});
+            pipelined_config.io_threads = worker_threads;
+
+            // Non-JPEG images (PNG, WebP) need CPU decoding - use more threads until cache warms
+            constexpr float NON_JPEG_THRESHOLD = 0.1f;
+            constexpr size_t MIN_COLD_THREADS = 4;
+            constexpr size_t COLD_PREFETCH_COUNT = 16;
+            const float non_jpeg_ratio = train_dataset_->get_non_jpeg_ratio();
+            if (non_jpeg_ratio > NON_JPEG_THRESHOLD) {
+                const size_t cold_threads = std::max(MIN_COLD_THREADS,
+                                                     static_cast<size_t>(std::thread::hardware_concurrency() / 2));
+                pipelined_config.cold_process_threads = cold_threads;
+                pipelined_config.prefetch_count = COLD_PREFETCH_COUNT;
+                LOG_INFO("{:.0f}% non-JPEG images, using {} cold threads", non_jpeg_ratio * 100.0f, cold_threads);
+            } else {
+                pipelined_config.cold_process_threads = worker_threads;
+            }
+            auto train_dataloader = create_infinite_pipelined_dataloader(train_dataset_, pipelined_config);
 
             LOG_DEBUG("Starting training iterations");
-            // Single loop without epochs
             while (iter <= params_.optimization.iterations) {
-                // Update iteration tracker for memory profiling
                 lfs::core::CudaMemoryPool::instance().set_iteration(iter);
-
-                if (stop_token.stop_requested() || stop_requested_.load()) {
+                if (stop_token.stop_requested() || stop_requested_.load())
                     break;
-                }
-
-                // Wait for previous callback if still running
-                if (callback_busy_.load()) {
+                if (callback_busy_.load())
                     cudaStreamSynchronize(callback_stream_);
-                }
 
-                // Get next batch from dataloader
-                auto batch_opt = train_dataloader->next();
-                if (!batch_opt) {
+                auto example_opt = train_dataloader->next();
+                if (!example_opt) {
                     LOG_ERROR("DataLoader returned nullopt unexpectedly");
                     break;
                 }
-                auto& batch = *batch_opt;
-                auto camera_with_image = batch[0].data;
-                lfs::core::Camera* cam = camera_with_image.camera;
-                lfs::core::Tensor gt_image = std::move(camera_with_image.image);
+                auto& example = *example_opt;
+                lfs::core::Camera* cam = example.data.camera;
+                lfs::core::Tensor gt_image = std::move(example.data.image);
 
                 auto step_result = train_step(iter, cam, gt_image, render_mode, stop_token);
                 if (!step_result) {

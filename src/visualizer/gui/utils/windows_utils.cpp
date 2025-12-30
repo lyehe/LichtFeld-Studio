@@ -61,7 +61,7 @@ namespace lfs::vis::gui {
 
                             if (SUCCEEDED(hr)) {
                                 strDirectory = filePath;
-                                CoTaskMemFree(filePath);
+                                // Caller is responsible for calling CoTaskMemFree(strDirectory)
                             }
                             pItem->Release();
                         }
@@ -78,6 +78,35 @@ namespace lfs::vis::gui {
     } // namespace utils
 
     namespace utils {
+        // Helper function to convert UTF-8 string to wide string (UTF-16)
+        // Properly handles Unicode characters including Japanese, Chinese, etc.
+        std::wstring utf8_to_wstring(const std::string& utf8_str) {
+            if (utf8_str.empty()) {
+                return std::wstring();
+            }
+
+            // Get required buffer size
+            const int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(),
+                                                        static_cast<int>(utf8_str.size()),
+                                                        nullptr, 0);
+            if (size_needed <= 0) {
+                LOG_ERROR("UTF-8 to wide string conversion failed");
+                return std::wstring();
+            }
+
+            // Perform conversion
+            std::wstring wstr(size_needed, 0);
+            const int converted = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(),
+                                                      static_cast<int>(utf8_str.size()),
+                                                      &wstr[0], size_needed);
+            if (converted <= 0) {
+                LOG_ERROR("UTF-8 to wide string conversion failed during write");
+                return std::wstring();
+            }
+            wstr.resize(converted);
+            return wstr;
+        }
+
         HRESULT saveFileNative(PWSTR& outPath,
                                COMDLG_FILTERSPEC rgSpec[],
                                UINT cFileTypes,
@@ -159,7 +188,7 @@ namespace lfs::vis::gui {
 #ifdef _WIN32
         PWSTR filePath = nullptr;
         COMDLG_FILTERSPEC rgSpec[] = {{L"JSON File", L"*.json"}};
-        const std::wstring wDefaultName(defaultName.begin(), defaultName.end());
+        const std::wstring wDefaultName = utils::utf8_to_wstring(defaultName);
 
         if (SUCCEEDED(utils::saveFileNative(filePath, rgSpec, 1, wDefaultName.c_str()))) {
             std::filesystem::path result(filePath);
@@ -215,7 +244,7 @@ namespace lfs::vis::gui {
 #ifdef _WIN32
         PWSTR filePath = nullptr;
         COMDLG_FILTERSPEC rgSpec[] = {{L"PLY Point Cloud", L"*.ply"}};
-        const std::wstring wDefaultName(defaultName.begin(), defaultName.end());
+        const std::wstring wDefaultName = utils::utf8_to_wstring(defaultName);
 
         if (SUCCEEDED(utils::saveFileNative(filePath, rgSpec, 1, wDefaultName.c_str()))) {
             std::filesystem::path result(filePath);
@@ -249,7 +278,7 @@ namespace lfs::vis::gui {
 #ifdef _WIN32
         PWSTR filePath = nullptr;
         COMDLG_FILTERSPEC rgSpec[] = {{L"SOG File (SuperSplat)", L"*.sog"}};
-        const std::wstring wDefaultName(defaultName.begin(), defaultName.end());
+        const std::wstring wDefaultName = utils::utf8_to_wstring(defaultName);
 
         if (SUCCEEDED(utils::saveFileNative(filePath, rgSpec, 1, wDefaultName.c_str()))) {
             std::filesystem::path result(filePath);
@@ -283,7 +312,7 @@ namespace lfs::vis::gui {
 #ifdef _WIN32
         PWSTR filePath = nullptr;
         COMDLG_FILTERSPEC rgSpec[] = {{L"SPZ File (Niantic)", L"*.spz"}};
-        const std::wstring wDefaultName(defaultName.begin(), defaultName.end());
+        const std::wstring wDefaultName = utils::utf8_to_wstring(defaultName);
 
         if (SUCCEEDED(utils::saveFileNative(filePath, rgSpec, 1, wDefaultName.c_str()))) {
             std::filesystem::path result(filePath);
@@ -317,7 +346,7 @@ namespace lfs::vis::gui {
 #ifdef _WIN32
         PWSTR filePath = nullptr;
         COMDLG_FILTERSPEC rgSpec[] = {{L"HTML Viewer", L"*.html"}};
-        const std::wstring wDefaultName(defaultName.begin(), defaultName.end());
+        const std::wstring wDefaultName = utils::utf8_to_wstring(defaultName);
 
         if (SUCCEEDED(utils::saveFileNative(filePath, rgSpec, 1, wDefaultName.c_str()))) {
             std::filesystem::path result(filePath);
@@ -472,6 +501,23 @@ namespace lfs::vis::gui {
         const std::string fallback = "kdialog --getopenfilename . 'Point Cloud (*.ply *.sog *.spz)' 2>/dev/null";
 
         const std::string result = runDialogCommand(primary, fallback);
+        return result.empty() ? std::filesystem::path{} : std::filesystem::path(result);
+#endif
+    }
+
+    std::filesystem::path OpenCheckpointFileDialog() {
+#ifdef _WIN32
+        PWSTR filePath = nullptr;
+        COMDLG_FILTERSPEC rgSpec[] = {{L"Checkpoint", L"*.resume"}};
+
+        if (SUCCEEDED(utils::selectFileNative(filePath, rgSpec, 1, false))) {
+            return std::filesystem::path(filePath);
+        }
+        return {};
+#else
+        const std::string result = runDialogCommand(
+            "zenity --file-selection --file-filter='Checkpoint|*.resume' --title='Open Checkpoint' 2>/dev/null",
+            "kdialog --getopenfilename . 'Checkpoint (*.resume)' 2>/dev/null");
         return result.empty() ? std::filesystem::path{} : std::filesystem::path(result);
 #endif
     }

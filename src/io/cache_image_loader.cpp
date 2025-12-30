@@ -36,10 +36,12 @@ namespace lfs::io {
         }
 
         std::string generate_short_hash() {
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
-            static std::uniform_int_distribution<> dis(0, 15);
-            static const char hex_chars[] = "0123456789abcdef";
+            static constexpr char hex_chars[] = "0123456789abcdef";
+
+            // Thread-safe: use local RNG objects to avoid data races
+            thread_local std::random_device rd;
+            thread_local std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(0, 15);
 
             std::string hash;
             hash.reserve(8);
@@ -175,10 +177,15 @@ namespace lfs::io {
         const std::filesystem::path cache_folder = cache_base / unique_cache_path;
         std::error_code ec;
 
+        // Create LichtFeld temp folder if it doesn't exist
         if (!std::filesystem::exists(cache_base.parent_path())) {
-            LOG_ERROR("Cache base path missing: {}", cache_base.parent_path().string());
-            use_fs_cache_ = false;
-            return;
+            std::filesystem::create_directories(cache_base.parent_path(), ec);
+            if (ec) {
+                LOG_ERROR("Failed to create cache base path: {} - {}", cache_base.parent_path().string(), ec.message());
+                use_fs_cache_ = false;
+                return;
+            }
+            LOG_DEBUG("Created cache base path: {}", cache_base.parent_path().string());
         }
 
         if (std::filesystem::exists(cache_folder)) {
@@ -576,77 +583,99 @@ namespace lfs::io {
 
     } // anonymous namespace
 
+    namespace {
+        constexpr int CACHE_JPEG_QUALITY = 100;
+    }
+
     lfs::core::Tensor CacheLoader::load_jpeg_with_hardware_decode(
         const std::filesystem::path& path, const LoadParams& params) {
         using namespace lfs::core;
 
         const std::string cache_key = generate_cache_key(path, params);
         std::vector<uint8_t> jpeg_bytes;
-        bool found_in_cache = false;
+        bool from_cache = false;
 
-        // Check cache
         {
             std::lock_guard lock(jpeg_blob_mutex_);
             if (auto it = jpeg_blob_cache_.find(cache_key); it != jpeg_blob_cache_.end()) {
                 it->second.last_access = std::chrono::steady_clock::now();
                 jpeg_bytes = it->second.compressed_data;
-                found_in_cache = true;
+                from_cache = true;
             }
         }
 
-        // Load from disk if not cached
-        if (!found_in_cache) {
-            bool is_being_loaded = false;
-            {
-                std::lock_guard lock(jpeg_blob_mutex_);
-                is_being_loaded = jpeg_being_loaded_.contains(cache_key);
-                if (!is_being_loaded)
-                    jpeg_being_loaded_.insert(cache_key);
-            }
-
+        if (!from_cache) {
             std::ifstream file(path, std::ios::binary | std::ios::ate);
             if (!file) {
-                if (!is_being_loaded) {
-                    std::lock_guard lock(jpeg_blob_mutex_);
-                    jpeg_being_loaded_.erase(cache_key);
-                }
                 throw std::runtime_error("Failed to open: " + path.string());
             }
-
             const auto size = file.tellg();
             file.seekg(0, std::ios::beg);
             jpeg_bytes.resize(size);
             if (!file.read(reinterpret_cast<char*>(jpeg_bytes.data()), size)) {
-                if (!is_being_loaded) {
-                    std::lock_guard lock(jpeg_blob_mutex_);
-                    jpeg_being_loaded_.erase(cache_key);
-                }
                 throw std::runtime_error("Failed to read: " + path.string());
-            }
-
-            // Cache if we're the loading thread
-            if (!is_being_loaded) {
-                std::lock_guard lock(jpeg_blob_mutex_);
-                if (has_sufficient_memory(jpeg_bytes.size())) {
-                    evict_jpeg_blobs_if_needed(jpeg_bytes.size());
-                    jpeg_blob_cache_[cache_key] = CachedJpegBlob{
-                        .compressed_data = jpeg_bytes,
-                        .size_bytes = jpeg_bytes.size(),
-                        .last_access = std::chrono::steady_clock::now()};
-                }
-                jpeg_being_loaded_.erase(cache_key);
             }
         }
 
-        // Check magic bytes
         const bool is_jpeg = jpeg_bytes.size() >= 2 && jpeg_bytes[0] == 0xFF && jpeg_bytes[1] == 0xD8;
 
         if (is_jpeg) {
             try {
                 auto& nvcodec = get_nvcodec_loader();
-                return nvcodec.load_image_from_memory_gpu(jpeg_bytes, params.resize_factor, params.max_width, params.cuda_stream);
+
+                if (from_cache) {
+                    return nvcodec.load_image_from_memory_gpu(jpeg_bytes, 1, 0, params.cuda_stream);
+                }
+
+                const bool needs_resize = (params.resize_factor > 1 || params.max_width > 0);
+                auto tensor = nvcodec.load_image_from_memory_gpu(
+                    jpeg_bytes, params.resize_factor, params.max_width, params.cuda_stream);
+
+                bool should_cache = false;
+                {
+                    std::lock_guard lock(jpeg_blob_mutex_);
+                    should_cache = !jpeg_being_loaded_.contains(cache_key);
+                    if (should_cache) {
+                        jpeg_being_loaded_.insert(cache_key);
+                    }
+                }
+
+                if (should_cache) {
+                    std::vector<uint8_t> cache_bytes;
+                    if (needs_resize) {
+                        // Re-encode resized image
+                        try {
+                            cache_bytes = nvcodec.encode_to_jpeg(tensor, CACHE_JPEG_QUALITY, params.cuda_stream);
+                        } catch (const std::exception& enc_err) {
+                            LOG_DEBUG("[CacheLoader] JPEG re-encode failed: {}, using original bytes", enc_err.what());
+                            cache_bytes = jpeg_bytes; // Fall back to original
+                        } catch (...) {
+                            LOG_DEBUG("[CacheLoader] JPEG re-encode failed with unknown error, using original bytes");
+                            cache_bytes = jpeg_bytes; // Fall back to original
+                        }
+                    } else {
+                        // No resize - cache original bytes directly
+                        cache_bytes = jpeg_bytes;
+                    }
+
+                    const std::size_t cache_size = cache_bytes.size();
+                    std::lock_guard lock(jpeg_blob_mutex_);
+                    if (has_sufficient_memory(cache_size)) {
+                        evict_jpeg_blobs_if_needed(cache_size);
+                        jpeg_blob_cache_[cache_key] = CachedJpegBlob{
+                            .compressed_data = std::move(cache_bytes),
+                            .size_bytes = cache_size,
+                            .last_access = std::chrono::steady_clock::now()};
+                        // Only remove from tracking set after successful caching
+                        jpeg_being_loaded_.erase(cache_key);
+                    } else {
+                        // Memory insufficient - remove from tracking to allow retry later
+                        jpeg_being_loaded_.erase(cache_key);
+                    }
+                }
+                return tensor;
             } catch (const std::exception& e) {
-                LOG_WARN("nvImageCodec failed: {} - using CPU fallback", e.what());
+                LOG_WARN("[CacheLoader] GPU decode failed, using CPU: {}", e.what());
                 return decode_with_cpu_fallback(path, params);
             }
         }
@@ -662,10 +691,20 @@ namespace lfs::io {
         if (nv_image_codec_available_ != NvImageCodecMode::Undetermined)
             return;
 
-        nv_image_codec_available_ = NvCodecImageLoader::is_available()
+        LOG_INFO("[CacheLoader] Checking nvImageCodec availability...");
+
+        // is_available() now runs comprehensive diagnostics and logs detailed info
+        bool available = NvCodecImageLoader::is_available();
+        nv_image_codec_available_ = available
                                         ? NvImageCodecMode::Available
                                         : NvImageCodecMode::UnAvailable;
-        LOG_DEBUG("nvImageCodec: {}", nv_image_codec_available_ == NvImageCodecMode::Available ? "available" : "unavailable");
+
+        if (available) {
+            LOG_INFO("[CacheLoader] nvImageCodec: AVAILABLE - GPU-accelerated JPEG decoding enabled");
+        } else {
+            LOG_WARN("[CacheLoader] nvImageCodec: UNAVAILABLE - will use CPU fallback for all images");
+            LOG_WARN("[CacheLoader] Check diagnostic logs above for details on why nvImageCodec is unavailable");
+        }
     }
 
 } // namespace lfs::io

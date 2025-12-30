@@ -4,6 +4,7 @@
 
 #include "notification_popup.hpp"
 #include "core/events.hpp"
+#include "gui/dpi_scale.hpp"
 #include "gui/ui_widgets.hpp"
 #include "theme/theme.hpp"
 #include <cmath>
@@ -13,11 +14,12 @@
 namespace lfs::vis::gui {
 
     namespace {
-        constexpr float BUTTON_WIDTH = 100.0f;
-        constexpr float TEXT_WRAP_WIDTH = 30.0f;
+        // Base dimensions (scaled by DPI factor at runtime)
+        constexpr float BASE_BUTTON_WIDTH = 100.0f;
+        constexpr float TEXT_WRAP_WIDTH = 30.0f; // Multiplier for font size, not pixels
         constexpr float POPUP_ALPHA = 0.98f;
         constexpr float BORDER_SIZE = 2.0f;
-        constexpr ImVec2 WINDOW_PADDING = {20.0f, 16.0f};
+        constexpr ImVec2 BASE_WINDOW_PADDING = {20.0f, 16.0f};
         constexpr ImGuiWindowFlags POPUP_FLAGS = ImGuiWindowFlags_AlwaysAutoResize |
                                                  ImGuiWindowFlags_NoCollapse |
                                                  ImGuiWindowFlags_NoDocking;
@@ -55,6 +57,11 @@ namespace lfs::vis::gui {
             }
         });
 
+        state::ConfigLoadFailed::when([this](const auto& e) {
+            show(Type::FAILURE, "Invalid Config File",
+                 std::format("Could not load '{}':\n\n{}", e.path.filename().string(), e.error));
+        });
+
         state::TrainingCompleted::when([this](const auto& e) {
             if (e.success) {
                 const auto message = std::format(
@@ -67,8 +74,20 @@ namespace lfs::vis::gui {
                 show(Type::INFO, "Training Complete", message,
                      []() { cmd::SwitchToLatestCheckpoint{}.emit(); });
             } else {
-                show(Type::FAILURE, "Training Failed",
-                     e.error.value_or("Unknown error occurred during training."));
+                // Format error message for better clarity
+                std::string error_msg = e.error.value_or("Unknown error occurred during training.");
+
+                // Check if this is an OOM error and format it clearly
+                if (error_msg.find("OUT_OF_MEMORY") != std::string::npos) {
+                    error_msg = "Out of GPU memory!\n\n"
+                                "The scene is too large for available GPU memory.\n\n"
+                                "Suggestions:\n"
+                                "  - Reduce image resolution (--resize-factor)\n"
+                                "  - Enable tile mode (--tile-mode 2 or 4)\n"
+                                "  - Reduce max Gaussians (--max-cap)";
+                }
+
+                show(Type::FAILURE, "Training Failed", error_msg);
             }
         });
     }
@@ -91,6 +110,7 @@ namespace lfs::vis::gui {
         }
 
         const auto& t = theme();
+        const float scale = getDpiScale();
 
         ImVec4 accent;
         widgets::ButtonStyle btn_style;
@@ -127,7 +147,7 @@ namespace lfs::vis::gui {
         ImGui::PushStyleColor(ImGuiCol_Border, accent);
         ImGui::PushStyleColor(ImGuiCol_Text, t.palette.text);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, BORDER_SIZE);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, WINDOW_PADDING);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(BASE_WINDOW_PADDING.x * scale, BASE_WINDOW_PADDING.y * scale));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, t.sizes.popup_rounding);
 
         if (ImGui::BeginPopupModal(current_.title.c_str(), nullptr, POPUP_FLAGS)) {
@@ -148,10 +168,11 @@ namespace lfs::vis::gui {
             ImGui::Spacing();
             ImGui::Spacing();
 
+            const float button_width = BASE_BUTTON_WIDTH * scale;
             const float avail = ImGui::GetContentRegionAvail().x;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - BUTTON_WIDTH) * 0.5f);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - button_width) * 0.5f);
 
-            if (widgets::ColoredButton("OK", btn_style, {BUTTON_WIDTH, 0}) ||
+            if (widgets::ColoredButton("OK", btn_style, {button_width, 0}) ||
                 ImGui::IsKeyPressed(ImGuiKey_Enter)) {
                 popup_open_ = false;
                 if (current_.on_close) {
