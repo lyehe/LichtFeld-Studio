@@ -6,6 +6,8 @@
 
 #include <expected>
 #include <filesystem>
+#include <functional>
+#include <string>
 #include <vector>
 
 namespace lfs::python {
@@ -18,5 +20,21 @@ namespace lfs::python {
      *         or interpreter unavailable when bindings are disabled).
      */
     std::expected<void, std::string> run_scripts(const std::vector<std::filesystem::path>& scripts);
+
+    /**
+     * @brief Set the callback for Python stdout/stderr capture.
+     * @param callback Function(text, is_error) called when Python prints output.
+     */
+    void set_output_callback(std::function<void(const std::string&, bool)> callback);
+
+    /**
+     * @brief Initialize Python interpreter if not already done.
+     */
+    void ensure_initialized();
+
+    /**
+     * @brief Install Python stdout/stderr redirect. Call after Python is initialized.
+     */
+    void install_output_redirect();
 
 } // namespace lfs::python

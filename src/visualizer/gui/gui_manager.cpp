@@ -21,6 +21,8 @@
 #include "gui/panels/tools_panel.hpp"
 #include "sequencer/keyframe.hpp"
 #include "gui/panels/training_panel.hpp"
+#include "gui/panels/python_console_panel.hpp"
+#include "gui/panels/python_scripts_panel.hpp"
 #include "gui/ui_widgets.hpp"
 #include "gui/utils/windows_utils.hpp"
 #include "gui/windows/file_browser.hpp"
@@ -104,6 +106,8 @@ namespace lfs::vis::gui {
         window_states_["system_console"] = false;
         window_states_["training_tab"] = false;
         window_states_["export_dialog"] = false;
+        window_states_["python_console"] = false;
+        window_states_["python_scripts"] = false;
 
         // Initialize speed overlay state
         speed_overlay_visible_ = false;
@@ -143,6 +147,14 @@ namespace lfs::vis::gui {
 
         menu_bar_->setOnExport([this]() {
             window_states_["export_dialog"] = true;
+        });
+
+        menu_bar_->setOnShowPythonConsole([this]() {
+            window_states_["python_console"] = !window_states_["python_console"];
+        });
+
+        menu_bar_->setOnShowPythonScripts([this]() {
+            window_states_["python_scripts"] = !window_states_["python_scripts"];
         });
 
         // Export dialog: when user clicks Export, show native file dialog and perform export
@@ -584,6 +596,16 @@ namespace lfs::vis::gui {
         // Export dialog
         if (window_states_["export_dialog"]) {
             export_dialog_->render(&window_states_["export_dialog"], viewer_->getSceneManager());
+        }
+
+        // Python console
+        if (window_states_["python_console"]) {
+            panels::DrawPythonConsole(ctx, &window_states_["python_console"]);
+        }
+
+        // Python scripts panel
+        if (window_states_["python_scripts"]) {
+            panels::DrawPythonScriptsPanel(ctx, &window_states_["python_scripts"]);
         }
 
         // Utility toolbar (always visible)

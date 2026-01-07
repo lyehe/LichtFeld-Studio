@@ -133,6 +133,7 @@ set(OPTIONAL_TEST_FILES
     test_mask_loss.cpp
     test_checkpoint_resume.cpp
     test_video_color_convert.cpp
+    test_python_integration.cpp
 )
 
 foreach(TEST_FILE ${OPTIONAL_TEST_FILES})
@@ -189,6 +190,7 @@ target_link_libraries(lichtfeld_tests PRIVATE
     # Backend libraries
     fastlfs_backend
     spz_lib  # Niantic SPZ format library
+    $<$<BOOL:${BUILD_PYTHON_BINDINGS}>:lfs_python_utils>
 
     # External libraries
     GTest::gtest

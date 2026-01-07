@@ -19,7 +19,98 @@ namespace lfs::python {
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
     static std::once_flag g_py_init_once;
+    static std::function<void(const std::string&, bool)> g_output_callback;
+    static std::mutex g_output_mutex;
+
+    // Python C extension for capturing output
+    static PyObject* capture_write(PyObject* self, PyObject* args) {
+        (void)self;
+        const char* text = nullptr;
+        int is_stderr = 0;
+        if (!PyArg_ParseTuple(args, "si", &text, &is_stderr)) {
+            return nullptr;
+        }
+        {
+            std::lock_guard lock(g_output_mutex);
+            if (g_output_callback && text) {
+                g_output_callback(text, is_stderr != 0);
+            }
+        }
+        Py_RETURN_NONE;
+    }
+
+    static PyMethodDef g_capture_methods[] = {
+        {"write", capture_write, METH_VARARGS, "Write to output callback"},
+        {nullptr, nullptr, 0, nullptr}};
+
+    static PyModuleDef g_capture_module = {
+        PyModuleDef_HEAD_INIT, "_lfs_output", nullptr, -1, g_capture_methods};
+
+    static PyObject* init_capture_module() {
+        return PyModule_Create(&g_capture_module);
+    }
+
+    static void install_output_capture() {
+        // Register the capture module
+        PyImport_AppendInittab("_lfs_output", init_capture_module);
+    }
+
+    static void redirect_output() {
+        const char* redirect_code = R"(
+import sys
+import _lfs_output
+
+class OutputCapture:
+    def __init__(self, is_stderr=False):
+        self._is_stderr = 1 if is_stderr else 0
+    def write(self, text):
+        if text:
+            _lfs_output.write(text, self._is_stderr)
+    def flush(self):
+        pass
+
+sys.stdout = OutputCapture(False)
+sys.stderr = OutputCapture(True)
+)";
+        PyRun_SimpleString(redirect_code);
+        LOG_DEBUG("Python output capture installed");
+    }
 #endif
+
+    void set_output_callback(std::function<void(const std::string&, bool)> callback) {
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        std::lock_guard lock(g_output_mutex);
+        g_output_callback = std::move(callback);
+#else
+        (void)callback;
+#endif
+    }
+
+    void ensure_initialized() {
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        std::call_once(g_py_init_once, [] {
+            install_output_capture();
+            Py_Initialize();
+            PyEval_InitThreads();
+            PyEval_SaveThread();
+            LOG_INFO("Python interpreter initialized and GIL released (SaveThread)");
+        });
+#endif
+    }
+
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+    static std::once_flag g_redirect_once;
+#endif
+
+    void install_output_redirect() {
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        std::call_once(g_redirect_once, [] {
+            PyGILState_STATE gil = PyGILState_Ensure();
+            redirect_output();
+            PyGILState_Release(gil);
+        });
+#endif
+    }
 
     std::expected<void, std::string> run_scripts(const std::vector<std::filesystem::path>& scripts) {
         if (scripts.empty()) {
@@ -29,14 +120,12 @@ namespace lfs::python {
 #ifndef LFS_BUILD_PYTHON_BINDINGS
         return std::unexpected("Python bindings disabled; rebuild with -DBUILD_PYTHON_BINDINGS=ON");
 #else
-        std::call_once(g_py_init_once, [] {
-            Py_Initialize();
-            PyEval_InitThreads(); // legacy but harmless
-            PyEval_SaveThread();  // release GIL so other threads can acquire
-            LOG_INFO("Python interpreter initialized and GIL released (SaveThread)");
-        });
+        ensure_initialized();
 
         PyGILState_STATE gil_state = PyGILState_Ensure();
+
+        // Install output redirect (calls redirect_output() once)
+        std::call_once(g_redirect_once, [] { redirect_output(); });
 
         // Add build directory (where lichtfeld.so lives) to sys.path
         {
@@ -47,8 +136,20 @@ namespace lfs::python {
             PyObject* py_path = PyUnicode_FromString(build_python_dir.string().c_str());
             PyList_Append(sys_path, py_path);
             Py_DECREF(py_path);
+            LOG_DEBUG("Added {} to Python path", build_python_dir.string());
         }
 
+        // Pre-import lichtfeld module to catch any initialization errors early
+        {
+            PyObject* lf_module = PyImport_ImportModule("lichtfeld");
+            if (!lf_module) {
+                PyErr_Print();
+                PyGILState_Release(gil_state);
+                return std::unexpected("Failed to import lichtfeld module - check build output");
+            }
+            Py_DECREF(lf_module);
+            LOG_INFO("Successfully pre-imported lichtfeld module");
+        }
 
         for (const auto& script : scripts) {
             if (!std::filesystem::exists(script)) {

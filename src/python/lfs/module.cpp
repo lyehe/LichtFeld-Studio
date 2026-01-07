@@ -1,18 +1,20 @@
+/* SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
-#include <nanobind/stl/unordered_map.h>
+
+#include "py_tensor.hpp"
 
 #include "control/command_api.hpp"
 #include "control/control_boundary.hpp"
 #include "core/logger.hpp"
-#include "training/optimizer/adam_optimizer.hpp"
 #include "training/strategies/istrategy.hpp"
 #include "training/trainer.hpp"
 
-#include <limits>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,193 +22,231 @@ namespace nb = nanobind;
 
 namespace {
 
-    using lfs::training::ArgValue;
     using lfs::training::Command;
     using lfs::training::CommandCenter;
     using lfs::training::CommandTarget;
     using lfs::training::ControlBoundary;
     using lfs::training::ControlHook;
     using lfs::training::HookContext;
-    using lfs::training::Selection;
     using lfs::training::SelectionKind;
+    using lfs::training::TrainingPhase;
 
-    // Forward decl
-    ArgValue to_numeric_value(const nb::handle& obj);
+    // RAII session that registers Python callbacks to the control boundary
+    class PyControlSession {
+    public:
+        PyControlSession() = default;
 
-    struct PyHookContext {
-        int iter;
-        float loss;
-        std::size_t num_splats;
-        bool is_refining;
+        ~PyControlSession() { clear(); }
+
+        void clear() {
+            for (const auto& reg : registrations_) {
+                ControlBoundary::instance().unregister_callback(reg.hook, reg.id);
+            }
+            registrations_.clear();
+        }
+
+        void on_training_start(nb::callable fn) { add(ControlHook::TrainingStart, std::move(fn)); }
+        void on_iteration_start(nb::callable fn) { add(ControlHook::IterationStart, std::move(fn)); }
+        void on_pre_optimizer_step(nb::callable fn) { add(ControlHook::PreOptimizerStep, std::move(fn)); }
+        void on_post_step(nb::callable fn) { add(ControlHook::PostStep, std::move(fn)); }
+        void on_training_end(nb::callable fn) { add(ControlHook::TrainingEnd, std::move(fn)); }
+
+    private:
+        struct RegistrationHandle {
+            ControlHook hook;
+            std::size_t id;
+        };
+
+        void add(ControlHook hook, nb::callable fn) {
+            nb::object fn_obj = std::move(fn);
+            auto cb = [fn_obj](const HookContext& ctx) {
+                nb::gil_scoped_acquire gil;
+                fn_obj(ctx.iteration, ctx.loss, ctx.num_gaussians, ctx.is_refining);
+            };
+
+            const auto id = ControlBoundary::instance().register_callback(hook, std::move(cb));
+            registrations_.push_back({hook, id});
+            owned_callbacks_.push_back(std::move(fn_obj));
+        }
+
+        std::vector<RegistrationHandle> registrations_;
+        std::vector<nb::object> owned_callbacks_;
     };
 
-    struct PyAttributeHandle {
-        std::string attribute;
-        Selection selection;
+    // Simple context view for reading training state
+    struct PyContextView {
+        int iteration() const { return CommandCenter::instance().snapshot().iteration; }
+        int max_iterations() const { return CommandCenter::instance().snapshot().max_iterations; }
+        float loss() const { return CommandCenter::instance().snapshot().loss; }
+        std::size_t num_gaussians() const { return CommandCenter::instance().snapshot().num_gaussians; }
+        bool is_refining() const { return CommandCenter::instance().snapshot().is_refining; }
+        bool is_training() const { return CommandCenter::instance().snapshot().is_running; }
+        bool is_paused() const { return CommandCenter::instance().snapshot().is_paused; }
 
-        PyAttributeHandle slice(int64_t start, int64_t end) const {
-            return PyAttributeHandle{attribute, Selection{SelectionKind::Range, start, end, {}}};
-        }
-
-        PyAttributeHandle all() const {
-            return PyAttributeHandle{attribute, Selection{SelectionKind::All, 0, 0, {}}};
-        }
-
-        PyAttributeHandle indices(const std::vector<int64_t>& idx) const {
-            return PyAttributeHandle{attribute, Selection{SelectionKind::Indices, 0, 0, idx}};
-        }
-
-        PyAttributeHandle refine(nb::handle key) const {
-            if (nb::isinstance<nb::slice>(key)) {
-                nb::slice s = nb::cast<nb::slice>(key);
-                const size_t dummy_len = std::numeric_limits<size_t>::max();
-
-                auto [start, stop, step, slicelen] = s.compute(dummy_len);
-                
-                if (step != 1) {
-                    throw nb::value_error("Only step=1 slices are supported");
-                }
-
-                int64_t s64 = static_cast<int64_t>(start);
-                int64_t e64 = (stop == dummy_len)
-                                ? -1
-                                : static_cast<int64_t>(stop);
-
-                return slice(s64, e64);
+        std::string phase() const {
+            auto p = CommandCenter::instance().snapshot().phase;
+            switch (p) {
+                case TrainingPhase::Idle: return "idle";
+                case TrainingPhase::IterationStart: return "iteration_start";
+                case TrainingPhase::Forward: return "forward";
+                case TrainingPhase::Backward: return "backward";
+                case TrainingPhase::OptimizerStep: return "optimizer_step";
+                case TrainingPhase::SafeControl: return "safe_control";
+                default: return "unknown";
             }
-            if (nb::isinstance<nb::int_>(key)) {
-                auto idx = nb::cast<int64_t>(key);
-                if (idx < 0) throw nb::value_error("Negative indices are not supported");
-                return slice(idx, idx + 1);
-            }
-            if (nb::isinstance<nb::list>(key) || nb::isinstance<nb::tuple>(key)) {
-                std::vector<int64_t> idx;
-                nb::iterable it = nb::cast<nb::iterable>(key);
-                for (auto item : it) {
-                    idx.push_back(nb::cast<int64_t>(item));
-                }
-                return indices(idx);
-            }
-            throw nb::type_error("Unsupported index type; use slice, int, or sequence of ints");
         }
 
-        void set(nb::handle value) const {
-            Command cmd{
-                .target = CommandTarget::Model,
-                .op = "set_attribute",
-                .selection = selection,
-                .args = {{"attribute", ArgValue{attribute}}, {"value", to_numeric_value(value)}}};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-
-        void scale(double factor) const {
-            Command cmd{
-                .target = CommandTarget::Model,
-                .op = "scale_attribute",
-                .selection = selection,
-                .args = {{"attribute", ArgValue{attribute}}, {"factor", ArgValue{factor}}}};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-
-        void clamp(std::optional<double> min, std::optional<double> max) const {
-            Command cmd{
-                .target = CommandTarget::Model,
-                .op = "clamp_attribute",
-                .selection = selection,
-                .args = {{"attribute", ArgValue{attribute}}}};
-            if (min) cmd.args.emplace("min", ArgValue{*min});
-            if (max) cmd.args.emplace("max", ArgValue{*max});
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
+        std::string strategy() const {
+            auto snap = CommandCenter::instance().snapshot();
+            if (!snap.trainer) return "none";
+            return snap.trainer->getParams().optimization.strategy;
         }
     };
 
-    CommandTarget parse_target(const std::string& t) {
-        if (t == "model") return CommandTarget::Model;
-        if (t == "optimizer") return CommandTarget::Optimizer;
-        return CommandTarget::Session;
-    }
+    // Gaussians info view
+    struct PyGaussiansView {
+        std::size_t count() const {
+            auto snap = CommandCenter::instance().snapshot();
+            if (!snap.trainer) return 0;
+            return snap.trainer->get_strategy_mutable().get_model().size();
+        }
 
-    struct PySelection {
-        Selection sel;
+        int sh_degree() const {
+            auto snap = CommandCenter::instance().snapshot();
+            if (!snap.trainer) return 0;
+            return snap.trainer->get_strategy_mutable().get_model().get_active_sh_degree();
+        }
+
+        int max_sh_degree() const {
+            auto snap = CommandCenter::instance().snapshot();
+            if (!snap.trainer) return 0;
+            return snap.trainer->get_strategy_mutable().get_model().get_max_sh_degree();
+        }
     };
 
-    ArgValue to_argvalue(const nb::handle& obj) {
-        if (nb::isinstance<nb::bool_>(obj)) {
-            return ArgValue{static_cast<bool>(nb::cast<bool>(obj))};
-        }
-        if (nb::isinstance<nb::int_>(obj)) {
-            return ArgValue{static_cast<int64_t>(nb::cast<int64_t>(obj))};
-        }
-        if (nb::isinstance<nb::float_>(obj)) {
-            return ArgValue{static_cast<double>(nb::cast<double>(obj))};
-        }
-        if (nb::isinstance<nb::str>(obj)) {
-            return ArgValue{nb::cast<std::string>(obj)};
-        }
-        if (nb::isinstance<nb::list>(obj) || nb::isinstance<nb::tuple>(obj)) {
-            std::vector<double> vals;
-            nb::iterable it = nb::cast<nb::iterable>(obj);
-            for (auto item : it) {
-                vals.push_back(nb::cast<double>(item));
+    // Optimizer view for Python - wraps CommandCenter operations
+    struct PyOptimizerView {
+        void scale_lr(float factor) {
+            Command cmd;
+            cmd.op = "scale_lr";
+            cmd.target = CommandTarget::Optimizer;
+            cmd.selection = {SelectionKind::All};
+            cmd.args["factor"] = static_cast<double>(factor);
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("scale_lr failed: {}", result.error());
             }
-            return ArgValue{std::move(vals)};
         }
-        throw nb::type_error("Unsupported arg type");
-    }
 
-    // For model attribute values we only accept scalar/iterable numeric → double/vector<double>
-    ArgValue to_numeric_value(const nb::handle& obj) {
-        if (nb::isinstance<nb::float_>(obj) || nb::isinstance<nb::int_>(obj)) {
-            return ArgValue{static_cast<double>(nb::cast<double>(obj))};
-        }
-        if (nb::isinstance<nb::list>(obj) || nb::isinstance<nb::tuple>(obj)) {
-            std::vector<double> vals;
-            nb::iterable it = nb::cast<nb::iterable>(obj);
-            for (auto item : it) {
-                vals.push_back(nb::cast<double>(item));
+        void set_lr(float value) {
+            Command cmd;
+            cmd.op = "set_lr";
+            cmd.target = CommandTarget::Optimizer;
+            cmd.selection = {SelectionKind::All};
+            cmd.args["value"] = static_cast<double>(value);
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("set_lr failed: {}", result.error());
             }
-            return ArgValue{std::move(vals)};
-        }
-        throw nb::type_error("Value must be int, float, or sequence of numbers");
-    }
-
-    std::unordered_map<std::string, ArgValue> dict_to_args(const nb::dict& d) {
-        std::unordered_map<std::string, ArgValue> out;
-        for (auto [k, v] : d) {
-            out.emplace(nb::cast<std::string>(k), to_argvalue(v));
-        }
-        return out;
-    }
-
-    struct PyCommandBuilder {
-        void enqueue(const std::string& target,
-                     const std::string& op,
-                     std::optional<PySelection> sel,
-                     nb::dict args) {
-            Command cmd{
-                .target = parse_target(target),
-                .op = op,
-                .selection = sel ? sel->sel : Selection{},
-                .args = dict_to_args(args)};
-
-            // Defer execution to the training thread for CUDA safety
-            CommandCenter::instance().enqueue_command(cmd);
         }
 
-        void flush() {}
+        float get_lr() const {
+            auto snap = CommandCenter::instance().snapshot();
+            if (!snap.trainer) return 0.0f;
+            return snap.trainer->get_strategy_mutable().get_optimizer().get_lr();
+        }
     };
 
+    // Model view for Python - wraps CommandCenter operations
+    struct PyModelView {
+        void clamp(const std::string& attr, std::optional<float> min_val, std::optional<float> max_val) {
+            Command cmd;
+            cmd.op = "clamp_attribute";
+            cmd.target = CommandTarget::Model;
+            cmd.selection = {SelectionKind::All};
+            cmd.args["attribute"] = attr;
+            if (min_val) cmd.args["min"] = static_cast<double>(*min_val);
+            if (max_val) cmd.args["max"] = static_cast<double>(*max_val);
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("clamp failed: {}", result.error());
+            }
+        }
+
+        void scale(const std::string& attr, float factor) {
+            Command cmd;
+            cmd.op = "scale_attribute";
+            cmd.target = CommandTarget::Model;
+            cmd.selection = {SelectionKind::All};
+            cmd.args["attribute"] = attr;
+            cmd.args["factor"] = static_cast<double>(factor);
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("scale failed: {}", result.error());
+            }
+        }
+
+        void set(const std::string& attr, float value) {
+            Command cmd;
+            cmd.op = "set_attribute";
+            cmd.target = CommandTarget::Model;
+            cmd.selection = {SelectionKind::All};
+            cmd.args["attribute"] = attr;
+            cmd.args["value"] = static_cast<double>(value);
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("set failed: {}", result.error());
+            }
+        }
+    };
+
+    // Session view for Python - provides access to optimizer and model operations
+    struct PySession {
+        PyOptimizerView optimizer() { return {}; }
+        PyModelView model() { return {}; }
+
+        void pause() {
+            Command cmd;
+            cmd.op = "pause";
+            cmd.target = CommandTarget::Session;
+            cmd.selection = {SelectionKind::All};
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("pause failed: {}", result.error());
+            }
+        }
+
+        void resume() {
+            Command cmd;
+            cmd.op = "resume";
+            cmd.target = CommandTarget::Session;
+            cmd.selection = {SelectionKind::All};
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("resume failed: {}", result.error());
+            }
+        }
+
+        void request_stop() {
+            Command cmd;
+            cmd.op = "request_stop";
+            cmd.target = CommandTarget::Session;
+            cmd.selection = {SelectionKind::All};
+            auto result = CommandCenter::instance().execute(cmd);
+            if (!result) {
+                LOG_ERROR("request_stop failed: {}", result.error());
+            }
+        }
+    };
+
+    // Hook registration helper
     std::size_t register_hook(ControlHook hook, nb::callable cb) {
         if (!cb) return 0;
         nb::object ocb = nb::cast<nb::object>(cb);
         LOG_INFO("Python hook registered for hook {}", static_cast<int>(hook));
         return ControlBoundary::instance().register_callback(hook, [ocb, hook](const HookContext& ctx) {
             nb::gil_scoped_acquire guard;
-            LOG_DEBUG("Python hook invoke hook={} iter={} loss={} gauss={} refining={}",
-                      static_cast<int>(hook), ctx.iteration, ctx.loss, ctx.num_gaussians, ctx.is_refining);
+            LOG_DEBUG("Python hook invoke hook={} iter={}", static_cast<int>(hook), ctx.iteration);
             try {
                 nb::dict d;
                 d["iter"] = ctx.iteration;
@@ -215,233 +255,136 @@ namespace {
                 d["is_refining"] = ctx.is_refining;
                 ocb(d);
             } catch (const std::exception& e) {
-                LOG_ERROR("Python hook threw std::exception: {}", e.what());
-            } catch (...) {
-                LOG_ERROR("Python hook threw unknown exception");
+                LOG_ERROR("Python hook threw: {}", e.what());
             }
         });
     }
 
-    struct PyModelView {
-        PySelection auto_select(const std::optional<PySelection>& sel) const {
-            return sel ? *sel : select_all();
-        }
-
-        PySelection select_all() const { return PySelection{Selection{SelectionKind::All, 0, 0, {}}}; }
-        PySelection select_range(int64_t start, int64_t end) const { return PySelection{Selection{SelectionKind::Range, start, end, {}}}; }
-        PySelection select_indices(const std::vector<int64_t>& idx) const { return PySelection{Selection{SelectionKind::Indices, 0, 0, idx}}; }
-
-        PyAttributeHandle get_attr(const std::string& name) const {
-            return PyAttributeHandle{name, Selection{SelectionKind::All, 0, 0, {}}};
-        }
-
-        nb::list attributes() const {
-            nb::list out;
-            for (const auto& f : CommandCenter::instance().mutables(CommandTarget::Model)) {
-                nb::dict d;
-                d["name"] = f.name;
-                d["shape"] = f.shape;
-                d["writable"] = f.writable;
-                d["description"] = f.description;
-                out.append(std::move(d));
-            }
-            return out;
-        }
-
-        void set(const std::string& attribute, nb::handle value, std::optional<PySelection> sel = std::nullopt) const {
-            PyAttributeHandle{attribute, auto_select(sel).sel}.set(value);
-        }
-
-        void scale(const std::string& attribute, double factor, std::optional<PySelection> sel = std::nullopt) const {
-            PyAttributeHandle{attribute, auto_select(sel).sel}.scale(factor);
-        }
-
-        void clamp(const std::string& attribute, std::optional<double> min = std::nullopt, std::optional<double> max = std::nullopt, std::optional<PySelection> sel = std::nullopt) const {
-            PyAttributeHandle{attribute, auto_select(sel).sel}.clamp(min, max);
-        }
-    };
-
-    struct PyOptimizerView {
-        nb::list params() const {
-            nb::list out;
-            auto snap = CommandCenter::instance().snapshot();
-            if (!snap.trainer) {
-                return out;
-            }
-            auto& opt = snap.trainer->get_strategy_mutable().get_optimizer();
-            nb::dict g;
-            g["name"] = "default";
-            g["lr"] = opt.get_lr();
-            out.append(std::move(g));
-            return out;
-        }
-
-        void set_lr(double value) const {
-            Command cmd{.target = CommandTarget::Optimizer, .op = "set_lr", .selection = Selection{SelectionKind::All, 0, 0, {}}, .args = { {"value", ArgValue{value}} }};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-
-        void scale_lr(double factor) const {
-            Command cmd{.target = CommandTarget::Optimizer, .op = "scale_lr", .selection = Selection{SelectionKind::All, 0, 0, {}}, .args = { {"factor", ArgValue{factor}} }};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-    };
-
-    struct PyIntrospectionView {
-        nb::list operations(std::optional<std::string> target) const {
-            std::optional<CommandTarget> ct;
-            if (target) ct = parse_target(*target);
-            nb::list out;
-            for (const auto& op : CommandCenter::instance().operations(ct)) {
-                nb::dict d;
-                d["name"] = op.name;
-                d["target"] = (op.target == CommandTarget::Model) ? "model" : (op.target == CommandTarget::Optimizer ? "optimizer" : "session");
-                nb::list args;
-                for (const auto& a : op.args) {
-                    nb::dict ad;
-                    ad["name"] = a.name;
-                    ad["required"] = a.required;
-                    if (a.description) ad["description"] = *a.description;
-                    args.append(std::move(ad));
-                }
-                d["args"] = std::move(args);
-                out.append(std::move(d));
-            }
-            return out;
-        }
-
-        nb::list mutables(std::optional<std::string> target) const {
-            std::optional<CommandTarget> ct;
-            if (target) ct = parse_target(*target);
-            nb::list out;
-            for (const auto& f : CommandCenter::instance().mutables(ct)) {
-                nb::dict d;
-                d["name"] = f.name;
-                d["shape"] = f.shape;
-                d["writable"] = f.writable;
-                d["description"] = f.description;
-                out.append(std::move(d));
-            }
-            return out;
-        }
-    };
-
-    struct PySessionView {
-        int iteration() const { return CommandCenter::instance().snapshot().iteration; }
-        int max_iterations() const { return CommandCenter::instance().snapshot().max_iterations; }
-        float loss() const { return CommandCenter::instance().snapshot().loss; }
-        bool running() const { return CommandCenter::instance().snapshot().is_running; }
-        bool paused() const { return CommandCenter::instance().snapshot().is_paused; }
-        bool stopping() const { return CommandCenter::instance().snapshot().stop_requested; }
-        std::size_t num_splats() const { return CommandCenter::instance().snapshot().num_gaussians; }
-
-        PyModelView model() const { return PyModelView{}; }
-        PyOptimizerView optimizer() const { return PyOptimizerView{}; }
-        PyCommandBuilder commands() const { return PyCommandBuilder{}; }
-        PyIntrospectionView introspect() const { return PyIntrospectionView{}; }
-
-        void pause() const {
-            Command cmd{.target = CommandTarget::Session, .op = "pause", .selection = Selection{}, .args = {}};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-        void resume() const {
-            Command cmd{.target = CommandTarget::Session, .op = "resume", .selection = Selection{}, .args = {}};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-        void request_stop() const {
-            Command cmd{.target = CommandTarget::Session, .op = "request_stop", .selection = Selection{}, .args = {}};
-            auto res = CommandCenter::instance().execute(cmd);
-            if (!res) throw nb::value_error(res.error().c_str());
-        }
-    };
-
 } // namespace
 
 NB_MODULE(lichtfeld, m) {
-    m.doc() = "LichtFeld embedded Python control module (command-based)";
+    m.doc() = "LichtFeld Python control module for Gaussian splatting";
 
-    nb::class_<PySelection>(m, "Selection");
+    // Enum for hook types
+    nb::enum_<ControlHook>(m, "Hook")
+        .value("training_start", ControlHook::TrainingStart)
+        .value("iteration_start", ControlHook::IterationStart)
+        .value("pre_optimizer_step", ControlHook::PreOptimizerStep)
+        .value("post_step", ControlHook::PostStep)
+        .value("training_end", ControlHook::TrainingEnd);
 
-    nb::class_<PyAttributeHandle>(m, "Attribute")
-        .def("__getitem__", &PyAttributeHandle::refine, nb::arg("key"))
-        .def("all", &PyAttributeHandle::all, "Select all elements")
-        .def("indices", &PyAttributeHandle::indices, nb::arg("indices"), "Select specific indices")
-        .def("set", &PyAttributeHandle::set, nb::arg("value"), "Set attribute values for this selection")
-        .def("scale", &PyAttributeHandle::scale, nb::arg("factor"), "Scale attribute values for this selection")
-        .def("clamp", &PyAttributeHandle::clamp, nb::arg("min") = nb::none(), nb::arg("max") = nb::none(), "Clamp attribute values for this selection");
-
-    nb::class_<PyModelView>(m, "Model")
-        .def("select_all", &PyModelView::select_all, "Select all splats")
-        .def("select_range", &PyModelView::select_range, nb::arg("start"), nb::arg("end"), "Select a range [start, end) of splats")
-        .def("select_indices", &PyModelView::select_indices, nb::arg("indices"), "Select specific splat indices")
-        .def("__getattr__", &PyModelView::get_attr, nb::arg("name"), "Get an attribute handle (supports slicing)")
-        .def("attributes", &PyModelView::attributes, "List mutable attributes")
-        .def("set", &PyModelView::set, nb::arg("attribute"), nb::arg("value"), nb::arg("where") = nb::none(), "Set attribute (scalar or vector) for selection")
-        .def("scale", &PyModelView::scale, nb::arg("attribute"), nb::arg("factor"), nb::arg("where") = nb::none(), "Scale attribute for selection")
-        .def("clamp", &PyModelView::clamp, nb::arg("attribute"), nb::arg("min") = nb::none(), nb::arg("max") = nb::none(), nb::arg("where") = nb::none(), "Clamp attribute for selection");
-
-    nb::class_<PyOptimizerView>(m, "Optimizer")
-        .def("params", &PyOptimizerView::params, "List optimizer parameter groups")
-        .def("set_lr", &PyOptimizerView::set_lr, nb::arg("value"), "Set global learning rate")
-        .def("scale_lr", &PyOptimizerView::scale_lr, nb::arg("factor"), "Scale global learning rate");
-
-    nb::class_<PyCommandBuilder>(m, "Commands")
-        .def("enqueue", &PyCommandBuilder::enqueue, nb::arg("target"), nb::arg("op"), nb::arg("selector") = nb::none(), nb::arg("args") = nb::dict(), "Submit an immediate command")
-        .def("flush", &PyCommandBuilder::flush, "No-op flush for batching compatibility");
-
-    nb::class_<PyIntrospectionView>(m, "Introspect")
-        .def("operations", &PyIntrospectionView::operations, nb::arg("target") = nb::none(), "Supported operations")
-        .def("mutables", &PyIntrospectionView::mutables, nb::arg("target") = nb::none(), "Mutable fields");
-
-    nb::class_<PySessionView>(m, "Session")
+    // Session class for managing callbacks
+    nb::class_<PyControlSession>(m, "Session")
         .def(nb::init<>())
-        .def_prop_ro("iter", &PySessionView::iteration)
-        .def_prop_ro("max_iters", &PySessionView::max_iterations)
-        .def_prop_ro("loss", &PySessionView::loss)
-        .def_prop_ro("num_splats", &PySessionView::num_splats)
-        .def_prop_ro("running", &PySessionView::running)
-        .def_prop_ro("paused", &PySessionView::paused)
-        .def_prop_ro("stopping", &PySessionView::stopping)
-        .def_prop_ro("model", &PySessionView::model)
-        .def_prop_ro("optimizer", &PySessionView::optimizer)
-        .def_prop_ro("commands", &PySessionView::commands)
-        .def_prop_ro("introspect", &PySessionView::introspect)
-        .def("pause", &PySessionView::pause)
-        .def("resume", &PySessionView::resume)
-        .def("request_stop", &PySessionView::request_stop);
+        .def("on_training_start", &PyControlSession::on_training_start, "Register training start callback")
+        .def("on_iteration_start", &PyControlSession::on_iteration_start, "Register iteration start callback")
+        .def("on_pre_optimizer_step", &PyControlSession::on_pre_optimizer_step, "Register pre-optimizer callback")
+        .def("on_post_step", &PyControlSession::on_post_step, "Register post-step callback")
+        .def("on_training_end", &PyControlSession::on_training_end, "Register training end callback")
+        .def("clear", &PyControlSession::clear, "Unregister all callbacks");
 
-    // Hook registration
-    nb::enum_<ControlHook>(m, "ControlHook")
-        .value("TrainingStart", ControlHook::TrainingStart)
-        .value("IterationStart", ControlHook::IterationStart)
-        .value("PreOptimizerStep", ControlHook::PreOptimizerStep)
-        .value("PostStep", ControlHook::PostStep)
-        .value("TrainingEnd", ControlHook::TrainingEnd);
+    // Context view class
+    nb::class_<PyContextView>(m, "Context")
+        .def(nb::init<>())
+        .def_prop_ro("iteration", &PyContextView::iteration)
+        .def_prop_ro("max_iterations", &PyContextView::max_iterations)
+        .def_prop_ro("loss", &PyContextView::loss)
+        .def_prop_ro("num_gaussians", &PyContextView::num_gaussians)
+        .def_prop_ro("is_refining", &PyContextView::is_refining)
+        .def_prop_ro("is_training", &PyContextView::is_training)
+        .def_prop_ro("is_paused", &PyContextView::is_paused)
+        .def_prop_ro("phase", &PyContextView::phase)
+        .def_prop_ro("strategy", &PyContextView::strategy);
 
+    // Gaussians view class
+    nb::class_<PyGaussiansView>(m, "Gaussians")
+        .def(nb::init<>())
+        .def_prop_ro("count", &PyGaussiansView::count)
+        .def_prop_ro("sh_degree", &PyGaussiansView::sh_degree)
+        .def_prop_ro("max_sh_degree", &PyGaussiansView::max_sh_degree);
+
+    // Optimizer view class
+    nb::class_<PyOptimizerView>(m, "Optimizer")
+        .def(nb::init<>())
+        .def("scale_lr", &PyOptimizerView::scale_lr, nb::arg("factor"), "Scale learning rate by factor")
+        .def("set_lr", &PyOptimizerView::set_lr, nb::arg("value"), "Set learning rate")
+        .def("get_lr", &PyOptimizerView::get_lr, "Get current learning rate");
+
+    // Model view class
+    nb::class_<PyModelView>(m, "Model")
+        .def(nb::init<>())
+        .def("clamp", &PyModelView::clamp, nb::arg("attr"), nb::arg("min") = nb::none(), nb::arg("max") = nb::none(),
+             "Clamp attribute values")
+        .def("scale", &PyModelView::scale, nb::arg("attr"), nb::arg("factor"), "Scale attribute by factor")
+        .def("set", &PyModelView::set, nb::arg("attr"), nb::arg("value"), "Set attribute value");
+
+    // Session class
+    nb::class_<PySession>(m, "Session")
+        .def(nb::init<>())
+        .def("optimizer", &PySession::optimizer, "Get optimizer view")
+        .def("model", &PySession::model, "Get model view")
+        .def("pause", &PySession::pause, "Pause training")
+        .def("resume", &PySession::resume, "Resume training")
+        .def("request_stop", &PySession::request_stop, "Request training stop");
+
+    // Convenience functions
+    m.def("context", []() { return PyContextView{}; }, "Get current training context");
+    m.def("gaussians", []() { return PyGaussiansView{}; }, "Get Gaussians info");
+    m.def("session", []() { return PySession{}; }, "Get training session");
+
+    // Hook registration functions (decorator-style)
     m.def("on_training_start", [](nb::callable cb) {
-        return register_hook(ControlHook::TrainingStart, cb);
-    }, "Register a callback invoked at the beginning of training");
+        register_hook(ControlHook::TrainingStart, cb);
+        return cb;
+    }, nb::arg("callback"), "Decorator for training start handler");
 
     m.def("on_iteration_start", [](nb::callable cb) {
-        return register_hook(ControlHook::IterationStart, cb);
-    }, "Register a callback invoked at the start of each iteration");
-
-    m.def("on_pre_optimizer_step", [](nb::callable cb) {
-        return register_hook(ControlHook::PreOptimizerStep, cb);
-    }, "Register a callback invoked before each optimizer step");
+        register_hook(ControlHook::IterationStart, cb);
+        return cb;
+    }, nb::arg("callback"), "Decorator for iteration start handler");
 
     m.def("on_post_step", [](nb::callable cb) {
-        return register_hook(ControlHook::PostStep, cb);
-    }, "Register a callback invoked after each optimizer step");
+        register_hook(ControlHook::PostStep, cb);
+        return cb;
+    }, nb::arg("callback"), "Decorator for post-step handler");
+
+    m.def("on_pre_optimizer_step", [](nb::callable cb) {
+        register_hook(ControlHook::PreOptimizerStep, cb);
+        return cb;
+    }, nb::arg("callback"), "Decorator for pre-optimizer handler");
 
     m.def("on_training_end", [](nb::callable cb) {
-        return register_hook(ControlHook::TrainingEnd, cb);
-    }, "Register a callback invoked at the end of training");
+        register_hook(ControlHook::TrainingEnd, cb);
+        return cb;
+    }, nb::arg("callback"), "Decorator for training end handler");
 
-    // Convenience factory
-    m.def("session", []() { return PySessionView{}; }, "Get the active training session view");
+    // Submodule: lf.handlers for organized access
+    auto handlers = m.def_submodule("handlers", "Event handlers");
+    handlers.def("on_training_start", [](nb::callable cb) {
+        register_hook(ControlHook::TrainingStart, cb);
+        return cb;
+    });
+    handlers.def("on_iteration_start", [](nb::callable cb) {
+        register_hook(ControlHook::IterationStart, cb);
+        return cb;
+    });
+    handlers.def("on_iteration_post", [](nb::callable cb) {
+        register_hook(ControlHook::PostStep, cb);
+        return cb;
+    });
+    handlers.def("on_post_step", [](nb::callable cb) {
+        register_hook(ControlHook::PostStep, cb);
+        return cb;
+    });
+    handlers.def("on_pre_optimizer_step", [](nb::callable cb) {
+        register_hook(ControlHook::PreOptimizerStep, cb);
+        return cb;
+    });
+    handlers.def("on_training_end", [](nb::callable cb) {
+        register_hook(ControlHook::TrainingEnd, cb);
+        return cb;
+    });
+
+    // Register Tensor class
+    lfs::python::register_tensor(m);
 }

@@ -8,6 +8,7 @@
 #include "core/tensor/internal/memory_pool.hpp"
 #include "training/trainer.hpp"
 #include "training/training_setup.hpp"
+#include "visualizer/gui/panels/python_scripts_panel.hpp"
 #include "visualizer/scene/scene.hpp" // Scene for unified data storage
 #include "visualizer/visualizer.hpp"
 #include <cstring>
@@ -45,6 +46,12 @@ namespace lfs::core {
         // Create Trainer from Scene
         auto trainer = std::make_unique<lfs::training::Trainer>(scene);
 
+        // Set Python scripts if provided
+        if (!params->python_scripts.empty()) {
+            trainer->set_python_scripts(params->python_scripts);
+            lfs::vis::gui::panels::PythonScriptManagerState::getInstance().setScripts(params->python_scripts);
+        }
+
         // Initialize trainer with parameters (creates strategy internally)
         auto init_result = trainer->initialize(*params);
         if (!init_result) {
@@ -74,6 +81,11 @@ namespace lfs::core {
 
     int run_gui_app(std::unique_ptr<param::TrainingParameters> params) {
         LOG_INFO("Starting viewer mode...");
+
+        // Populate script manager state for GUI access
+        if (!params->python_scripts.empty()) {
+            lfs::vis::gui::panels::PythonScriptManagerState::getInstance().setScripts(params->python_scripts);
+        }
 
         // Create visualizer with options
         auto viewer = lfs::vis::Visualizer::create({.title = "LichtFeld Studio",

@@ -140,6 +140,9 @@ namespace lfs::core {
 
             // Checkpoint to resume training from
             std::optional<std::filesystem::path> resume_checkpoint = std::nullopt;
+
+            // Python scripts to execute for custom training callbacks
+            std::vector<std::filesystem::path> python_scripts;
         };
 
         // Output format for conversion tool

@@ -201,6 +201,13 @@ namespace lfs::vis::gui {
                     ImGui::EndMenu();
                 }
                 ImGui::Separator();
+                if (ImGui::MenuItem("Python Console", "Ctrl+`")) {
+                    if (on_show_python_console_) on_show_python_console_();
+                }
+                if (ImGui::MenuItem("Python Scripts")) {
+                    if (on_show_python_scripts_) on_show_python_scripts_();
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Debug Info...")) {
                     show_debug_window_ = true;
                 }
@@ -502,6 +509,14 @@ namespace lfs::vis::gui {
 
     void MenuBar::setOnExit(std::function<void()> callback) {
         on_exit_ = std::move(callback);
+    }
+
+    void MenuBar::setOnShowPythonConsole(std::function<void()> callback) {
+        on_show_python_console_ = std::move(callback);
+    }
+
+    void MenuBar::setOnShowPythonScripts(std::function<void()> callback) {
+        on_show_python_scripts_ = std::move(callback);
     }
 
     void MenuBar::setCanClearCheck(std::function<bool()> check) {

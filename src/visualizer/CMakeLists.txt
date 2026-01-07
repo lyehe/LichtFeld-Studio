@@ -33,6 +33,8 @@ add_library(lfs_visualizer STATIC
         gui/panels/scene_panel.cpp
         gui/panels/tools_panel.cpp
         gui/panels/sequencer_settings_panel.cpp
+        gui/panels/python_console_panel.cpp
+        gui/panels/python_scripts_panel.cpp
         gui/windows/file_browser.cpp
         gui/windows/image_preview.cpp
         gui/windows/export_dialog.cpp
@@ -94,6 +96,7 @@ target_link_libraries(lfs_visualizer
         lfs_io
         lfs_rendering
         lfs_training
+        $<$<BOOL:${BUILD_PYTHON_BINDINGS}>:lfs_python_utils>
         lfs_sequencer      # Camera animation sequencer
         glad::glad
         glfw

@@ -2164,6 +2164,8 @@ namespace lfs::core::tensor_ops {
         const float*, float, float*, size_t, ops::sub_op, cudaStream_t);
     template void launch_scalar_op_generic<float, float, ops::mul_op>(
         const float*, float, float*, size_t, ops::mul_op, cudaStream_t);
+    template void launch_scalar_op_generic<float, float, ops::div_op>(
+        const float*, float, float*, size_t, ops::div_op, cudaStream_t);
 
     // scalar_right_op instantiations for various operations (comprehensive list)
     template void launch_unary_op_generic<float, float, ops::scalar_right_op<ops::add_op, float>>(

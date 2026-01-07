@@ -30,6 +30,8 @@ namespace lfs::vis::gui {
         void setOnImportPLY(std::function<void()> callback);
         void setOnExport(std::function<void()> callback);
         void setOnExit(std::function<void()> callback);
+        void setOnShowPythonConsole(std::function<void()> callback);
+        void setOnShowPythonScripts(std::function<void()> callback);
 
         // Permission check for New Project (returns true if clearing is allowed)
         void setCanClearCheck(std::function<bool()> check);
@@ -72,6 +74,8 @@ namespace lfs::vis::gui {
         std::function<void()> on_import_ply_;
         std::function<void()> on_export_;
         std::function<void()> on_exit_;
+        std::function<void()> on_show_python_console_;
+        std::function<void()> on_show_python_scripts_;
         std::function<bool()> can_clear_;
 
         bool show_about_window_ = false;

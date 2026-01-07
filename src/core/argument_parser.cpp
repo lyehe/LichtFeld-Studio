@@ -130,6 +130,9 @@ namespace {
             ::args::Flag gut(parser, "gut", "Enable GUT mode", {"gut"});
             ::args::Flag enable_sparsity(parser, "enable_sparsity", "Enable sparsity optimization", {"enable-sparsity"});
 
+            // Python scripts for custom training callbacks
+            ::args::ValueFlagList<std::string> python_scripts(parser, "path", "Python script(s) for custom training callbacks", {"python-script"});
+
             // Mask-related arguments
             ::args::MapFlag<std::string, lfs::core::param::MaskMode> mask_mode(parser, "mask_mode",
                                                                                "Mask mode: none, segment, ignore, alpha_consistent (default: none)",
@@ -394,6 +397,8 @@ namespace {
                                         prune_ratio_val = prune_ratio ? std::optional<float>(::args::get(prune_ratio)) : std::optional<float>(),
                                         // Mask parameters
                                         mask_mode_val = mask_mode ? std::optional<lfs::core::param::MaskMode>(::args::get(mask_mode)) : std::optional<lfs::core::param::MaskMode>(),
+                                        // Python scripts
+                                        python_scripts_val = python_scripts ? std::optional<std::vector<std::string>>(::args::get(python_scripts)) : std::optional<std::vector<std::string>>(),
                                         // Capture flag states
                                         use_bilateral_grid_flag = bool(use_bilateral_grid),
                                         enable_eval_flag = bool(enable_eval),
@@ -459,6 +464,13 @@ namespace {
                 // Also propagate to dataset config for loading
                 ds.invert_masks = opt.invert_masks;
                 ds.mask_threshold = opt.mask_threshold;
+
+                // Python scripts
+                if (python_scripts_val) {
+                    for (const auto& script : *python_scripts_val) {
+                        params.python_scripts.emplace_back(script);
+                    }
+                }
             };
 
             return std::make_tuple(ParseResult::Success, apply_cmd_overrides);

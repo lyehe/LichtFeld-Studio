@@ -422,6 +422,7 @@ target_link_libraries(${PROJECT_NAME}
         lfs_core           # Core library
         lfs_io             # For CacheLoader
         fastlfs_backend    # Rasterizer and optimizer
+        $<$<BOOL:${BUILD_PYTHON_BINDINGS}>:lfs_python_utils>  # Python integration
 
         ${OPENGL_LIBRARIES}
         CUDA::cudart

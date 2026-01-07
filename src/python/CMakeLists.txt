@@ -45,6 +45,7 @@ nanobind_add_module(
     STABLE_ABI
     NB_STATIC
     lfs/module.cpp
+    lfs/py_tensor.cpp
 )
 
 set_target_properties(lfs_py PROPERTIES
@@ -55,11 +56,18 @@ set_target_properties(lfs_py PROPERTIES
     OUTPUT_NAME lichtfeld
 )
 
+# Need to explicitly link tensor kernels since they're linked privately in lfs_tensor
+# When building a shared library (nanobind module), all symbols must be resolved at link time
 target_link_libraries(lfs_py PRIVATE
     lfs_core
+    lfs_tensor
+    lfs_tensor_kernels
     lfs_training
     lfs_geometry
     lfs_io
+    CUDA::cudart
+    CUDA::cublas
+    CUDA::curand
 )
 
 target_include_directories(lfs_py PRIVATE
