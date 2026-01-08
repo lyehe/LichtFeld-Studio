@@ -5,6 +5,7 @@
 #pragma once
 
 #include "gui/ui_context.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -44,6 +45,13 @@ namespace lfs::vis::gui::panels {
         void setModified(bool modified) { is_modified_ = modified; }
         bool isModified() const { return is_modified_; }
 
+        // Font scaling
+        float getFontScale() const { return font_scale_; }
+        void setFontScale(float scale) { font_scale_ = std::clamp(scale, 0.5f, 3.0f); }
+        void increaseFontScale() { setFontScale(font_scale_ + 0.1f); }
+        void decreaseFontScale() { setFontScale(font_scale_ - 0.1f); }
+        void resetFontScale() { font_scale_ = 1.0f; }
+
     private:
         PythonConsoleState();
         ~PythonConsoleState();
@@ -59,6 +67,9 @@ namespace lfs::vis::gui::panels {
         // Script file tracking
         std::filesystem::path script_path_;
         bool is_modified_ = false;
+
+        // Font scaling
+        float font_scale_ = 1.0f;
     };
 
     // Draw the Python console window (floating)

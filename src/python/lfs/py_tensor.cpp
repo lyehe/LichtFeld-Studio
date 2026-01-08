@@ -106,7 +106,14 @@ namespace lfs::python {
         if (tensor_.numel() != 1) {
             throw std::runtime_error("item() requires a tensor with exactly 1 element");
         }
-        return tensor_.item<float>();
+        switch (tensor_.dtype()) {
+        case DataType::Float32: return tensor_.item<float>();
+        case DataType::Float16: return tensor_.item<float>(); // Tensor handles conversion
+        case DataType::Int32: return static_cast<float>(tensor_.item<int>());
+        case DataType::Int64: return static_cast<float>(tensor_.item<int64_t>());
+        case DataType::Bool: return tensor_.item<unsigned char>() != 0 ? 1.0f : 0.0f;
+        default: return tensor_.item<float>();
+        }
     }
 
     int64_t PyTensor::item_int() const {

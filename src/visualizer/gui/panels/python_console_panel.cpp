@@ -678,6 +678,19 @@ namespace lfs::vis::gui::panels {
             ImGui::SetTooltip("Save script (Ctrl+S)");
 
         ImGui::SameLine();
+
+        // Format button
+        if (ImGui::Button("Format")) {
+            if (auto* editor = state.getEditor()) {
+                const std::string formatted = lfs::python::format_python_code(editor->getText());
+                editor->setText(formatted);
+                state.setModified(true);
+            }
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Format code (Ctrl+Shift+F)");
+
+        ImGui::SameLine();
         ImGui::TextColored(t.palette.text_dim, "|");
         ImGui::SameLine();
 
@@ -731,6 +744,8 @@ namespace lfs::vis::gui::panels {
         ImGui::BeginChild("##docked_script_editor_pane", ImVec2(content_avail.x, top_height), false,
                           ImGuiWindowFlags_HorizontalScrollbar);
         {
+            ImGui::SetWindowFontScale(state.getFontScale());
+
             const ImVec2 editor_size(ImGui::GetContentRegionAvail().x,
                                      ImGui::GetContentRegionAvail().y);
 
@@ -748,6 +763,8 @@ namespace lfs::vis::gui::panels {
             if (ctx.fonts.monospace) {
                 ImGui::PopFont();
             }
+
+            ImGui::SetWindowFontScale(1.0f);
         }
         ImGui::EndChild();
 
@@ -778,6 +795,8 @@ namespace lfs::vis::gui::panels {
         // Console Output (bottom pane)
         ImGui::BeginChild("##docked_console_pane", ImVec2(content_avail.x, bottom_height), false);
         {
+            ImGui::SetWindowFontScale(state.getFontScale());
+
             const ImVec2 output_size(ImGui::GetContentRegionAvail().x,
                                      ImGui::GetContentRegionAvail().y);
 
@@ -792,6 +811,8 @@ namespace lfs::vis::gui::panels {
             if (ctx.fonts.monospace) {
                 ImGui::PopFont();
             }
+
+            ImGui::SetWindowFontScale(1.0f);
         }
         ImGui::EndChild();
 
@@ -808,6 +829,26 @@ namespace lfs::vis::gui::panels {
             }
             if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
                 save_current_script(state);
+            }
+            if (ImGui::GetIO().KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+                if (auto* editor = state.getEditor()) {
+                    const std::string formatted = lfs::python::format_python_code(editor->getText());
+                    editor->setText(formatted);
+                    state.setModified(true);
+                }
+            }
+            // Font scaling: Ctrl++ / Ctrl+= to increase, Ctrl+- to decrease, Ctrl+0 to reset
+            if (ImGui::IsKeyPressed(ImGuiKey_Equal, false) ||
+                ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false)) {
+                state.increaseFontScale();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Minus, false) ||
+                ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract, false)) {
+                state.decreaseFontScale();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_0, false) ||
+                ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)) {
+                state.resetFontScale();
             }
         }
 

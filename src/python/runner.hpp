@@ -57,4 +57,11 @@ namespace lfs::python {
      */
     void finalize();
 
+    /**
+     * @brief Format Python code using black, autopep8, or basic cleanup.
+     * @param code The Python code to format.
+     * @return Formatted code, or original if formatting fails.
+     */
+    std::string format_python_code(const std::string& code);
+
 } // namespace lfs::python
