@@ -12,8 +12,8 @@
 #include "theme/theme.hpp"
 #include "training/training_manager.hpp"
 #include "visualizer_impl.hpp"
-#include <glad/glad.h>
 #include <cstdarg>
+#include <glad/glad.h>
 #include <imgui.h>
 
 namespace lfs::vis::gui::widgets {
