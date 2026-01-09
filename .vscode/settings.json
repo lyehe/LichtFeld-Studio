@@ -1,0 +1,8 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/build/src/python"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}/build/src/python"
+    ]
+}

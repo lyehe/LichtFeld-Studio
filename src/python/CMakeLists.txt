@@ -85,12 +85,14 @@ target_include_directories(lfs_py PRIVATE
     ${CMAKE_SOURCE_DIR}/src/visualizer
 )
 
-#Copy type stubs alongside the module for IDE support
-add_custom_command(TARGET lfs_py POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/lichtfeld.pyi
-        $<TARGET_FILE_DIR:lfs_py>/lichtfeld.pyi
-    COMMENT "Copying Python type stubs"
+# Generate type stubs for IDE support
+nanobind_add_stub(lichtfeld_stub
+    MODULE lichtfeld
+    OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}
+    PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS lfs_py
+    RECURSIVE
+    MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/lichtfeld/py.typed
 )
 
 # UV package manager for Python package installation support
