@@ -18,6 +18,7 @@ namespace lfs::python {
     struct PackageInfo {
         std::string name;
         std::string version;
+        std::string path;
     };
 
     struct InstallResult {

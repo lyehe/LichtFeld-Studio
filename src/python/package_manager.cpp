@@ -335,8 +335,20 @@ namespace lfs::python {
                 continue;
 
             std::smatch match;
-            if (std::regex_match(name, match, DIST_INFO_PATTERN))
-                packages.push_back({.name = match[1].str(), .version = match[2].str()});
+            if (std::regex_match(name, match, DIST_INFO_PATTERN)) {
+                const std::string pkg_name = match[1].str();
+                std::filesystem::path pkg_path = site_dir / pkg_name;
+
+                if (!std::filesystem::exists(pkg_path)) {
+                    std::string normalized = pkg_name;
+                    std::replace(normalized.begin(), normalized.end(), '-', '_');
+                    const auto alt_path = site_dir / normalized;
+                    pkg_path = std::filesystem::exists(alt_path) ? alt_path : site_dir;
+                }
+
+                packages.push_back(
+                    {.name = pkg_name, .version = match[2].str(), .path = pkg_path.string()});
+            }
         }
         return packages;
     }

@@ -18,6 +18,7 @@ namespace lfs::python {
         nb::class_<PackageInfo>(pkg, "PackageInfo")
             .def_ro("name", &PackageInfo::name)
             .def_ro("version", &PackageInfo::version)
+            .def_ro("path", &PackageInfo::path)
             .def("__repr__", [](const PackageInfo& p) { return p.name + "==" + p.version; });
 
         pkg.def(

@@ -33,6 +33,7 @@ namespace lfs::vis::terminal {
         constexpr ImU32 CURSOR_COLOR = IM_COL32(200, 200, 200, 180);
         constexpr ImU32 SELECTION_COLOR = IM_COL32(100, 100, 200, 200);
         constexpr ImU32 DEFAULT_FG = IM_COL32(229, 229, 229, 255);
+        constexpr int SCROLL_LINES = 3;
 
         struct KeyMapping {
             ImGuiKey key;
@@ -194,6 +195,14 @@ namespace lfs::vis::terminal {
             ImGui::GetIO().InputQueueCharacters.resize(0);
         }
 
+        if (area_hovered) {
+            const float wheel = ImGui::GetIO().MouseWheel;
+            if (wheel > 0)
+                scrollUp(SCROLL_LINES);
+            else if (wheel < 0)
+                scrollDown(SCROLL_LINES);
+        }
+
         // Ctrl+C to copy
         if (is_focused_ && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
             const std::string sel = getSelection();
@@ -251,9 +260,48 @@ namespace lfs::vis::terminal {
 
         {
             std::lock_guard lock(mutex_);
+
+            const int scrollback_size = static_cast<int>(scrollback_.size());
+            const int eff_offset = std::min(scroll_offset_, scrollback_size);
+
             for (int row = 0; row < rows_; ++row) {
-                for (int col = 0; col < cols_; ++col) {
-                    drawCell(dl, row, col, origin);
+                if (row < eff_offset) {
+                    const int idx = eff_offset - 1 - row;
+                    const auto& line = scrollback_[idx];
+                    for (int col = 0; col < cols_; ++col) {
+                        if (col >= static_cast<int>(line.cells.size()))
+                            continue;
+                        const auto& cell = line.cells[col];
+                        if (cell.chars[0] == 0)
+                            continue;
+
+                        char utf8[16];
+                        size_t len = 0;
+                        for (int i = 0; i < VTERM_MAX_CHARS_PER_CELL && cell.chars[i]; ++i) {
+                            char tmp[4];
+                            const size_t n = encodeUtf8(cell.chars[i], tmp);
+                            if (n > 0 && len + n < sizeof(utf8)) {
+                                std::memcpy(utf8 + len, tmp, n);
+                                len += n;
+                            }
+                        }
+                        utf8[len] = '\0';
+
+                        ImU32 fg = vtermColorToImU32(cell.fg);
+                        if (fg == IM_COL32(0, 0, 0, 0))
+                            fg = DEFAULT_FG;
+
+                        const ImVec2 pos = {origin.x + col * char_width_, origin.y + row * char_height_};
+                        dl->AddText(pos, fg, utf8);
+                    }
+                } else {
+                    const int screen_row = row - eff_offset;
+                    if (screen_row < rows_) {
+                        const ImVec2 offset_origin = {origin.x, origin.y + eff_offset * char_height_};
+                        for (int col = 0; col < cols_; ++col) {
+                            drawCell(dl, screen_row, col, offset_origin);
+                        }
+                    }
                 }
             }
         }
@@ -317,9 +365,9 @@ namespace lfs::vis::terminal {
 
         if (const float wheel = io.MouseWheel; wheel != 0.0f && ImGui::IsWindowHovered()) {
             if (wheel > 0)
-                scrollUp(3);
+                scrollUp(SCROLL_LINES);
             else
-                scrollDown(3);
+                scrollDown(SCROLL_LINES);
         }
 
         if (io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_V, false)) {
@@ -484,7 +532,26 @@ namespace lfs::vis::terminal {
 
     void TerminalWidget::write(const char* data, size_t len) {
         std::lock_guard lock(mutex_);
-        vterm_input_write(vt_, data, len);
+
+        if (read_only_) {
+            // Translate \n to \r\n for read-only terminals
+            const char* p = data;
+            const char* const end = data + len;
+            while (p < end) {
+                const char* nl = static_cast<const char*>(std::memchr(p, '\n', end - p));
+                if (!nl) {
+                    vterm_input_write(vt_, p, end - p);
+                    break;
+                }
+                if (nl > p)
+                    vterm_input_write(vt_, p, nl - p);
+                vterm_input_write(vt_, "\r\n", 2);
+                p = nl + 1;
+            }
+        } else {
+            vterm_input_write(vt_, data, len);
+        }
+
         has_new_output_ = true;
         needs_redraw_ = true;
     }

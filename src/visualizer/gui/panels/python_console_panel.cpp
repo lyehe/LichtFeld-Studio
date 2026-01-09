@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "gui/panels/python_console_panel.hpp"
-#include "gui/editor/console_output.hpp"
 #include "gui/editor/python_editor.hpp"
 #include "gui/terminal/terminal_widget.hpp"
 #include "gui/ui_widgets.hpp"
@@ -12,6 +11,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <future>
 #include <sstream>
 #include <thread>
 #include <imgui.h>
@@ -235,8 +235,7 @@ namespace lfs::vis::gui::panels {
     PythonConsoleState::PythonConsoleState()
         : terminal_(std::make_unique<terminal::TerminalWidget>(80, 24)),
           output_terminal_(std::make_unique<terminal::TerminalWidget>(80, 24)),
-          editor_(std::make_unique<editor::PythonEditor>()),
-          uv_console_(std::make_unique<editor::ConsoleOutput>()) {
+          editor_(std::make_unique<editor::PythonEditor>()) {
     }
 
     PythonConsoleState::~PythonConsoleState() = default;
@@ -333,84 +332,14 @@ namespace lfs::vis::gui::panels {
         return editor_.get();
     }
 
-    editor::ConsoleOutput* PythonConsoleState::getUvConsole() {
-        return uv_console_.get();
-    }
-
     namespace {
-        // Splitter state
         float g_splitter_ratio = 0.6f;
         constexpr float MIN_PANE_HEIGHT = 100.0f;
         constexpr float SPLITTER_THICKNESS = 6.0f;
 
-        // Package install state
-        char g_package_input[256] = "";
-
-        void start_async_install(const std::string& package, editor::ConsoleOutput* console) {
-            if (package.empty() || !console)
-                return;
-
-            auto& pm = python::PackageManager::instance();
-            if (pm.has_running_operation()) {
-                console->addError("Another operation is already running");
-                return;
-            }
-
-            console->addInfo("Installing " + package + "...");
-
-            pm.install_async(
-                package,
-                [console](const std::string& line, bool is_error, bool is_line_update) {
-                    if (is_line_update) {
-                        console->updateLastLine(line, is_error);
-                    } else if (is_error) {
-                        console->addError(line);
-                    } else {
-                        console->addOutput(line);
-                    }
-                },
-                [console, package](bool success, int exit_code) {
-                    if (success) {
-                        console->addInfo("Successfully installed " + package);
-                    } else {
-                        console->addError("Failed to install " + package + " (exit code " +
-                                          std::to_string(exit_code) + ")");
-                    }
-                });
-        }
-
-        void start_async_uninstall(const std::string& package, editor::ConsoleOutput* console) {
-            if (package.empty() || !console)
-                return;
-
-            auto& pm = python::PackageManager::instance();
-            if (pm.has_running_operation()) {
-                console->addError("Another operation is already running");
-                return;
-            }
-
-            console->addInfo("Uninstalling " + package + "...");
-
-            pm.uninstall_async(
-                package,
-                [console](const std::string& line, bool is_error, bool is_line_update) {
-                    if (is_line_update) {
-                        console->updateLastLine(line, is_error);
-                    } else if (is_error) {
-                        console->addError(line);
-                    } else {
-                        console->addOutput(line);
-                    }
-                },
-                [console, package](bool success, int exit_code) {
-                    if (success) {
-                        console->addInfo("Successfully uninstalled " + package);
-                    } else {
-                        console->addError("Failed to uninstall " + package + " (exit code " +
-                                          std::to_string(exit_code) + ")");
-                    }
-                });
-        }
+        constexpr float PKG_NAME_COL_WIDTH = 120.0f;
+        constexpr float PKG_VERSION_COL_WIDTH = 60.0f;
+        constexpr float PKG_SEARCH_WIDTH = 150.0f;
     } // namespace
 
     void DrawPythonConsole(const UIContext& ctx, bool* open) {
@@ -610,15 +539,14 @@ namespace lfs::vis::gui::panels {
                 ImGui::PushFont(ctx.fonts.monospace);
             }
 
-            // Check if terminal has focus - prevent editor from receiving input
-            bool terminal_has_focus = false;
+            // Block editor input when terminal has focus or other widget wants text input
+            bool block_editor_input = ImGui::GetIO().WantTextInput;
             if (auto* terminal = state.getTerminal()) {
-                terminal_has_focus = terminal->isFocused();
+                block_editor_input |= terminal->isFocused();
             }
 
             if (auto* editor = state.getEditor()) {
-                // When terminal has focus, make editor read-only to prevent input capture
-                editor->setReadOnly(terminal_has_focus);
+                editor->setReadOnly(block_editor_input);
 
                 if (editor->render(editor_size)) {
                     // Ctrl+Enter was pressed - execute
@@ -688,53 +616,63 @@ namespace lfs::vis::gui::panels {
                     ImGui::EndTabItem();
                 }
 
-                // Packages tab (UV package manager output)
+                // Packages tab - shows installed packages
                 if (ImGui::BeginTabItem("Packages")) {
                     state.setActiveTab(2);
 
-                    if (auto* uv_console = state.getUvConsole()) {
-                        ImVec2 avail = ImGui::GetContentRegionAvail();
+                    static std::vector<python::PackageInfo> cached_packages;
+                    static std::future<std::vector<python::PackageInfo>> pending_refresh;
+                    static bool loading = false;
+                    static char search_filter[128] = "";
 
-                        auto& pm = python::PackageManager::instance();
-                        const bool is_running = pm.has_running_operation();
+                    if (!loading && ImGui::Button("Refresh")) {
+                        loading = true;
+                        pending_refresh = std::async(std::launch::async, []() {
+                            return python::PackageManager::instance().list_installed();
+                        });
+                    }
 
-                        // Package input row
-                        ImGui::BeginDisabled(is_running);
-                        ImGui::SetNextItemWidth(avail.x - 220);
-                        bool enter_pressed = ImGui::InputTextWithHint(
-                            "##pkg_input", "Package name (e.g., numpy)",
-                            g_package_input, sizeof(g_package_input),
-                            ImGuiInputTextFlags_EnterReturnsTrue);
-                        ImGui::SameLine();
-                        if (ImGui::Button("Install", ImVec2(70, 0)) || enter_pressed) {
-                            start_async_install(g_package_input, uv_console);
-                            g_package_input[0] = '\0';
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Uninstall", ImVec2(70, 0))) {
-                            start_async_uninstall(g_package_input, uv_console);
-                            g_package_input[0] = '\0';
-                        }
-                        ImGui::EndDisabled();
+                    if (loading && pending_refresh.valid() &&
+                        pending_refresh.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                        cached_packages = pending_refresh.get();
+                        loading = false;
+                    }
 
-                        ImGui::SameLine();
-                        if (ImGui::Button("Clear", ImVec2(50, 0))) {
-                            uv_console->clear();
-                        }
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(PKG_SEARCH_WIDTH);
+                    ImGui::InputTextWithHint("##search", "Search...", search_filter, sizeof(search_filter));
 
-                        avail.y -= ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+                    ImGui::SameLine();
+                    if (loading) {
+                        ImGui::TextColored(t.palette.text_dim, "Loading...");
+                    } else {
+                        ImGui::TextColored(t.palette.text_dim, "(%zu)", cached_packages.size());
+                    }
 
-                        // Status line if running
-                        if (is_running) {
-                            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Running UV operation...");
-                            ImGui::SameLine();
-                            if (ImGui::SmallButton("Cancel")) {
-                                pm.cancel_async();
+                    if (cached_packages.empty() && !loading) {
+                        ImGui::TextColored(t.palette.text_dim, "No packages installed");
+                    } else {
+                        constexpr auto TABLE_FLAGS =
+                            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
+                        if (ImGui::BeginTable("##pkg_table", 3, TABLE_FLAGS, ImGui::GetContentRegionAvail())) {
+                            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, PKG_NAME_COL_WIDTH);
+                            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed, PKG_VERSION_COL_WIDTH);
+                            ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch);
+                            ImGui::TableHeadersRow();
+                            for (const auto& pkg : cached_packages) {
+                                if (search_filter[0] != '\0' &&
+                                    pkg.name.find(search_filter) == std::string::npos)
+                                    continue;
+                                ImGui::TableNextRow();
+                                ImGui::TableNextColumn();
+                                ImGui::Text("%s", pkg.name.c_str());
+                                ImGui::TableNextColumn();
+                                ImGui::TextColored(t.palette.text_dim, "%s", pkg.version.c_str());
+                                ImGui::TableNextColumn();
+                                ImGui::TextColored(t.palette.text_dim, "%s", pkg.path.c_str());
                             }
-                            avail.y -= ImGui::GetTextLineHeightWithSpacing();
+                            ImGui::EndTable();
                         }
-
-                        uv_console->render(avail);
                     }
 
                     ImGui::EndTabItem();
@@ -947,15 +885,14 @@ namespace lfs::vis::gui::panels {
                 ImGui::PushFont(ctx.fonts.monospace);
             }
 
-            // Check if terminal has focus - prevent editor from receiving input
-            bool terminal_has_focus = false;
+            // Block editor input when terminal has focus or other widget wants text input
+            bool block_editor_input = ImGui::GetIO().WantTextInput;
             if (auto* terminal = state.getTerminal()) {
-                terminal_has_focus = terminal->isFocused();
+                block_editor_input |= terminal->isFocused();
             }
 
             if (auto* editor = state.getEditor()) {
-                // When terminal has focus, make editor read-only to prevent input capture
-                editor->setReadOnly(terminal_has_focus);
+                editor->setReadOnly(block_editor_input);
 
                 if (editor->render(editor_size)) {
                     execute_python_code(editor->getText(), state);
@@ -1028,53 +965,63 @@ namespace lfs::vis::gui::panels {
                     ImGui::EndTabItem();
                 }
 
-                // Packages tab (UV package manager output)
+                // Packages tab - shows installed packages
                 if (ImGui::BeginTabItem("Packages")) {
                     state.setActiveTab(2);
 
-                    if (auto* uv_console = state.getUvConsole()) {
-                        ImVec2 avail = ImGui::GetContentRegionAvail();
+                    static std::vector<python::PackageInfo> cached_packages;
+                    static std::future<std::vector<python::PackageInfo>> pending_refresh;
+                    static bool loading = false;
+                    static char search_filter[128] = "";
 
-                        auto& pm = python::PackageManager::instance();
-                        const bool is_running = pm.has_running_operation();
+                    if (!loading && ImGui::Button("Refresh##docked")) {
+                        loading = true;
+                        pending_refresh = std::async(std::launch::async, []() {
+                            return python::PackageManager::instance().list_installed();
+                        });
+                    }
 
-                        // Package input row
-                        ImGui::BeginDisabled(is_running);
-                        ImGui::SetNextItemWidth(avail.x - 220);
-                        bool enter_pressed = ImGui::InputTextWithHint(
-                            "##docked_pkg_input", "Package name (e.g., numpy)",
-                            g_package_input, sizeof(g_package_input),
-                            ImGuiInputTextFlags_EnterReturnsTrue);
-                        ImGui::SameLine();
-                        if (ImGui::Button("Install##docked", ImVec2(70, 0)) || enter_pressed) {
-                            start_async_install(g_package_input, uv_console);
-                            g_package_input[0] = '\0';
-                        }
-                        ImGui::SameLine();
-                        if (ImGui::Button("Uninstall##docked", ImVec2(70, 0))) {
-                            start_async_uninstall(g_package_input, uv_console);
-                            g_package_input[0] = '\0';
-                        }
-                        ImGui::EndDisabled();
+                    if (loading && pending_refresh.valid() &&
+                        pending_refresh.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                        cached_packages = pending_refresh.get();
+                        loading = false;
+                    }
 
-                        ImGui::SameLine();
-                        if (ImGui::Button("Clear##docked", ImVec2(50, 0))) {
-                            uv_console->clear();
-                        }
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(PKG_SEARCH_WIDTH);
+                    ImGui::InputTextWithHint("##search_docked", "Search...", search_filter, sizeof(search_filter));
 
-                        avail.y -= ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+                    ImGui::SameLine();
+                    if (loading) {
+                        ImGui::TextColored(t.palette.text_dim, "Loading...");
+                    } else {
+                        ImGui::TextColored(t.palette.text_dim, "(%zu)", cached_packages.size());
+                    }
 
-                        // Status line if running
-                        if (is_running) {
-                            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Running UV operation...");
-                            ImGui::SameLine();
-                            if (ImGui::SmallButton("Cancel##docked")) {
-                                pm.cancel_async();
+                    if (cached_packages.empty() && !loading) {
+                        ImGui::TextColored(t.palette.text_dim, "No packages installed");
+                    } else {
+                        constexpr auto TABLE_FLAGS =
+                            ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
+                        if (ImGui::BeginTable("##docked_pkg_table", 3, TABLE_FLAGS, ImGui::GetContentRegionAvail())) {
+                            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, PKG_NAME_COL_WIDTH);
+                            ImGui::TableSetupColumn("Version", ImGuiTableColumnFlags_WidthFixed, PKG_VERSION_COL_WIDTH);
+                            ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch);
+                            ImGui::TableHeadersRow();
+                            for (const auto& pkg : cached_packages) {
+                                if (search_filter[0] != '\0' &&
+                                    pkg.name.find(search_filter) == std::string::npos)
+                                    continue;
+                                ImGui::TableNextRow();
+                                ImGui::TableNextColumn();
+                                ImGui::Text("%s", pkg.name.c_str());
+                                ImGui::TableNextColumn();
+                                ImGui::TextColored(t.palette.text_dim, "%s", pkg.version.c_str());
+                                ImGui::TableNextColumn();
+                                ImGui::TextColored(t.palette.text_dim, "%s", pkg.path.c_str());
                             }
-                            avail.y -= ImGui::GetTextLineHeightWithSpacing();
+                            ImGui::EndTable();
                         }
-
-                        uv_console->render(avail);
                     }
 
                     ImGui::EndTabItem();
