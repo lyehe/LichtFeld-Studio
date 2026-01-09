@@ -669,6 +669,9 @@ namespace lfs::vis {
     }
 
     void InputController::handleScroll([[maybe_unused]] double xoff, double yoff) {
+        double mouse_x, mouse_y;
+        glfwGetCursorPos(window_, &mouse_x, &mouse_y);
+
         if (brush_tool_ && brush_tool_->isEnabled() && tool_context_) {
             if (brush_tool_->handleScroll(xoff, yoff, getModifierKeys(), *tool_context_)) {
                 return;
@@ -681,16 +684,10 @@ namespace lfs::vis {
             }
         }
 
-        if (drag_mode_ == DragMode::Gizmo || drag_mode_ == DragMode::Splitter) {
+        if (drag_mode_ == DragMode::Gizmo || drag_mode_ == DragMode::Splitter)
             return;
-        }
 
-        // Block scroll when hovering over GUI windows (panels)
-        if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
-            return;
-        }
-
-        if (!shouldCameraHandleInput())
+        if (!isInViewport(mouse_x, mouse_y) || ImGui::IsAnyItemActive())
             return;
 
         const float delta = static_cast<float>(yoff);

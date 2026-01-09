@@ -121,6 +121,12 @@ namespace lfs::python {
 
         void normalize_colors() { pc_->normalize_colors(); }
 
+        // Filter points by boolean mask - keeps points where mask is True
+        int64_t filter(const PyTensor& keep_mask);
+
+        // Filter points by index tensor - keeps points at specified indices
+        int64_t filter_indices(const PyTensor& indices);
+
         core::PointCloud* data() { return pc_; }
         const core::PointCloud* data() const { return pc_; }
 

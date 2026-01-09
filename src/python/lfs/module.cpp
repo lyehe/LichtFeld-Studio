@@ -277,6 +277,9 @@ namespace {
     // Thread-local Trainer pointer for get_scene() to access Scene during hooks
     thread_local lfs::training::Trainer* g_current_trainer = nullptr;
 
+    // Thread-local Scene pointer for GUI console context (set before executing user code)
+    thread_local lfs::vis::Scene* g_console_scene = nullptr;
+
     // RAII guard to set/clear current trainer
     struct TrainerGuard {
         TrainerGuard(lfs::training::Trainer* t) { g_current_trainer = t; }
@@ -306,15 +309,21 @@ namespace {
         });
     }
 
-    // Get Scene from current trainer (for use in hooks) or scene provider (for GUI)
+    // Get Scene from current trainer (for use in hooks) or console context (for GUI)
     lfs::vis::Scene* get_scene_internal() {
         // First try the current trainer (headless mode during hooks)
         if (g_current_trainer) {
             return g_current_trainer->getScene();
         }
-        // Fall back to scene provider (registered by main app for GUI mode)
-        return lfs::python::get_scene_from_provider();
+        // Fall back to console context (injected by GUI before executing user code)
+        return g_console_scene;
     }
+
+    // Set scene context for GUI console execution
+    void set_scene_context(lfs::vis::Scene* scene) { g_console_scene = scene; }
+
+    // Clear scene context after GUI console execution
+    void clear_scene_context() { g_console_scene = nullptr; }
 
 } // namespace
 
@@ -684,6 +693,18 @@ Example:
 )");
         },
         "Show help for lichtfeld module");
+
+    // Internal context API for GUI console (C++ calls these before/after executing user code)
+    m.def(
+        "_set_scene_context", [](nb::capsule scene_capsule) {
+            auto* scene = static_cast<lfs::vis::Scene*>(scene_capsule.data());
+            set_scene_context(scene);
+        },
+        nb::arg("scene_capsule"), "Internal: Set scene context for console execution");
+
+    m.def(
+        "_clear_scene_context", []() { clear_scene_context(); },
+        "Internal: Clear scene context after console execution");
 
     // Module metadata
     m.attr("__version__") = "0.1.0";

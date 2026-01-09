@@ -59,6 +59,50 @@ namespace lfs::python {
         return PyPointCloud(node_->point_cloud.get(), false);
     }
 
+    // PyPointCloud filter implementation - uses tensor[mask] row selection
+    int64_t PyPointCloud::filter(const PyTensor& keep_mask) {
+        const auto& mask = keep_mask.tensor();
+        assert(mask.dtype() == core::DataType::Bool && "Mask must be boolean");
+        assert(mask.shape().rank() == 1 && "Mask must be 1D");
+        assert(static_cast<size_t>(mask.shape()[0]) == static_cast<size_t>(pc_->size()) && "Mask size must match point count");
+
+        // Ensure mask is on same device as data
+        const auto device = pc_->means.device();
+        const auto mask_dev = mask.device() == device ? mask : mask.to(device);
+
+        const int64_t old_size = pc_->size();
+        pc_->means = pc_->means.is_valid() ? pc_->means[mask_dev] : pc_->means;
+        pc_->colors = pc_->colors.is_valid() ? pc_->colors[mask_dev] : pc_->colors;
+        pc_->normals = pc_->normals.is_valid() ? pc_->normals[mask_dev] : pc_->normals;
+        pc_->sh0 = pc_->sh0.is_valid() ? pc_->sh0[mask_dev] : pc_->sh0;
+        pc_->shN = pc_->shN.is_valid() ? pc_->shN[mask_dev] : pc_->shN;
+        pc_->opacity = pc_->opacity.is_valid() ? pc_->opacity[mask_dev] : pc_->opacity;
+        pc_->scaling = pc_->scaling.is_valid() ? pc_->scaling[mask_dev] : pc_->scaling;
+        pc_->rotation = pc_->rotation.is_valid() ? pc_->rotation[mask_dev] : pc_->rotation;
+
+        return old_size - pc_->size();
+    }
+
+    int64_t PyPointCloud::filter_indices(const PyTensor& indices) {
+        const auto& idx = indices.tensor();
+        assert(idx.shape().rank() == 1 && "Indices must be 1D");
+
+        const auto device = pc_->means.device();
+        const auto idx_dev = idx.device() == device ? idx : idx.to(device);
+
+        const int64_t old_size = pc_->size();
+        pc_->means = pc_->means.is_valid() ? pc_->means[idx_dev] : pc_->means;
+        pc_->colors = pc_->colors.is_valid() ? pc_->colors[idx_dev] : pc_->colors;
+        pc_->normals = pc_->normals.is_valid() ? pc_->normals[idx_dev] : pc_->normals;
+        pc_->sh0 = pc_->sh0.is_valid() ? pc_->sh0[idx_dev] : pc_->sh0;
+        pc_->shN = pc_->shN.is_valid() ? pc_->shN[idx_dev] : pc_->shN;
+        pc_->opacity = pc_->opacity.is_valid() ? pc_->opacity[idx_dev] : pc_->opacity;
+        pc_->scaling = pc_->scaling.is_valid() ? pc_->scaling[idx_dev] : pc_->scaling;
+        pc_->rotation = pc_->rotation.is_valid() ? pc_->rotation[idx_dev] : pc_->rotation;
+
+        return old_size - pc_->size();
+    }
+
     std::optional<PyCropBox> PySceneNode::cropbox() {
         if (node_->type != vis::NodeType::CROPBOX || !node_->cropbox) {
             return std::nullopt;
@@ -263,7 +307,11 @@ namespace lfs::python {
             .def_prop_ro("size", &PyPointCloud::size)
             .def("is_gaussian", &PyPointCloud::is_gaussian)
             .def_prop_ro("attribute_names", &PyPointCloud::attribute_names)
-            .def("normalize_colors", &PyPointCloud::normalize_colors);
+            .def("normalize_colors", &PyPointCloud::normalize_colors)
+            .def("filter", &PyPointCloud::filter, nb::arg("keep_mask"),
+                 "Filter points by boolean mask, returns number of points removed")
+            .def("filter_indices", &PyPointCloud::filter_indices, nb::arg("indices"),
+                 "Keep only points at specified indices, returns number of points removed");
 
         // SceneNode class
         nb::class_<PySceneNode>(m, "SceneNode")

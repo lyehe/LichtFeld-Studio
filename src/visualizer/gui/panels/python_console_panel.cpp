@@ -27,7 +27,6 @@
 namespace {
     std::once_flag g_console_init_once;
     std::once_flag g_syspath_init_once;
-    std::once_flag g_scene_provider_once;
 
     const char* getPythonExecutable() {
 #ifdef LFS_PYTHON_EXECUTABLE
@@ -35,15 +34,6 @@ namespace {
 #else
         return "python3";
 #endif
-    }
-
-    void setup_scene_provider() {
-        std::call_once(g_scene_provider_once, [] {
-            lfs::python::set_scene_provider([]() -> lfs::vis::Scene* {
-                auto* sm = lfs::vis::services().sceneOrNull();
-                return sm ? &sm->getScene() : nullptr;
-            });
-        });
     }
 
     void setup_sys_path() {
@@ -103,31 +93,57 @@ namespace {
         if (!output)
             return;
 
-        // Write code to temp file to handle multi-line scripts properly
-        const auto temp_dir = std::filesystem::temp_directory_path();
-        const auto script_path = temp_dir / "lichtfeld_script.py";
-        {
-            std::ofstream script_file(script_path);
-            script_file << cmd;
-        }
-
-        // Build the command
-        std::string full_cmd = std::string(getPythonExecutable()) + " \"" + script_path.string() + "\"";
-
-        // Spawn shell (PYTHONPATH is set by pty_process.cpp)
-        if (!output->is_running()) {
-#ifdef _WIN32
-            output->spawn("cmd.exe");
-            output->sendToPty("@echo off & prompt $S");
-#else
-            output->spawn("/bin/bash");
-            output->sendToPty("stty -echo; PS1='' PS2=''; clear");
-#endif
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        }
         // Clear output on each new run
-        output->reset();
-        output->sendToPty(full_cmd);
+        output->clear();
+
+        // Get scene for context injection
+        lfs::vis::Scene* scene = nullptr;
+        if (auto* sm = lfs::vis::services().sceneOrNull()) {
+            scene = &sm->getScene();
+        }
+
+        // Execute in-process with GIL
+        const PyGILState_STATE gil = PyGILState_Ensure();
+
+        // Import lichtfeld and inject scene context
+        if (scene) {
+            PyObject* lf_module = PyImport_ImportModule("lichtfeld");
+            if (lf_module) {
+                PyObject* set_ctx = PyObject_GetAttrString(lf_module, "_set_scene_context");
+                if (set_ctx && PyCallable_Check(set_ctx)) {
+                    PyObject* capsule = PyCapsule_New(scene, nullptr, nullptr);
+                    if (capsule) {
+                        PyObject* args = PyTuple_Pack(1, capsule);
+                        PyObject_Call(set_ctx, args, nullptr);
+                        Py_DECREF(args);
+                        Py_DECREF(capsule);
+                    }
+                }
+                Py_XDECREF(set_ctx);
+                Py_DECREF(lf_module);
+            }
+        }
+
+        // Execute user code
+        const int result = PyRun_SimpleString(cmd.c_str());
+        if (result != 0) {
+            PyErr_Print();
+        }
+
+        // Clear scene context
+        if (scene) {
+            PyObject* lf_module = PyImport_ImportModule("lichtfeld");
+            if (lf_module) {
+                PyObject* clear_ctx = PyObject_GetAttrString(lf_module, "_clear_scene_context");
+                if (clear_ctx && PyCallable_Check(clear_ctx)) {
+                    PyObject_CallNoArgs(clear_ctx);
+                }
+                Py_XDECREF(clear_ctx);
+                Py_DECREF(lf_module);
+            }
+        }
+
+        PyGILState_Release(gil);
 
         // Switch to Output tab
         state.setActiveTab(0);
@@ -339,7 +355,6 @@ namespace lfs::vis::gui::panels {
         lfs::python::install_output_redirect();
         setup_sys_path();
         setup_console_output_capture();
-        setup_scene_provider();
 
         auto& state = PythonConsoleState::getInstance();
         const auto& t = theme();
@@ -646,7 +661,6 @@ namespace lfs::vis::gui::panels {
         lfs::python::install_output_redirect();
         setup_sys_path();
         setup_console_output_capture();
-        setup_scene_provider();
 
         auto& state = PythonConsoleState::getInstance();
         const auto& t = theme();
