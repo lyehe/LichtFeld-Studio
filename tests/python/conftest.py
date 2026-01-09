@@ -107,3 +107,14 @@ def gpu_available(lf):
             return t_cuda.is_cuda
         except Exception:
             return False
+
+
+@pytest.fixture(scope="session")
+def torch():
+    """Import PyTorch for interop tests."""
+    try:
+        import torch
+
+        return torch
+    except ImportError:
+        pytest.skip("PyTorch not available")

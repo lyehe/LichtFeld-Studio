@@ -5,6 +5,8 @@
 #pragma once
 
 #include "core/tensor.hpp"
+#include <dlpack/dlpack.h>
+#include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
@@ -19,6 +21,13 @@ namespace lfs::python {
     public:
         PyTensor() = default;
         explicit PyTensor(core::Tensor tensor, bool owns_data = true);
+        ~PyTensor();
+
+        // Copy and move operations
+        PyTensor(const PyTensor& other);
+        PyTensor& operator=(const PyTensor& other);
+        PyTensor(PyTensor&& other) noexcept;
+        PyTensor& operator=(PyTensor&& other) noexcept;
 
         // Properties
         nb::tuple shape() const;
@@ -72,6 +81,40 @@ namespace lfs::python {
         PyTensor sqrt() const;
         PyTensor relu() const;
 
+        // Additional unary math operations
+        PyTensor sin() const;
+        PyTensor cos() const;
+        PyTensor tan() const;
+        PyTensor tanh() const;
+        PyTensor floor() const;
+        PyTensor ceil() const;
+        PyTensor round() const;
+
+        // Extended unary operations
+        PyTensor log2() const;
+        PyTensor log10() const;
+        PyTensor log1p() const;
+        PyTensor exp2() const;
+        PyTensor rsqrt() const;
+        PyTensor square() const;
+        PyTensor asin() const;
+        PyTensor acos() const;
+        PyTensor atan() const;
+        PyTensor sinh() const;
+        PyTensor cosh() const;
+        PyTensor trunc() const;
+        PyTensor sign() const;
+        PyTensor reciprocal() const;
+        PyTensor gelu() const;
+        PyTensor swish() const;
+        PyTensor isnan() const;
+        PyTensor isinf() const;
+        PyTensor isfinite() const;
+
+        // Power operations
+        PyTensor pow(float exponent) const;
+        PyTensor pow(const PyTensor& exponent) const;
+
         // In-place arithmetic
         PyTensor& iadd(const PyTensor& other);
         PyTensor& iadd_scalar(float scalar);
@@ -111,6 +154,17 @@ namespace lfs::python {
         float max_scalar() const;
         float min_scalar() const;
 
+        // Extended reductions
+        PyTensor prod(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor std(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor var(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor argmax(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor argmin(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor all(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor any(std::optional<int> dim = std::nullopt, bool keepdim = false) const;
+        PyTensor norm(float p = 2.0f) const;
+        float norm_scalar(float p = 2.0f) const;
+
         // Shape operations
         PyTensor reshape(const std::vector<int64_t>& new_shape) const;
         PyTensor view(const std::vector<int64_t>& new_shape) const;
@@ -119,6 +173,30 @@ namespace lfs::python {
         PyTensor transpose(int dim0, int dim1) const;
         PyTensor permute(const std::vector<int>& dims) const;
         PyTensor flatten(int start_dim = 0, int end_dim = -1) const;
+        PyTensor expand(const std::vector<int64_t>& sizes) const;
+        PyTensor repeat(const std::vector<int64_t>& repeats) const;
+        PyTensor t() const;
+
+        // Advanced indexing
+        PyTensor index_select(int dim, const PyTensor& indices) const;
+        PyTensor gather(int dim, const PyTensor& indices) const;
+        PyTensor masked_select(const PyTensor& mask) const;
+        PyTensor masked_fill(const PyTensor& mask, float value) const;
+        PyTensor nonzero() const;
+
+        // Linear algebra
+        PyTensor matmul(const PyTensor& other) const;
+        PyTensor mm(const PyTensor& other) const;
+        PyTensor bmm(const PyTensor& other) const;
+        PyTensor dot(const PyTensor& other) const;
+
+        // Element-wise operations
+        PyTensor clamp(float min_val, float max_val) const;
+        PyTensor maximum(const PyTensor& other) const;
+        PyTensor minimum(const PyTensor& other) const;
+
+        // Type conversion
+        PyTensor to_dtype(const std::string& dtype) const;
 
         // String representation
         std::string repr() const;
@@ -128,6 +206,55 @@ namespace lfs::python {
         nb::capsule dlpack(nb::object stream = nb::none()) const;
         static PyTensor from_dlpack(nb::object obj);
 
+        // Static creation functions
+        static PyTensor zeros(const std::vector<int64_t>& shape,
+                              const std::string& device = "cuda",
+                              const std::string& dtype = "float32");
+        static PyTensor ones(const std::vector<int64_t>& shape,
+                             const std::string& device = "cuda",
+                             const std::string& dtype = "float32");
+        static PyTensor full(const std::vector<int64_t>& shape, float value,
+                             const std::string& device = "cuda",
+                             const std::string& dtype = "float32");
+        static PyTensor arange(float end);
+        static PyTensor arange(float start, float end, float step = 1.0f,
+                               const std::string& device = "cuda",
+                               const std::string& dtype = "float32");
+        static PyTensor linspace(float start, float end, int64_t steps,
+                                 const std::string& device = "cuda",
+                                 const std::string& dtype = "float32");
+        static PyTensor eye(int64_t n, const std::string& device = "cuda",
+                            const std::string& dtype = "float32");
+        static PyTensor eye(int64_t m, int64_t n, const std::string& device = "cuda",
+                            const std::string& dtype = "float32");
+
+        // Random tensor creation
+        static PyTensor rand(const std::vector<int64_t>& shape,
+                             const std::string& device = "cuda",
+                             const std::string& dtype = "float32");
+        static PyTensor randn(const std::vector<int64_t>& shape,
+                              const std::string& device = "cuda",
+                              const std::string& dtype = "float32");
+        static PyTensor empty(const std::vector<int64_t>& shape,
+                              const std::string& device = "cuda",
+                              const std::string& dtype = "float32");
+        static PyTensor randint(int64_t low, int64_t high,
+                                const std::vector<int64_t>& shape,
+                                const std::string& device = "cuda");
+
+        // *_like variants
+        static PyTensor zeros_like(const PyTensor& other);
+        static PyTensor ones_like(const PyTensor& other);
+        static PyTensor rand_like(const PyTensor& other);
+        static PyTensor randn_like(const PyTensor& other);
+        static PyTensor empty_like(const PyTensor& other);
+        static PyTensor full_like(const PyTensor& other, float value);
+
+        // Tensor combination
+        static PyTensor cat(const std::vector<PyTensor>& tensors, int dim = 0);
+        static PyTensor stack(const std::vector<PyTensor>& tensors, int dim = 0);
+        static PyTensor where(const PyTensor& condition, const PyTensor& x, const PyTensor& y);
+
         // Access underlying tensor (for internal use)
         const core::Tensor& tensor() const { return tensor_; }
         core::Tensor& tensor() { return tensor_; }
@@ -135,7 +262,9 @@ namespace lfs::python {
     private:
         core::Tensor tensor_;
         bool owns_data_ = true;
-        std::optional<nb::capsule> dlpack_capsule_;
+
+        // DLPack: shared ownership of managed tensor - deleter called when last copy destroyed
+        std::shared_ptr<DLManagedTensor> dlpack_managed_;
 
         // Helper to parse Python slice
         struct SliceInfo {

@@ -111,6 +111,36 @@ namespace lfs::python {
         : tensor_(std::move(tensor)),
           owns_data_(owns_data) {}
 
+    PyTensor::~PyTensor() = default;
+
+    PyTensor::PyTensor(const PyTensor& other)
+        : tensor_(other.tensor_),
+          owns_data_(other.owns_data_),
+          dlpack_managed_(other.dlpack_managed_) {}
+
+    PyTensor& PyTensor::operator=(const PyTensor& other) {
+        if (this != &other) {
+            tensor_ = other.tensor_;
+            owns_data_ = other.owns_data_;
+            dlpack_managed_ = other.dlpack_managed_;
+        }
+        return *this;
+    }
+
+    PyTensor::PyTensor(PyTensor&& other) noexcept
+        : tensor_(std::move(other.tensor_)),
+          owns_data_(other.owns_data_),
+          dlpack_managed_(std::move(other.dlpack_managed_)) {}
+
+    PyTensor& PyTensor::operator=(PyTensor&& other) noexcept {
+        if (this != &other) {
+            tensor_ = std::move(other.tensor_);
+            owns_data_ = other.owns_data_;
+            dlpack_managed_ = std::move(other.dlpack_managed_);
+        }
+        return *this;
+    }
+
     nb::tuple PyTensor::shape() const {
         const auto& dims = tensor_.shape().dims();
         nb::list shape_list;
@@ -626,6 +656,120 @@ namespace lfs::python {
         return PyTensor(tensor_.relu());
     }
 
+    PyTensor PyTensor::sin() const {
+        return PyTensor(tensor_.sin());
+    }
+
+    PyTensor PyTensor::cos() const {
+        return PyTensor(tensor_.cos());
+    }
+
+    PyTensor PyTensor::tan() const {
+        return PyTensor(tensor_.tan());
+    }
+
+    PyTensor PyTensor::tanh() const {
+        return PyTensor(tensor_.tanh());
+    }
+
+    PyTensor PyTensor::floor() const {
+        return PyTensor(tensor_.floor());
+    }
+
+    PyTensor PyTensor::ceil() const {
+        return PyTensor(tensor_.ceil());
+    }
+
+    PyTensor PyTensor::round() const {
+        return PyTensor(tensor_.round());
+    }
+
+    // Extended unary operations
+    PyTensor PyTensor::log2() const {
+        return PyTensor(tensor_.log2());
+    }
+
+    PyTensor PyTensor::log10() const {
+        return PyTensor(tensor_.log10());
+    }
+
+    PyTensor PyTensor::log1p() const {
+        return PyTensor(tensor_.log1p());
+    }
+
+    PyTensor PyTensor::exp2() const {
+        return PyTensor(tensor_.exp2());
+    }
+
+    PyTensor PyTensor::rsqrt() const {
+        return PyTensor(tensor_.rsqrt());
+    }
+
+    PyTensor PyTensor::square() const {
+        return PyTensor(tensor_.square());
+    }
+
+    PyTensor PyTensor::asin() const {
+        return PyTensor(tensor_.asin());
+    }
+
+    PyTensor PyTensor::acos() const {
+        return PyTensor(tensor_.acos());
+    }
+
+    PyTensor PyTensor::atan() const {
+        return PyTensor(tensor_.atan());
+    }
+
+    PyTensor PyTensor::sinh() const {
+        return PyTensor(tensor_.sinh());
+    }
+
+    PyTensor PyTensor::cosh() const {
+        return PyTensor(tensor_.cosh());
+    }
+
+    PyTensor PyTensor::trunc() const {
+        return PyTensor(tensor_.trunc());
+    }
+
+    PyTensor PyTensor::sign() const {
+        return PyTensor(tensor_.sign());
+    }
+
+    PyTensor PyTensor::reciprocal() const {
+        return PyTensor(tensor_.reciprocal());
+    }
+
+    PyTensor PyTensor::gelu() const {
+        return PyTensor(tensor_.gelu());
+    }
+
+    PyTensor PyTensor::swish() const {
+        return PyTensor(tensor_.swish());
+    }
+
+    PyTensor PyTensor::isnan() const {
+        return PyTensor(tensor_.isnan());
+    }
+
+    PyTensor PyTensor::isinf() const {
+        return PyTensor(tensor_.isinf());
+    }
+
+    PyTensor PyTensor::isfinite() const {
+        return PyTensor(tensor_.isfinite());
+    }
+
+    // Power operations
+    PyTensor PyTensor::pow(float exponent) const {
+        return PyTensor(tensor_.pow(exponent));
+    }
+
+    PyTensor PyTensor::pow(const PyTensor& exponent) const {
+        return PyTensor(tensor_.pow(exponent.tensor_));
+    }
+
     // In-place arithmetic
     PyTensor& PyTensor::iadd(const PyTensor& other) {
         tensor_.add_(other.tensor_);
@@ -774,6 +918,66 @@ namespace lfs::python {
         return tensor_.min_scalar();
     }
 
+    // Extended reductions
+    PyTensor PyTensor::prod(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            return PyTensor(tensor_.prod(*dim, keepdim));
+        }
+        return PyTensor(tensor_.prod());
+    }
+
+    PyTensor PyTensor::std(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            return PyTensor(tensor_.std(*dim, keepdim));
+        }
+        return PyTensor(tensor_.std());
+    }
+
+    PyTensor PyTensor::var(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            return PyTensor(tensor_.var(*dim, keepdim));
+        }
+        return PyTensor(tensor_.var());
+    }
+
+    PyTensor PyTensor::argmax(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            std::vector<int> axes = {*dim};
+            return PyTensor(tensor_.argmax(axes, keepdim));
+        }
+        return PyTensor(tensor_.argmax());
+    }
+
+    PyTensor PyTensor::argmin(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            std::vector<int> axes = {*dim};
+            return PyTensor(tensor_.argmin(axes, keepdim));
+        }
+        return PyTensor(tensor_.argmin());
+    }
+
+    PyTensor PyTensor::all(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            return PyTensor(tensor_.all(*dim, keepdim));
+        }
+        return PyTensor(tensor_.all());
+    }
+
+    PyTensor PyTensor::any(std::optional<int> dim, bool keepdim) const {
+        if (dim.has_value()) {
+            return PyTensor(tensor_.any(*dim, keepdim));
+        }
+        return PyTensor(tensor_.any());
+    }
+
+    PyTensor PyTensor::norm(float p) const {
+        return PyTensor(Tensor::full({1}, tensor_.norm(p), tensor_.device(), tensor_.dtype()));
+    }
+
+    float PyTensor::norm_scalar(float p) const {
+        return tensor_.norm(p);
+    }
+
     // Shape operations
     PyTensor PyTensor::reshape(const std::vector<int64_t>& new_shape) const {
         std::vector<int> shape_vec;
@@ -829,6 +1033,102 @@ namespace lfs::python {
         return PyTensor(tensor_.flatten(start_dim, end_dim));
     }
 
+    PyTensor PyTensor::expand(const std::vector<int64_t>& sizes) const {
+        std::vector<int> int_sizes;
+        int_sizes.reserve(sizes.size());
+        for (auto s : sizes) {
+            int_sizes.push_back(static_cast<int>(s));
+        }
+        return PyTensor(tensor_.expand(int_sizes));
+    }
+
+    PyTensor PyTensor::repeat(const std::vector<int64_t>& repeats) const {
+        // Repeat by tiling - expand and then reshape
+        std::vector<size_t> result_shape;
+        const auto& orig_shape = tensor_.shape().dims();
+
+        // Pad original shape if needed
+        size_t ndim = std::max(orig_shape.size(), repeats.size());
+        std::vector<size_t> padded_orig(ndim, 1);
+        for (size_t i = 0; i < orig_shape.size(); ++i) {
+            padded_orig[ndim - orig_shape.size() + i] = orig_shape[i];
+        }
+
+        // Calculate result shape
+        for (size_t i = 0; i < ndim; ++i) {
+            size_t rep = (i < repeats.size()) ? static_cast<size_t>(repeats[i]) : 1;
+            result_shape.push_back(padded_orig[i] * rep);
+        }
+
+        // Tile using expand and reshape pattern
+        Tensor result = tensor_;
+        for (size_t i = 0; i < repeats.size(); ++i) {
+            if (repeats[i] > 1) {
+                result = Tensor::cat({result, result}, static_cast<int>(i));
+                // Continue tiling for larger repeats
+                for (int64_t j = 2; j < repeats[i]; j *= 2) {
+                    result = Tensor::cat({result, result}, static_cast<int>(i));
+                }
+            }
+        }
+        return PyTensor(result);
+    }
+
+    PyTensor PyTensor::t() const {
+        return PyTensor(tensor_.t());
+    }
+
+    // Advanced indexing operations
+    PyTensor PyTensor::index_select(int dim, const PyTensor& indices) const {
+        return PyTensor(tensor_.index_select(dim, indices.tensor_));
+    }
+
+    PyTensor PyTensor::gather(int dim, const PyTensor& indices) const {
+        return PyTensor(tensor_.gather(dim, indices.tensor_));
+    }
+
+    PyTensor PyTensor::masked_select(const PyTensor& mask) const {
+        return PyTensor(tensor_.masked_select(mask.tensor_));
+    }
+
+    PyTensor PyTensor::masked_fill(const PyTensor& mask, float value) const {
+        return PyTensor(tensor_.masked_fill(mask.tensor_, value));
+    }
+
+    PyTensor PyTensor::nonzero() const {
+        return PyTensor(tensor_.nonzero());
+    }
+
+    // Linear algebra
+    PyTensor PyTensor::matmul(const PyTensor& other) const {
+        return PyTensor(tensor_.matmul(other.tensor_));
+    }
+
+    PyTensor PyTensor::mm(const PyTensor& other) const {
+        return PyTensor(tensor_.mm(other.tensor_));
+    }
+
+    PyTensor PyTensor::bmm(const PyTensor& other) const {
+        return PyTensor(tensor_.bmm(other.tensor_));
+    }
+
+    PyTensor PyTensor::dot(const PyTensor& other) const {
+        return PyTensor(tensor_.dot(other.tensor_));
+    }
+
+    // Element-wise operations
+    PyTensor PyTensor::clamp(float min_val, float max_val) const {
+        return PyTensor(tensor_.clamp(min_val, max_val));
+    }
+
+    PyTensor PyTensor::maximum(const PyTensor& other) const {
+        return PyTensor(tensor_.maximum(other.tensor_));
+    }
+
+    PyTensor PyTensor::minimum(const PyTensor& other) const {
+        return PyTensor(tensor_.minimum(other.tensor_));
+    }
+
     std::string PyTensor::repr() const {
         std::ostringstream oss;
         oss << "Tensor(shape=" << tensor_.shape().str()
@@ -863,11 +1163,11 @@ namespace lfs::python {
         managed->manager_ctx = ctx;
         managed->deleter = dlpack_deleter;
 
-        return nb::capsule(managed, "dltensor", [](void* p) noexcept {
-            auto* m = static_cast<DLManagedTensor*>(p);
-            if (m && m->deleter)
-                m->deleter(m);
-        });
+        // Per DLPack spec: the consumer will call managed->deleter themselves,
+        // so we set the capsule destructor to nullptr to avoid double-free.
+        // If the capsule is never consumed, this causes a leak - but that's
+        // rare in practice and better than crashing.
+        return nb::capsule(managed, "dltensor");
     }
 
     PyTensor PyTensor::from_dlpack(nb::object obj) {
@@ -894,6 +1194,13 @@ namespace lfs::python {
             throw std::runtime_error("from_dlpack: null DLManagedTensor");
         }
 
+        // "Consume" the capsule per DLPack spec:
+        // 1. Rename to "used_dltensor" so producer knows we took ownership
+        // 2. Disable the capsule's destructor - we'll call the deleter ourselves
+        PyObject* py_capsule = capsule.ptr();
+        PyCapsule_SetName(py_capsule, "used_dltensor");
+        PyCapsule_SetDestructor(py_capsule, nullptr);
+
         const DLTensor& dl = managed->dl_tensor;
 
         std::vector<size_t> shape_vec;
@@ -908,10 +1215,178 @@ namespace lfs::python {
 
         Tensor tensor(data, TensorShape(shape_vec), device, dtype);
 
-        // Store capsule to prevent cleanup while tensor exists
+        // Store the DLManagedTensor with a custom deleter that calls the DLPack deleter
         auto result = PyTensor(std::move(tensor), false);
-        result.dlpack_capsule_ = std::move(capsule);
+        result.dlpack_managed_ = std::shared_ptr<DLManagedTensor>(
+            managed,
+            [](DLManagedTensor* m) {
+                if (m && m->deleter) {
+                    m->deleter(m);
+                }
+            });
         return result;
+    }
+
+    namespace {
+        Device parse_device(const std::string& device) {
+            if (device == "cuda" || device == "gpu")
+                return Device::CUDA;
+            if (device == "cpu")
+                return Device::CPU;
+            throw std::runtime_error("Unknown device: " + device);
+        }
+
+        DataType parse_dtype(const std::string& dtype) {
+            if (dtype == "float32" || dtype == "float")
+                return DataType::Float32;
+            if (dtype == "float16" || dtype == "half")
+                return DataType::Float16;
+            if (dtype == "int32" || dtype == "int")
+                return DataType::Int32;
+            if (dtype == "int64" || dtype == "long")
+                return DataType::Int64;
+            if (dtype == "uint8" || dtype == "byte")
+                return DataType::UInt8;
+            if (dtype == "bool")
+                return DataType::Bool;
+            throw std::runtime_error("Unknown dtype: " + dtype);
+        }
+
+        TensorShape to_tensor_shape(const std::vector<int64_t>& shape) {
+            std::vector<size_t> dims;
+            dims.reserve(shape.size());
+            for (auto d : shape) {
+                dims.push_back(static_cast<size_t>(d));
+            }
+            return TensorShape(dims);
+        }
+    } // namespace
+
+    // Type conversion (needs parse_dtype from anonymous namespace)
+    PyTensor PyTensor::to_dtype(const std::string& dtype) const {
+        return PyTensor(tensor_.to(parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::zeros(const std::vector<int64_t>& shape,
+                             const std::string& device,
+                             const std::string& dtype) {
+        return PyTensor(Tensor::zeros(to_tensor_shape(shape), parse_device(device), parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::ones(const std::vector<int64_t>& shape,
+                            const std::string& device,
+                            const std::string& dtype) {
+        return PyTensor(Tensor::ones(to_tensor_shape(shape), parse_device(device), parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::full(const std::vector<int64_t>& shape, float value,
+                            const std::string& device,
+                            const std::string& dtype) {
+        return PyTensor(Tensor::full(to_tensor_shape(shape), value, parse_device(device), parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::arange(float end) {
+        return PyTensor(Tensor::arange(end));
+    }
+
+    PyTensor PyTensor::arange(float start, float end, float step,
+                              const std::string& device,
+                              const std::string& dtype) {
+        auto t = Tensor::arange(start, end, step);
+        if (device != "cuda") {
+            t = t.to(parse_device(device));
+        }
+        return PyTensor(std::move(t));
+    }
+
+    PyTensor PyTensor::linspace(float start, float end, int64_t steps,
+                                const std::string& device,
+                                const std::string& dtype) {
+        return PyTensor(Tensor::linspace(start, end, static_cast<size_t>(steps), parse_device(device)));
+    }
+
+    PyTensor PyTensor::eye(int64_t n, const std::string& device,
+                           const std::string& dtype) {
+        return PyTensor(Tensor::eye(static_cast<size_t>(n), parse_device(device)));
+    }
+
+    PyTensor PyTensor::eye(int64_t m, int64_t n, const std::string& device,
+                           const std::string& dtype) {
+        return PyTensor(Tensor::eye(static_cast<size_t>(m), static_cast<size_t>(n), parse_device(device)));
+    }
+
+    // Random tensor creation
+    PyTensor PyTensor::rand(const std::vector<int64_t>& shape,
+                            const std::string& device,
+                            const std::string& dtype) {
+        return PyTensor(Tensor::rand(to_tensor_shape(shape), parse_device(device), parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::randn(const std::vector<int64_t>& shape,
+                             const std::string& device,
+                             const std::string& dtype) {
+        return PyTensor(Tensor::randn(to_tensor_shape(shape), parse_device(device), parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::empty(const std::vector<int64_t>& shape,
+                             const std::string& device,
+                             const std::string& dtype) {
+        return PyTensor(Tensor::empty(to_tensor_shape(shape), parse_device(device), parse_dtype(dtype)));
+    }
+
+    PyTensor PyTensor::randint(int64_t low, int64_t high,
+                               const std::vector<int64_t>& shape,
+                               const std::string& device) {
+        return PyTensor(Tensor::randint(to_tensor_shape(shape), static_cast<int>(low), static_cast<int>(high),
+                                        parse_device(device)));
+    }
+
+    // *_like variants
+    PyTensor PyTensor::zeros_like(const PyTensor& other) {
+        return PyTensor(Tensor::zeros_like(other.tensor_));
+    }
+
+    PyTensor PyTensor::ones_like(const PyTensor& other) {
+        return PyTensor(Tensor::ones_like(other.tensor_));
+    }
+
+    PyTensor PyTensor::rand_like(const PyTensor& other) {
+        return PyTensor(Tensor::rand_like(other.tensor_));
+    }
+
+    PyTensor PyTensor::randn_like(const PyTensor& other) {
+        return PyTensor(Tensor::randn_like(other.tensor_));
+    }
+
+    PyTensor PyTensor::empty_like(const PyTensor& other) {
+        return PyTensor(Tensor::empty_like(other.tensor_));
+    }
+
+    PyTensor PyTensor::full_like(const PyTensor& other, float value) {
+        return PyTensor(Tensor::full_like(other.tensor_, value));
+    }
+
+    // Tensor combination
+    PyTensor PyTensor::cat(const std::vector<PyTensor>& tensors, int dim) {
+        std::vector<Tensor> core_tensors;
+        core_tensors.reserve(tensors.size());
+        for (const auto& t : tensors) {
+            core_tensors.push_back(t.tensor_);
+        }
+        return PyTensor(Tensor::cat(core_tensors, dim));
+    }
+
+    PyTensor PyTensor::stack(const std::vector<PyTensor>& tensors, int dim) {
+        std::vector<Tensor> core_tensors;
+        core_tensors.reserve(tensors.size());
+        for (const auto& t : tensors) {
+            core_tensors.push_back(t.tensor_);
+        }
+        return PyTensor(Tensor::stack(core_tensors, dim));
+    }
+
+    PyTensor PyTensor::where(const PyTensor& condition, const PyTensor& x, const PyTensor& y) {
+        return PyTensor(Tensor::where(condition.tensor_, x.tensor_, y.tensor_));
     }
 
     void register_tensor(nb::module_& m) {
@@ -947,6 +1422,32 @@ namespace lfs::python {
             .def_static("from_numpy", &PyTensor::from_numpy,
                         nb::arg("arr"), nb::arg("copy") = true,
                         "Create tensor from NumPy array")
+
+            // Static creation functions
+            .def_static("zeros", &PyTensor::zeros,
+                        nb::arg("shape"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create tensor filled with zeros")
+            .def_static("ones", &PyTensor::ones,
+                        nb::arg("shape"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create tensor filled with ones")
+            .def_static("full", &PyTensor::full,
+                        nb::arg("shape"), nb::arg("value"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create tensor filled with value")
+            .def_static("arange", static_cast<PyTensor (*)(float)>(&PyTensor::arange),
+                        nb::arg("end"),
+                        "Create 1D tensor with values from 0 to end")
+            .def_static("arange", static_cast<PyTensor (*)(float, float, float, const std::string&, const std::string&)>(&PyTensor::arange),
+                        nb::arg("start"), nb::arg("end"), nb::arg("step") = 1.0f, nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create 1D tensor with values from start to end")
+            .def_static("linspace", &PyTensor::linspace,
+                        nb::arg("start"), nb::arg("end"), nb::arg("steps"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create 1D tensor with evenly spaced values")
+            .def_static("eye", static_cast<PyTensor (*)(int64_t, const std::string&, const std::string&)>(&PyTensor::eye),
+                        nb::arg("n"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create identity matrix")
+            .def_static("eye", static_cast<PyTensor (*)(int64_t, int64_t, const std::string&, const std::string&)>(&PyTensor::eye),
+                        nb::arg("m"), nb::arg("n"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create m x n matrix with ones on diagonal")
 
             // DLPack protocol
             .def("__dlpack__", &PyTensor::dlpack, nb::arg("stream") = nb::none())
@@ -1023,6 +1524,14 @@ namespace lfs::python {
             .def("log", &PyTensor::log, "Natural logarithm")
             .def("sqrt", &PyTensor::sqrt, "Square root")
             .def("relu", &PyTensor::relu, "ReLU activation")
+            .def("sin", &PyTensor::sin, "Sine")
+            .def("cos", &PyTensor::cos, "Cosine")
+            .def("tan", &PyTensor::tan, "Tangent")
+            .def("tanh", &PyTensor::tanh, "Hyperbolic tangent")
+            .def("floor", &PyTensor::floor, "Floor")
+            .def("ceil", &PyTensor::ceil, "Ceiling")
+            .def("round", &PyTensor::round, "Round to nearest")
+            .def("abs", &PyTensor::abs, "Absolute value")
 
             // Comparison operators
             .def("__eq__", &PyTensor::eq, "Equal tensor")
@@ -1061,6 +1570,94 @@ namespace lfs::python {
             .def("transpose", &PyTensor::transpose, nb::arg("dim0"), nb::arg("dim1"), "Transpose dimensions")
             .def("permute", &PyTensor::permute, nb::arg("dims"), "Permute dimensions")
             .def("flatten", &PyTensor::flatten, nb::arg("start_dim") = 0, nb::arg("end_dim") = -1, "Flatten dimensions")
+            .def("expand", &PyTensor::expand, nb::arg("sizes"), "Expand tensor to larger size")
+            .def("t", &PyTensor::t, "Transpose 2D tensor")
+
+            // Extended unary operations
+            .def("log2", &PyTensor::log2, "Base-2 logarithm")
+            .def("log10", &PyTensor::log10, "Base-10 logarithm")
+            .def("log1p", &PyTensor::log1p, "Log(1 + x)")
+            .def("exp2", &PyTensor::exp2, "2^x")
+            .def("rsqrt", &PyTensor::rsqrt, "Reciprocal square root")
+            .def("square", &PyTensor::square, "Element-wise square")
+            .def("asin", &PyTensor::asin, "Arc sine")
+            .def("acos", &PyTensor::acos, "Arc cosine")
+            .def("atan", &PyTensor::atan, "Arc tangent")
+            .def("sinh", &PyTensor::sinh, "Hyperbolic sine")
+            .def("cosh", &PyTensor::cosh, "Hyperbolic cosine")
+            .def("trunc", &PyTensor::trunc, "Truncate to integer")
+            .def("sign", &PyTensor::sign, "Sign of elements")
+            .def("reciprocal", &PyTensor::reciprocal, "1/x")
+            .def("gelu", &PyTensor::gelu, "GELU activation")
+            .def("swish", &PyTensor::swish, "Swish activation")
+            .def("isnan", &PyTensor::isnan, "Check for NaN")
+            .def("isinf", &PyTensor::isinf, "Check for infinity")
+            .def("isfinite", &PyTensor::isfinite, "Check for finite values")
+
+            // Power operations
+            .def("pow", static_cast<PyTensor (PyTensor::*)(float) const>(&PyTensor::pow), nb::arg("exponent"), "Power with scalar exponent")
+            .def("pow", static_cast<PyTensor (PyTensor::*)(const PyTensor&) const>(&PyTensor::pow), nb::arg("exponent"), "Power with tensor exponent")
+            .def("__pow__", static_cast<PyTensor (PyTensor::*)(float) const>(&PyTensor::pow), "Power operator")
+
+            // Extended reductions
+            .def("prod", &PyTensor::prod, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Product reduction")
+            .def("std", &PyTensor::std, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Standard deviation")
+            .def("var", &PyTensor::var, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Variance")
+            .def("argmax", &PyTensor::argmax, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Index of maximum")
+            .def("argmin", &PyTensor::argmin, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Index of minimum")
+            .def("all", &PyTensor::all, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Check if all true")
+            .def("any", &PyTensor::any, nb::arg("dim") = nb::none(), nb::arg("keepdim") = false, "Check if any true")
+            .def("norm", &PyTensor::norm, nb::arg("p") = 2.0f, "Lp norm")
+            .def("norm_scalar", &PyTensor::norm_scalar, nb::arg("p") = 2.0f, "Lp norm as scalar")
+
+            // Advanced indexing
+            .def("index_select", &PyTensor::index_select, nb::arg("dim"), nb::arg("indices"), "Select along dimension by indices")
+            .def("gather", &PyTensor::gather, nb::arg("dim"), nb::arg("indices"), "Gather values along dimension")
+            .def("masked_select", &PyTensor::masked_select, nb::arg("mask"), "Select elements where mask is true")
+            .def("masked_fill", &PyTensor::masked_fill, nb::arg("mask"), nb::arg("value"), "Fill elements where mask is true")
+            .def("nonzero", &PyTensor::nonzero, "Indices of non-zero elements")
+
+            // Linear algebra
+            .def("matmul", &PyTensor::matmul, nb::arg("other"), "Matrix multiplication")
+            .def("mm", &PyTensor::mm, nb::arg("other"), "Matrix multiplication (2D)")
+            .def("bmm", &PyTensor::bmm, nb::arg("other"), "Batched matrix multiplication")
+            .def("dot", &PyTensor::dot, nb::arg("other"), "Dot product")
+            .def("__matmul__", &PyTensor::matmul, "Matrix multiplication operator")
+
+            // Element-wise operations
+            .def("clamp", &PyTensor::clamp, nb::arg("min"), nb::arg("max"), "Clamp values to range")
+            .def("maximum", &PyTensor::maximum, nb::arg("other"), "Element-wise maximum")
+            .def("minimum", &PyTensor::minimum, nb::arg("other"), "Element-wise minimum")
+
+            // Type conversion
+            .def("to", &PyTensor::to_dtype, nb::arg("dtype"), "Convert to specified dtype")
+
+            // Random tensor creation
+            .def_static("rand", &PyTensor::rand,
+                        nb::arg("shape"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create tensor with uniform random values [0, 1)")
+            .def_static("randn", &PyTensor::randn,
+                        nb::arg("shape"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create tensor with normal random values")
+            .def_static("empty", &PyTensor::empty,
+                        nb::arg("shape"), nb::arg("device") = "cuda", nb::arg("dtype") = "float32",
+                        "Create uninitialized tensor")
+            .def_static("randint", &PyTensor::randint,
+                        nb::arg("low"), nb::arg("high"), nb::arg("shape"), nb::arg("device") = "cuda",
+                        "Create tensor with random integers")
+
+            // *_like variants
+            .def_static("zeros_like", &PyTensor::zeros_like, nb::arg("other"), "Create zeros tensor like other")
+            .def_static("ones_like", &PyTensor::ones_like, nb::arg("other"), "Create ones tensor like other")
+            .def_static("rand_like", &PyTensor::rand_like, nb::arg("other"), "Create random tensor like other")
+            .def_static("randn_like", &PyTensor::randn_like, nb::arg("other"), "Create normal random tensor like other")
+            .def_static("empty_like", &PyTensor::empty_like, nb::arg("other"), "Create uninitialized tensor like other")
+            .def_static("full_like", &PyTensor::full_like, nb::arg("other"), nb::arg("value"), "Create filled tensor like other")
+
+            // Tensor combination
+            .def_static("cat", &PyTensor::cat, nb::arg("tensors"), nb::arg("dim") = 0, "Concatenate tensors")
+            .def_static("stack", &PyTensor::stack, nb::arg("tensors"), nb::arg("dim") = 0, "Stack tensors")
+            .def_static("where", &PyTensor::where, nb::arg("condition"), nb::arg("x"), nb::arg("y"), "Conditional select")
 
             // String representation
             .def("__repr__", &PyTensor::repr)

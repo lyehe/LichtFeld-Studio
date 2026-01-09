@@ -2168,6 +2168,78 @@ namespace lfs::core::tensor_ops {
     template void launch_unary_op_generic<unsigned char, unsigned char, ops::logical_not_op>(
         const unsigned char*, unsigned char*, size_t, ops::logical_not_op, cudaStream_t);
 
+    // Extended unary operations (log2, log10, rsqrt, exp2, trig, hyperbolic, etc.)
+    template void launch_unary_op_generic<float, float, ops::log2_op>(
+        const float*, float*, size_t, ops::log2_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::log2_op>(
+        const int*, int*, size_t, ops::log2_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::log10_op>(
+        const float*, float*, size_t, ops::log10_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::log10_op>(
+        const int*, int*, size_t, ops::log10_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::log1p_op>(
+        const float*, float*, size_t, ops::log1p_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::log1p_op>(
+        const int*, int*, size_t, ops::log1p_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::exp2_op>(
+        const float*, float*, size_t, ops::exp2_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::exp2_op>(
+        const int*, int*, size_t, ops::exp2_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::rsqrt_op>(
+        const float*, float*, size_t, ops::rsqrt_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::rsqrt_op>(
+        const int*, int*, size_t, ops::rsqrt_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::asin_op>(
+        const float*, float*, size_t, ops::asin_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::asin_op>(
+        const int*, int*, size_t, ops::asin_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::acos_op>(
+        const float*, float*, size_t, ops::acos_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::acos_op>(
+        const int*, int*, size_t, ops::acos_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::atan_op>(
+        const float*, float*, size_t, ops::atan_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::atan_op>(
+        const int*, int*, size_t, ops::atan_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::sinh_op>(
+        const float*, float*, size_t, ops::sinh_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::sinh_op>(
+        const int*, int*, size_t, ops::sinh_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::cosh_op>(
+        const float*, float*, size_t, ops::cosh_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::cosh_op>(
+        const int*, int*, size_t, ops::cosh_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::trunc_op>(
+        const float*, float*, size_t, ops::trunc_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::trunc_op>(
+        const int*, int*, size_t, ops::trunc_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::gelu_op>(
+        const float*, float*, size_t, ops::gelu_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::gelu_op>(
+        const int*, int*, size_t, ops::gelu_op, cudaStream_t);
+    template void launch_unary_op_generic<float, float, ops::swish_op>(
+        const float*, float*, size_t, ops::swish_op, cudaStream_t);
+    template void launch_unary_op_generic<int, int, ops::swish_op>(
+        const int*, int*, size_t, ops::swish_op, cudaStream_t);
+    template void launch_unary_op_generic<float, unsigned char, ops::isnan_op>(
+        const float*, unsigned char*, size_t, ops::isnan_op, cudaStream_t);
+    template void launch_unary_op_generic<int, unsigned char, ops::isnan_op>(
+        const int*, unsigned char*, size_t, ops::isnan_op, cudaStream_t);
+    template void launch_unary_op_generic<float, unsigned char, ops::isinf_op>(
+        const float*, unsigned char*, size_t, ops::isinf_op, cudaStream_t);
+    template void launch_unary_op_generic<int, unsigned char, ops::isinf_op>(
+        const int*, unsigned char*, size_t, ops::isinf_op, cudaStream_t);
+    template void launch_unary_op_generic<float, unsigned char, ops::isfinite_op>(
+        const float*, unsigned char*, size_t, ops::isfinite_op, cudaStream_t);
+    template void launch_unary_op_generic<int, unsigned char, ops::isfinite_op>(
+        const int*, unsigned char*, size_t, ops::isfinite_op, cudaStream_t);
+    template void launch_unary_op_generic<unsigned char, unsigned char, ops::isnan_op>(
+        const unsigned char*, unsigned char*, size_t, ops::isnan_op, cudaStream_t);
+    template void launch_unary_op_generic<unsigned char, unsigned char, ops::isinf_op>(
+        const unsigned char*, unsigned char*, size_t, ops::isinf_op, cudaStream_t);
+    template void launch_unary_op_generic<unsigned char, unsigned char, ops::isfinite_op>(
+        const unsigned char*, unsigned char*, size_t, ops::isfinite_op, cudaStream_t);
+
     // Basic binary operations (same input/output type - comprehensive list)
     template void launch_binary_op_generic<float, float, ops::add_op>(
         const float*, const float*, float*, size_t, ops::add_op, cudaStream_t);
