@@ -115,6 +115,28 @@ namespace lfs::python {
         return scene_->addGroup(name, parent);
     }
 
+    int32_t PyScene::add_splat(const std::string& name,
+                               const PyTensor& means,
+                               const PyTensor& sh0,
+                               const PyTensor& shN,
+                               const PyTensor& scaling,
+                               const PyTensor& rotation,
+                               const PyTensor& opacity,
+                               int sh_degree,
+                               float scene_scale,
+                               int32_t parent) {
+        auto splat = std::make_unique<core::SplatData>(
+            sh_degree,
+            means.tensor().clone(),
+            sh0.tensor().clone(),
+            shN.tensor().clone(),
+            scaling.tensor().clone(),
+            rotation.tensor().clone(),
+            opacity.tensor().clone(),
+            scene_scale);
+        return scene_->addSplat(name, std::move(splat), parent);
+    }
+
     void PyScene::remove_node(const std::string& name, bool keep_children) {
         scene_->removeNode(name, keep_children);
     }
@@ -346,6 +368,34 @@ namespace lfs::python {
             // Node CRUD
             .def("add_group", &PyScene::add_group,
                  nb::arg("name"), nb::arg("parent") = vis::NULL_NODE)
+            .def("add_splat", &PyScene::add_splat,
+                 nb::arg("name"),
+                 nb::arg("means"),
+                 nb::arg("sh0"),
+                 nb::arg("shN"),
+                 nb::arg("scaling"),
+                 nb::arg("rotation"),
+                 nb::arg("opacity"),
+                 nb::arg("sh_degree") = 0,
+                 nb::arg("scene_scale") = 1.0f,
+                 nb::arg("parent") = vis::NULL_NODE,
+                 R"doc(Add a new splat node from tensor data.
+
+Args:
+    name: Node name in scene graph
+    means: Position tensor [N, 3]
+    sh0: Base SH color [N, 1, 3]
+    shN: Higher SH coefficients [N, K, 3] or empty
+    scaling: Log-scale factors [N, 3]
+    rotation: Quaternions [N, 4] (wxyz)
+    opacity: Logit opacity [N, 1]
+    sh_degree: SH degree (0 for RGB only)
+    scene_scale: Scene scale factor
+    parent: Parent node ID (-1 for root)
+
+Returns:
+    Node ID of created splat
+)doc")
             .def("remove_node", &PyScene::remove_node,
                  nb::arg("name"), nb::arg("keep_children") = false)
             .def("rename_node", &PyScene::rename_node,

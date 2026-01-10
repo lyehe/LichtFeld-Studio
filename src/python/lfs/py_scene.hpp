@@ -196,6 +196,16 @@ namespace lfs::python {
 
         // Node CRUD
         int32_t add_group(const std::string& name, int32_t parent = vis::NULL_NODE);
+        int32_t add_splat(const std::string& name,
+                          const PyTensor& means,
+                          const PyTensor& sh0,
+                          const PyTensor& shN,
+                          const PyTensor& scaling,
+                          const PyTensor& rotation,
+                          const PyTensor& opacity,
+                          int sh_degree,
+                          float scene_scale,
+                          int32_t parent = vis::NULL_NODE);
         void remove_node(const std::string& name, bool keep_children = false);
         bool rename_node(const std::string& old_name, const std::string& new_name);
         void clear() { scene_->clear(); }

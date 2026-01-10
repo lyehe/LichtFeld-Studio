@@ -290,6 +290,9 @@ namespace lfs::vis::gui::panels {
         script_thread_ = std::thread([this, code]() {
             const PyGILState_STATE gil = PyGILState_Ensure();
 
+            // Install output redirect (for capturing print statements)
+            lfs::python::install_output_redirect();
+
             // Store thread ID for interrupt support
             script_thread_id_ = PyThreadState_Get()->thread_id;
 
