@@ -55,6 +55,10 @@ namespace lfs::python {
             nb::arg("name"), "Get plugin error");
 
         plugins.def(
+            "get_traceback", [](const std::string& name) { return get_plugin_manager().attr("get_traceback")(name); },
+            nb::arg("name"), "Get plugin error traceback");
+
+        plugins.def(
             "install",
             [](const std::string& url, const bool auto_load) {
                 return nb::cast<std::string>(get_plugin_manager().attr("install")(url, nb::none(), auto_load));
