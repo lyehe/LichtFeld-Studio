@@ -73,7 +73,7 @@ namespace lfs::rendering {
 
         // Create shader for coordinate axes rendering (with geometry shader for equirectangular seam culling)
         auto result = load_shader_with_geometry("coordinate_axes", "coordinate_axes.vert",
-                                                 "coordinate_axes.geom", "coordinate_axes.frag", false);
+                                                "coordinate_axes.geom", "coordinate_axes.frag", false);
         if (!result) {
             LOG_ERROR("Failed to load coordinate axes shader: {}", result.error().what());
             return std::unexpected(result.error().what());

@@ -22,7 +22,7 @@ namespace lfs::rendering {
 
         // Create shader with geometry shader for equirectangular seam culling
         auto result = load_shader_with_geometry("point_cloud", "point_cloud.vert",
-                                                 "point_cloud.geom", "point_cloud.frag", false);
+                                                "point_cloud.geom", "point_cloud.frag", false);
         if (!result) {
             LOG_ERROR("Failed to load point cloud shader: {}", result.error().what());
             return std::unexpected(result.error().what());
