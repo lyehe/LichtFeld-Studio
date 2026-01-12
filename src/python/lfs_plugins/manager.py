@@ -1,23 +1,50 @@
 # SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Plugin Manager - discovery, loading, lifecycle."""
+"""Plugin manager for discovery, loading, and lifecycle."""
 
-import sys
-import threading
 import importlib.util
+import logging
+import sys
+import tarfile
+import tempfile
+import threading
 import traceback
+import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Callable
+from typing import Callable, Dict, List, Optional
 
+from .errors import PluginError, PluginVersionError
+from .installer import PluginInstaller, clone_from_url, uninstall_plugin, update_plugin
 from .plugin import PluginInfo, PluginInstance, PluginState
-from .installer import PluginInstaller, clone_from_url, update_plugin, uninstall_plugin
+from .registry import RegistryClient, RegistryPluginInfo, RegistryVersionInfo
 from .watcher import PluginWatcher
-from .errors import PluginError
 
 try:
     import tomllib
 except ImportError:
     import tomli as tomllib
+
+try:
+    from packaging.version import Version
+except ImportError:
+    Version = None
+
+_log = logging.getLogger(__name__)
+
+LICHTFELD_VERSION = "1.0.0"
+MODULE_PREFIX = "lfs_plugins"
+
+
+@contextmanager
+def _isolated_import_path(paths: List[Path]):
+    """Temporarily prepend paths to sys.path."""
+    original = sys.path.copy()
+    try:
+        sys.path = [str(p) for p in paths] + original
+        yield
+    finally:
+        sys.path = original
 
 
 class PluginManager:
@@ -32,6 +59,7 @@ class PluginManager:
         self._watcher: Optional[PluginWatcher] = None
         self._on_plugin_loaded: List[Callable] = []
         self._on_plugin_unloaded: List[Callable] = []
+        self._registry: Optional[RegistryClient] = None
 
     @classmethod
     def instance(cls) -> "PluginManager":
@@ -45,20 +73,26 @@ class PluginManager:
     def plugins_dir(self) -> Path:
         return self._plugins_dir
 
+    @property
+    def registry(self) -> RegistryClient:
+        """Lazy-initialized registry client."""
+        if self._registry is None:
+            self._registry = RegistryClient()
+        return self._registry
+
     def discover(self) -> List[PluginInfo]:
         """Scan plugins directory for valid plugins."""
-        plugins = []
         if not self._plugins_dir.exists():
             self._plugins_dir.mkdir(parents=True, exist_ok=True)
-            return plugins
+            return []
 
+        plugins = []
         for entry in self._plugins_dir.iterdir():
             if entry.is_dir() and (entry / "plugin.toml").exists():
                 try:
-                    info = self._parse_manifest(entry)
-                    plugins.append(info)
-                except Exception:
-                    pass  # Skip invalid plugins
+                    plugins.append(self._parse_manifest(entry))
+                except Exception as e:
+                    _log.warning("Skipping invalid plugin '%s': %s", entry.name, e)
         return plugins
 
     def _parse_manifest(self, plugin_dir: Path) -> PluginInfo:
@@ -96,6 +130,8 @@ class PluginManager:
         if not plugin:
             raise PluginError(f"Plugin '{name}' not found")
 
+        self._check_version_compatibility(plugin, name)
+
         try:
             plugin.state = PluginState.INSTALLING
             installer = PluginInstaller(plugin)
@@ -122,25 +158,33 @@ class PluginManager:
             plugin.error_traceback = traceback.format_exc()
             return False
 
+    def _check_version_compatibility(self, plugin: PluginInstance, name: str):
+        """Raise PluginVersionError if plugin requires newer LichtFeld."""
+        if not plugin.info.min_lichtfeld_version or Version is None:
+            return
+        required = Version(plugin.info.min_lichtfeld_version)
+        current = Version(LICHTFELD_VERSION)
+        if current < required:
+            raise PluginVersionError(f"Plugin '{name}' requires LichtFeld >= {required}, but you have {current}")
+
     def _load_module(self, plugin: PluginInstance):
         """Import plugin module with path isolation."""
-        original_path = sys.path.copy()
-        try:
-            venv_site = self._get_venv_site_packages(plugin)
-            if venv_site and venv_site.exists():
-                sys.path.insert(0, str(venv_site))
-            sys.path.insert(0, str(plugin.info.path))
+        paths = []
+        venv_site = self._get_venv_site_packages(plugin)
+        if venv_site and venv_site.exists():
+            paths.append(venv_site)
+        paths.append(plugin.info.path)
 
+        module_name = f"{MODULE_PREFIX}.{plugin.info.name}"
+
+        with _isolated_import_path(paths):
             entry_file = plugin.info.path / f"{plugin.info.entry_point}.py"
-            spec = importlib.util.spec_from_file_location(plugin.info.name, entry_file)
+            spec = importlib.util.spec_from_file_location(module_name, entry_file)
             assert spec is not None and spec.loader is not None
             module = importlib.util.module_from_spec(spec)
-            sys.modules[plugin.info.name] = module
+            sys.modules[module_name] = module
             spec.loader.exec_module(module)
             plugin.module = module
-
-        finally:
-            sys.path[:] = original_path
 
     def _get_venv_site_packages(self, plugin: PluginInstance) -> Optional[Path]:
         """Get site-packages path for plugin venv."""
@@ -148,6 +192,7 @@ class PluginManager:
         if not venv or not venv.exists():
             return None
 
+        # Unix layout
         lib_dir = venv / "lib"
         if lib_dir.exists():
             for d in lib_dir.iterdir():
@@ -158,10 +203,7 @@ class PluginManager:
 
         # Windows layout
         sp = venv / "Lib" / "site-packages"
-        if sp.exists():
-            return sp
-
-        return None
+        return sp if sp.exists() else None
 
     def unload(self, name: str) -> bool:
         """Unload a plugin."""
@@ -173,8 +215,8 @@ class PluginManager:
             if plugin.module and hasattr(plugin.module, "on_unload"):
                 plugin.module.on_unload()
 
-            if plugin.info.name in sys.modules:
-                del sys.modules[plugin.info.name]
+            module_name = f"{MODULE_PREFIX}.{plugin.info.name}"
+            sys.modules.pop(module_name, None)
 
             plugin.module = None
             plugin.state = PluginState.UNLOADED
@@ -196,35 +238,25 @@ class PluginManager:
 
     def load_all(self) -> Dict[str, bool]:
         """Load all discovered plugins with auto_start=True."""
-        results = {}
-        for info in self.discover():
-            if info.auto_start:
-                results[info.name] = self.load(info.name)
-        return results
+        return {info.name: self.load(info.name) for info in self.discover() if info.auto_start}
 
     def list_loaded(self) -> List[str]:
         """List names of loaded plugins."""
-        return [
-            name for name, p in self._plugins.items() if p.state == PluginState.ACTIVE
-        ]
+        return [name for name, p in self._plugins.items() if p.state == PluginState.ACTIVE]
 
     def get_info(self, name: str) -> Optional[PluginInfo]:
-        """Get plugin info by name."""
         plugin = self._plugins.get(name)
         return plugin.info if plugin else None
 
     def get_state(self, name: str) -> Optional[PluginState]:
-        """Get plugin state by name."""
         plugin = self._plugins.get(name)
         return plugin.state if plugin else None
 
     def get_error(self, name: str) -> Optional[str]:
-        """Get plugin error message if any."""
         plugin = self._plugins.get(name)
         return plugin.error if plugin else None
 
     def get_traceback(self, name: str) -> Optional[str]:
-        """Get plugin error traceback if any."""
         plugin = self._plugins.get(name)
         return plugin.error_traceback if plugin else None
 
@@ -249,62 +281,23 @@ class PluginManager:
             self._watcher = None
 
     def on_plugin_loaded(self, callback: Callable):
-        """Register callback for plugin load events."""
         self._on_plugin_loaded.append(callback)
 
     def on_plugin_unloaded(self, callback: Callable):
-        """Register callback for plugin unload events."""
         self._on_plugin_unloaded.append(callback)
 
-    def install(
-        self,
-        url: str,
-        on_progress: Optional[Callable[[str], None]] = None,
-        auto_load: bool = True,
-    ) -> str:
-        """Install a plugin from GitHub URL.
-
-        Args:
-            url: GitHub URL or shorthand (github:owner/repo, owner/repo)
-            on_progress: Optional progress callback
-            auto_load: Whether to load the plugin after installation
-
-        Returns:
-            Name of the installed plugin
-        """
+    def install(self, url: str, on_progress: Optional[Callable[[str], None]] = None, auto_load: bool = True) -> str:
+        """Install a plugin from GitHub URL."""
         plugin_dir = clone_from_url(url, self._plugins_dir, on_progress)
         info = self._parse_manifest(plugin_dir)
-
         if auto_load:
             self.load(info.name, on_progress)
-
         return info.name
 
-    def update(
-        self,
-        name: str,
-        on_progress: Optional[Callable[[str], None]] = None,
-    ) -> bool:
-        """Update a plugin by pulling latest from git.
-
-        Args:
-            name: Plugin name
-            on_progress: Optional progress callback
-
-        Returns:
-            True if updated successfully
-        """
+    def update(self, name: str, on_progress: Optional[Callable[[str], None]] = None) -> bool:
+        """Update a plugin by pulling latest from git."""
         plugin = self._plugins.get(name)
-        if plugin:
-            plugin_dir = plugin.info.path
-        else:
-            # Try to find by discovering plugins
-            for info in self.discover():
-                if info.name == name:
-                    plugin_dir = info.path
-                    break
-            else:
-                raise PluginError(f"Plugin '{name}' not found")
+        plugin_dir = plugin.info.path if plugin else self._find_plugin_dir(name)
 
         was_loaded = plugin and plugin.state == PluginState.ACTIVE
         if was_loaded:
@@ -314,18 +307,10 @@ class PluginManager:
 
         if was_loaded:
             self.load(name, on_progress)
-
         return True
 
     def uninstall(self, name: str) -> bool:
-        """Uninstall a plugin by removing its directory.
-
-        Args:
-            name: Plugin name
-
-        Returns:
-            True if uninstalled successfully
-        """
+        """Uninstall a plugin by removing its directory."""
         plugin = self._plugins.get(name)
         if plugin:
             if plugin.state == PluginState.ACTIVE:
@@ -333,12 +318,112 @@ class PluginManager:
             plugin_dir = plugin.info.path
             del self._plugins[name]
         else:
-            # Try to find by discovering plugins
-            for info in self.discover():
-                if info.name == name:
-                    plugin_dir = info.path
-                    break
-            else:
-                raise PluginError(f"Plugin '{name}' not found")
+            plugin_dir = self._find_plugin_dir(name)
 
         return uninstall_plugin(plugin_dir)
+
+    def _find_plugin_dir(self, name: str) -> Path:
+        """Find plugin directory by name."""
+        for info in self.discover():
+            if info.name == name:
+                return info.path
+        raise PluginError(f"Plugin '{name}' not found")
+
+    def search(self, query: str, compatible_only: bool = True) -> List[RegistryPluginInfo]:
+        """Search plugin registry."""
+        return self.registry.search(query, compatible_only, LICHTFELD_VERSION)
+
+    def install_from_registry(
+        self,
+        plugin_id: str,
+        version: Optional[str] = None,
+        on_progress: Optional[Callable[[str], None]] = None,
+        auto_load: bool = True,
+    ) -> str:
+        """Install plugin from registry."""
+        version_info = self.registry.resolve_version(plugin_id, version, LICHTFELD_VERSION)
+
+        if version_info.git_ref:
+            plugin_data = self.registry.get_plugin(plugin_id)
+            repo_url = plugin_data.get("repository", "")
+            if repo_url:
+                return self.install(f"{repo_url}@{version_info.git_ref}", on_progress, auto_load)
+
+        if version_info.download_url:
+            return self._install_from_tarball(plugin_id, version_info, on_progress, auto_load)
+
+        raise PluginError(f"No download method available for {plugin_id}")
+
+    def _install_from_tarball(
+        self,
+        plugin_id: str,
+        version_info: RegistryVersionInfo,
+        on_progress: Optional[Callable[[str], None]],
+        auto_load: bool,
+    ) -> str:
+        """Install plugin from tarball URL."""
+        _, name = self.registry._parse_id(plugin_id)
+
+        if on_progress:
+            on_progress(f"Downloading {name}...")
+
+        req = urllib.request.Request(version_info.download_url, headers={"User-Agent": "LichtFeld-PluginManager/1.0"})
+
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+                tmp.write(resp.read())
+                tmp_path = Path(tmp.name)
+
+        try:
+            if version_info.checksum and not self.registry.verify_checksum(tmp_path, version_info.checksum):
+                raise PluginError(f"Checksum verification failed for {name}")
+
+            target_dir = self._plugins_dir / name
+            if target_dir.exists():
+                raise PluginError(f"Plugin directory already exists: {target_dir}")
+
+            if on_progress:
+                on_progress(f"Extracting {name}...")
+
+            self._extract_tarball(tmp_path, target_dir)
+
+            info = self._parse_manifest(target_dir)
+            if auto_load:
+                self.load(info.name, on_progress)
+
+            return info.name
+
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def _extract_tarball(self, src: Path, dest: Path):
+        """Extract tarball, stripping top-level directory if present."""
+        with tarfile.open(src, "r:gz") as tar:
+            members = tar.getmembers()
+            if not members:
+                return
+
+            # Check if all files are under a common prefix
+            first_part = members[0].name.split("/")[0] if "/" in members[0].name else None
+            strip_prefix = first_part and all(m.name.startswith(f"{first_part}/") for m in members if m.name)
+
+            for member in members:
+                if strip_prefix and member.name.startswith(f"{first_part}/"):
+                    member.name = member.name[len(first_part) + 1 :]
+                if member.name:
+                    tar.extract(member, dest)
+
+    def check_updates(self) -> Dict[str, tuple]:
+        """Check for available updates. Returns {name: (current, available)}."""
+        updates = {}
+        for info in self.discover():
+            try:
+                registry_info = self.registry.get_plugin(info.name)
+                latest = registry_info.get("latest_version", "0.0.0")
+                if Version is not None and Version(latest) > Version(info.version):
+                    updates[info.name] = (info.version, latest)
+                elif Version is None and latest != info.version:
+                    updates[info.name] = (info.version, latest)
+            except Exception:
+                pass
+        return updates

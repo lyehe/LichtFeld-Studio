@@ -74,6 +74,24 @@ namespace lfs::python {
             [](const std::string& name) { return nb::cast<bool>(get_plugin_manager().attr("uninstall")(name)); },
             nb::arg("name"), "Uninstall plugin");
 
+        plugins.def(
+            "search", [](const std::string& query) { return get_plugin_manager().attr("search")(query); },
+            nb::arg("query"), "Search plugin registry");
+
+        plugins.def(
+            "install_from_registry",
+            [](const std::string& plugin_id, const std::string& version, const bool auto_load) {
+                nb::object ver = version.empty() ? nb::none() : nb::cast(version);
+                return nb::cast<std::string>(
+                    get_plugin_manager().attr("install_from_registry")(plugin_id, ver, nb::none(), auto_load));
+            },
+            nb::arg("plugin_id"), nb::arg("version") = "", nb::arg("auto_load") = true,
+            "Install plugin from registry");
+
+        plugins.def(
+            "check_updates", []() { return get_plugin_manager().attr("check_updates")(); },
+            "Check for plugin updates");
+
         try {
             nb::module_::import_("lfs_plugins").attr("register_builtin_panels")();
             get_plugin_manager().attr("load_all")();

@@ -6,16 +6,30 @@
 class PluginError(Exception):
     """Base exception for plugin errors."""
 
-    pass
-
 
 class PluginLoadError(PluginError):
     """Failed to load plugin."""
-
-    pass
 
 
 class PluginDependencyError(PluginError):
     """Failed to install dependencies."""
 
-    pass
+
+class PluginVersionError(PluginError):
+    """Plugin version incompatible with current LichtFeld."""
+
+
+class RegistryError(PluginError):
+    """Base exception for registry errors."""
+
+
+class RegistryOfflineError(RegistryError):
+    """Cannot reach registry and no cache available."""
+
+
+class PluginNotFoundError(RegistryError):
+    """Plugin not found in registry."""
+
+
+class VersionNotFoundError(RegistryError):
+    """Requested version not found."""
