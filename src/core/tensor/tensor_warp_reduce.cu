@@ -212,7 +212,7 @@ namespace lfs::core::tensor_ops {
         const bool use_vectorized) {
         constexpr size_t VECTOR_SIZE = 4;
         const size_t total_threads = gridDim.x * blockDim.x;
-        float val = -INFINITY;
+        float val = -CUDA_INFINITY;
 
         for (size_t vec_idx = blockIdx.x * blockDim.x + threadIdx.x;
              vec_idx * VECTOR_SIZE < n;
@@ -251,7 +251,7 @@ namespace lfs::core::tensor_ops {
         const bool use_vectorized) {
         constexpr size_t VECTOR_SIZE = 4;
         const size_t total_threads = gridDim.x * blockDim.x;
-        float val = INFINITY;
+        float val = CUDA_INFINITY;
 
         for (size_t vec_idx = blockIdx.x * blockDim.x + threadIdx.x;
              vec_idx * VECTOR_SIZE < n;
@@ -434,7 +434,7 @@ namespace lfs::core::tensor_ops {
              seg_idx += gridDim.x * warps_per_block) {
             const float* segment_start = input + seg_idx * segment_size;
 
-            float val = -INFINITY;
+            float val = -CUDA_INFINITY;
             if (can_vectorize) {
                 const size_t num_float4s = segment_size / 4;
                 for (size_t base = 0; base < num_float4s; base += 32) {
@@ -476,7 +476,7 @@ namespace lfs::core::tensor_ops {
              seg_idx += gridDim.x * warps_per_block) {
             const float* segment_start = input + seg_idx * segment_size;
 
-            float val = INFINITY;
+            float val = CUDA_INFINITY;
             if (can_vectorize) {
                 const size_t num_float4s = segment_size / 4;
                 for (size_t base = 0; base < num_float4s; base += 32) {
@@ -615,7 +615,7 @@ namespace lfs::core::tensor_ops {
         for (size_t seg_idx = global_tid; seg_idx < num_segments; seg_idx += stride) {
             const float* segment_start = input + seg_idx * segment_size;
 
-            float max_val = -INFINITY;
+            float max_val = -CUDA_INFINITY;
 #pragma unroll 8
             for (size_t i = 0; i < segment_size; ++i) {
                 max_val = fmaxf(max_val, segment_start[i]);
@@ -639,7 +639,7 @@ namespace lfs::core::tensor_ops {
         for (size_t seg_idx = global_tid; seg_idx < num_segments; seg_idx += stride) {
             const float* segment_start = input + seg_idx * segment_size;
 
-            float min_val = INFINITY;
+            float min_val = CUDA_INFINITY;
 #pragma unroll 8
             for (size_t i = 0; i < segment_size; ++i) {
                 min_val = fminf(min_val, segment_start[i]);
@@ -781,7 +781,7 @@ namespace lfs::core::tensor_ops {
             size_t outer_idx = out_idx / inner_size;
             size_t inner_idx = out_idx % inner_size;
 
-            float max_val = -INFINITY;
+            float max_val = -CUDA_INFINITY;
             size_t base_idx = outer_idx * reduce_size * inner_size + inner_idx;
 
             // OPTIMIZATION: Unroll 8× for better ILP
@@ -892,7 +892,7 @@ namespace lfs::core::tensor_ops {
             size_t outer_idx = out_idx / inner_size;
             size_t inner_idx = out_idx % inner_size;
 
-            float min_val = INFINITY;
+            float min_val = CUDA_INFINITY;
             size_t base_idx = outer_idx * reduce_size * inner_size + inner_idx;
 
             // OPTIMIZATION: Unroll 8× for better ILP
