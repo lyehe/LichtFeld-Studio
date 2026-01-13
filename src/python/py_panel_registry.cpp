@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "py_panel_registry.hpp"
-#include <Python.h>
 
 namespace lfs::python {
 
@@ -14,48 +13,30 @@ namespace lfs::python {
         GetPanelNamesCallback g_panel_names_callback;
         CleanupCallback g_cleanup_callback;
 
-        void set_scene_context_internal(lfs::vis::Scene* scene) {
-            if (!scene)
-                return;
-            if (!Py_IsInitialized())
-                return;
+        // Operation context (short-lived, per-call)
+        void* g_scene_for_python = nullptr;
 
-            PyGILState_STATE gil = PyGILState_Ensure();
-            PyObject* lf_module = PyImport_ImportModule("lichtfeld");
-            if (lf_module) {
-                PyObject* set_ctx = PyObject_GetAttrString(lf_module, "_set_scene_context");
-                if (set_ctx && PyCallable_Check(set_ctx)) {
-                    PyObject* capsule = PyCapsule_New(scene, nullptr, nullptr);
-                    if (capsule) {
-                        PyObject* args = PyTuple_Pack(1, capsule);
-                        PyObject_Call(set_ctx, args, nullptr);
-                        Py_DECREF(args);
-                        Py_DECREF(capsule);
-                    }
-                }
-                Py_XDECREF(set_ctx);
-                Py_DECREF(lf_module);
-            }
-            PyGILState_Release(gil);
-        }
-
-        void clear_scene_context_internal() {
-            if (!Py_IsInitialized())
-                return;
-
-            PyGILState_STATE gil = PyGILState_Ensure();
-            PyObject* lf_module = PyImport_ImportModule("lichtfeld");
-            if (lf_module) {
-                PyObject* clear_ctx = PyObject_GetAttrString(lf_module, "_clear_scene_context");
-                if (clear_ctx && PyCallable_Check(clear_ctx)) {
-                    PyObject_CallNoArgs(clear_ctx);
-                }
-                Py_XDECREF(clear_ctx);
-                Py_DECREF(lf_module);
-            }
-            PyGILState_Release(gil);
-        }
+        // Application context (long-lived, persists while model is loaded)
+        ApplicationSceneContext g_app_scene_context;
     } // namespace
+
+    // Operation context (short-lived)
+    void set_scene_for_python(void* scene) { g_scene_for_python = scene; }
+    void* get_scene_for_python() { return g_scene_for_python; }
+
+    // Application context (long-lived)
+    void ApplicationSceneContext::set(vis::Scene* scene) {
+        scene_.store(scene);
+        generation_.fetch_add(1);
+    }
+
+    vis::Scene* ApplicationSceneContext::get() const { return scene_.load(); }
+
+    uint64_t ApplicationSceneContext::generation() const { return generation_.load(); }
+
+    void set_application_scene(vis::Scene* scene) { g_app_scene_context.set(scene); }
+
+    vis::Scene* get_application_scene() { return g_app_scene_context.get(); }
 
     void set_panel_draw_callback(DrawPanelsCallback cb) {
         g_draw_callback = std::move(cb);
@@ -91,17 +72,11 @@ namespace lfs::python {
         }
     }
 
-    void draw_python_panels(PanelSpace space, lfs::vis::Scene* scene) {
+    void draw_python_panels(PanelSpace space, lfs::vis::Scene* /* scene */) {
         if (!g_draw_callback)
             return;
-
-        if (scene) {
-            set_scene_context_internal(scene);
-        }
+        // No guard needed - panels use persistent application scene context
         g_draw_callback(space);
-        if (scene) {
-            clear_scene_context_internal();
-        }
     }
 
     bool has_python_panels(PanelSpace space) {
@@ -118,17 +93,11 @@ namespace lfs::python {
         return {};
     }
 
-    void draw_python_panel(const std::string& name, lfs::vis::Scene* scene) {
+    void draw_python_panel(const std::string& name, lfs::vis::Scene* /* scene */) {
         if (!g_draw_single_callback)
             return;
-
-        if (scene) {
-            set_scene_context_internal(scene);
-        }
+        // No guard needed - panels use persistent application scene context
         g_draw_single_callback(name);
-        if (scene) {
-            clear_scene_context_internal();
-        }
     }
 
 } // namespace lfs::python

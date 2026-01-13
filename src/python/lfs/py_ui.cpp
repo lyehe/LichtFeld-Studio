@@ -5,13 +5,17 @@
 #include "py_ui.hpp"
 #include "control/command_api.hpp"
 #include "core/event_bridge/command_center_bridge.hpp"
+#include "core/events.hpp"
 #include "core/logger.hpp"
 #include "core/property_registry.hpp"
 #include "gui/utils/windows_utils.hpp"
 #include "py_params.hpp"
 #include "python/ui_hooks.hpp"
+#include "visualizer/core/editor_context.hpp"
 #include "visualizer/theme/theme.hpp"
 
+#include <algorithm>
+#include <unordered_map>
 #include <imgui.h>
 
 namespace lfs::python {
@@ -1155,6 +1159,36 @@ namespace lfs::python {
             },
             nb::arg("title") = "Select Folder", nb::arg("start_dir") = "",
             "Open a folder selection dialog. Returns empty string if cancelled.");
+
+        m.def(
+            "set_tool",
+            [](const std::string& tool_name) {
+                using lfs::vis::ToolType;
+
+                static const std::unordered_map<std::string, ToolType> TOOL_MAP = {
+                    {"none", ToolType::None},
+                    {"selection", ToolType::Selection},
+                    {"translate", ToolType::Translate},
+                    {"rotate", ToolType::Rotate},
+                    {"scale", ToolType::Scale},
+                    {"mirror", ToolType::Mirror},
+                    {"brush", ToolType::Brush},
+                    {"align", ToolType::Align},
+                    {"cropbox", ToolType::CropBox},
+                };
+
+                std::string lower_name = tool_name;
+                std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                               [](const unsigned char c) { return std::tolower(c); });
+
+                const auto it = TOOL_MAP.find(lower_name);
+                if (it == TOOL_MAP.end()) {
+                    throw std::invalid_argument("Unknown tool: " + tool_name);
+                }
+
+                lfs::core::events::tools::SetToolbarTool{.tool_mode = static_cast<int>(it->second)}.emit();
+            },
+            nb::arg("tool"), "Switch to a toolbar tool (none, selection, translate, rotate, scale, mirror, brush, align, cropbox)");
 
         // Register callbacks for the visualizer to call into the Python panel system
         set_panel_draw_callback([](PanelSpace space) {

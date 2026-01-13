@@ -86,4 +86,37 @@ namespace lfs::python {
 
     void update_python_path();
 
+    struct CapabilityResult {
+        bool success = false;
+        std::string result_json;
+        std::string error;
+    };
+
+    struct CapabilityInfo {
+        std::string name;
+        std::string description;
+        std::string plugin_name;
+    };
+
+    /**
+     * @brief Invoke a registered plugin capability by name.
+     * @param name Capability name (e.g., "selection.by_text").
+     * @param args_json JSON string of arguments.
+     * @return Result with JSON result or error.
+     */
+    CapabilityResult invoke_capability(const std::string& name, const std::string& args_json);
+
+    /**
+     * @brief Check if a capability is registered.
+     * @param name Capability name.
+     * @return true if the capability exists.
+     */
+    bool has_capability(const std::string& name);
+
+    /**
+     * @brief List all registered capabilities.
+     * @return Vector of capability info.
+     */
+    std::vector<CapabilityInfo> list_capabilities();
+
 } // namespace lfs::python

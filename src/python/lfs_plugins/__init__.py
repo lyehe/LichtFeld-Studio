@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """LichtFeld Plugin System."""
 
+from .capabilities import Capability, CapabilityRegistry, CapabilitySchema
+from .context import CapabilityBroker, PluginContext, SceneContext, ViewContext
 from .errors import (
     PluginDependencyError,
     PluginError,
@@ -16,6 +18,9 @@ from .manager import PluginManager
 from .panels import PluginManagerPanel, register_builtin_panels
 from .plugin import PluginInfo, PluginInstance, PluginState
 from .registry import RegistryClient, RegistryPluginInfo, RegistryVersionInfo
+from .settings import PluginSettings, SettingsManager
+from .templates import create_plugin
+from .utils import cleanup_torch_model, get_gpu_memory, log_gpu_memory
 
 __all__ = [
     "PluginManager",
@@ -35,4 +40,17 @@ __all__ = [
     "RegistryVersionInfo",
     "PluginManagerPanel",
     "register_builtin_panels",
+    "Capability",
+    "CapabilityRegistry",
+    "CapabilitySchema",
+    "PluginContext",
+    "SceneContext",
+    "ViewContext",
+    "CapabilityBroker",
+    "PluginSettings",
+    "SettingsManager",
+    "create_plugin",
+    "get_gpu_memory",
+    "log_gpu_memory",
+    "cleanup_torch_model",
 ]

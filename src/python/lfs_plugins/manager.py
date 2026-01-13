@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from .capabilities import CapabilityRegistry
 from .errors import PluginError, PluginVersionError
 from .installer import PluginInstaller, clone_from_url, uninstall_plugin, update_plugin
 from .plugin import PluginInfo, PluginInstance, PluginState
@@ -156,6 +157,7 @@ class PluginManager:
             plugin.state = PluginState.ERROR
             plugin.error = str(e)
             plugin.error_traceback = traceback.format_exc()
+            _log.error("load(%s) failed: %s\n%s", name, e, plugin.error_traceback)
             return False
 
     def _check_version_compatibility(self, plugin: PluginInstance, name: str):
@@ -215,8 +217,13 @@ class PluginManager:
             if plugin.module and hasattr(plugin.module, "on_unload"):
                 plugin.module.on_unload()
 
-            module_name = f"{MODULE_PREFIX}.{plugin.info.name}"
-            sys.modules.pop(module_name, None)
+            CapabilityRegistry.instance().unregister_all_for_plugin(name)
+
+            # Remove main module and all submodules from cache
+            module_prefix = f"{MODULE_PREFIX}.{plugin.info.name}"
+            to_remove = [m for m in sys.modules if m == module_prefix or m.startswith(f"{module_prefix}.")]
+            for m in to_remove:
+                sys.modules.pop(m, None)
 
             plugin.module = None
             plugin.state = PluginState.UNLOADED
@@ -232,13 +239,85 @@ class PluginManager:
             return False
 
     def reload(self, name: str) -> bool:
-        """Hot reload a plugin."""
-        self.unload(name)
-        return self.load(name)
+        """Hot reload a plugin.
+
+        Note: PyTorch models cannot be safely unloaded (corrupts shared CUDA context).
+        This reload keeps old models in memory - will leak GPU memory on each reload.
+        Restart the application to fully reclaim memory.
+        """
+        from .utils import get_gpu_memory
+
+        plugin = self._plugins.get(name)
+        if not plugin or plugin.state != PluginState.ACTIVE:
+            return self.load(name)
+
+        mem_before = get_gpu_memory()
+
+        try:
+            # Call on_unload first
+            if plugin.module and hasattr(plugin.module, "on_unload"):
+                plugin.module.on_unload()
+
+            CapabilityRegistry.instance().unregister_all_for_plugin(name)
+
+            # Reload all submodules first (in reverse order), then main module
+            module_prefix = f"{MODULE_PREFIX}.{plugin.info.name}"
+            submodules = [m for m in sys.modules if m.startswith(f"{module_prefix}.")]
+            submodules.sort(reverse=True)  # Deepest first
+
+            for submod in submodules:
+                try:
+                    importlib.reload(sys.modules[submod])
+                except Exception as e:
+                    _log.warning(f"Failed to reload submodule {submod}: {e}")
+
+            # Reload main module
+            if module_prefix in sys.modules:
+                importlib.reload(sys.modules[module_prefix])
+                plugin.module = sys.modules[module_prefix]
+
+            # Call on_load
+            if hasattr(plugin.module, "on_load"):
+                plugin.module.on_load()
+
+            self._update_file_mtimes(plugin)
+
+            for cb in self._on_plugin_loaded:
+                cb(plugin.info)
+
+            # Warn about memory leak
+            mem_after = get_gpu_memory()
+            growth_mb = (mem_after - mem_before) / (1024 * 1024)
+            if growth_mb > 10:
+                _log.warning(
+                    f"Plugin '{name}' reload: GPU +{growth_mb:.0f}MB "
+                    "(PyTorch models leak on reload - restart app to reclaim)"
+                )
+
+            return True
+
+        except Exception as e:
+            plugin.state = PluginState.ERROR
+            plugin.error = str(e)
+            plugin.error_traceback = traceback.format_exc()
+            _log.error("reload(%s) failed: %s", name, e)
+            return False
 
     def load_all(self) -> Dict[str, bool]:
         """Load all discovered plugins with auto_start=True."""
-        return {info.name: self.load(info.name) for info in self.discover() if info.auto_start}
+        discovered = self.discover()
+        _log.info("load_all: discovered %d plugins: %s", len(discovered), [p.name for p in discovered])
+        results = {}
+        for info in discovered:
+            if info.auto_start:
+                _log.info("load_all: loading %s (auto_start=True)", info.name)
+                success = self.load(info.name)
+                results[info.name] = success
+                if not success:
+                    plugin = self._plugins.get(info.name)
+                    if plugin and plugin.error:
+                        _log.error("load_all: %s failed: %s", info.name, plugin.error)
+        return results
 
     def list_loaded(self) -> List[str]:
         """List names of loaded plugins."""

@@ -18,6 +18,7 @@
 #include "gui/panels/gizmo_toolbar.hpp"
 #include "io/loader.hpp"
 #include "rendering/rendering_manager.hpp"
+#include "python/py_panel_registry.hpp"
 #include "training/checkpoint.hpp"
 #include "training/trainer.hpp"
 #include "training/training_manager.hpp"
@@ -246,6 +247,8 @@ namespace lfs::vis {
                 .type = file_type,
                 .num_gaussians = scene_.getTotalGaussianCount()}
                 .emit();
+
+            python::set_application_scene(&scene_);
 
             state::PLYAdded{
                 .name = name,
@@ -1068,6 +1071,8 @@ namespace lfs::vis {
                 .num_gaussians = num_gaussians}
                 .emit();
 
+            python::set_application_scene(&scene_);
+
             emitSceneChanged();
 
             if ((num_gaussians > 0 || num_points > 0) && services().trainerOrNull() && services().trainerOrNull()->getTrainer()) {
@@ -1174,6 +1179,8 @@ namespace lfs::vis {
                 .type = state::SceneLoaded::Type::Dataset,
                 .num_gaussians = num_gaussians}
                 .emit();
+
+            python::set_application_scene(&scene_);
 
             state::DatasetLoadCompleted{
                 .path = path,
@@ -1323,6 +1330,8 @@ namespace lfs::vis {
                 .checkpoint_iteration = checkpoint_iteration}
                 .emit();
 
+            python::set_application_scene(&scene_);
+
             emitSceneChanged();
 
             ui::PointCloudModeChanged{.enabled = false, .voxel_size = DEFAULT_VOXEL_SIZE}.emit();
@@ -1350,6 +1359,7 @@ namespace lfs::vis {
             services().trainerOrNull()->clearTrainer();
         }
 
+        python::set_application_scene(nullptr);
         scene_.clear();
 
         {

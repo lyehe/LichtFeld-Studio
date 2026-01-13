@@ -103,6 +103,74 @@ sys.stderr = OutputCapture(True)
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
     static PyThreadState* g_main_thread_state = nullptr;
+    static bool g_plugins_loaded = false;
+
+    static void ensure_plugins_loaded() {
+        if (g_plugins_loaded)
+            return;
+        g_plugins_loaded = true;
+
+        PyObject* lf = PyImport_ImportModule("lichtfeld");
+        if (!lf) {
+            PyErr_Print();
+            LOG_ERROR("Failed to import lichtfeld for plugin loading");
+            return;
+        }
+
+        PyObject* lfs_plugins = PyImport_ImportModule("lfs_plugins");
+        if (lfs_plugins) {
+            PyObject* register_fn = PyObject_GetAttrString(lfs_plugins, "register_builtin_panels");
+            if (register_fn) {
+                PyObject* result = PyObject_CallNoArgs(register_fn);
+                if (!result) {
+                    PyErr_Print();
+                    LOG_ERROR("Failed to register builtin panels");
+                } else {
+                    Py_DECREF(result);
+                }
+                Py_DECREF(register_fn);
+            }
+            Py_DECREF(lfs_plugins);
+        }
+
+        PyObject* plugins = PyObject_GetAttrString(lf, "plugins");
+        if (plugins) {
+            PyObject* load_all = PyObject_GetAttrString(plugins, "load_all");
+            if (load_all) {
+                PyObject* results = PyObject_CallNoArgs(load_all);
+                if (results && PyDict_Check(results)) {
+                    PyObject* key;
+                    PyObject* value;
+                    Py_ssize_t pos = 0;
+                    while (PyDict_Next(results, &pos, &key, &value)) {
+                        const char* name = PyUnicode_AsUTF8(key);
+                        if (PyObject_IsTrue(value)) {
+                            LOG_INFO("Loaded plugin: {}", name ? name : "<unknown>");
+                        } else {
+                            LOG_ERROR("Failed to load plugin: {}", name ? name : "<unknown>");
+                            PyObject* get_traceback = PyObject_GetAttrString(plugins, "get_traceback");
+                            if (get_traceback) {
+                                PyObject* tb = PyObject_CallOneArg(get_traceback, key);
+                                if (tb && !Py_IsNone(tb) && PyUnicode_Check(tb)) {
+                                    LOG_ERROR("Traceback:\n{}", PyUnicode_AsUTF8(tb));
+                                }
+                                Py_XDECREF(tb);
+                                Py_DECREF(get_traceback);
+                            }
+                        }
+                    }
+                } else if (!results) {
+                    PyErr_Print();
+                    LOG_ERROR("Plugin load_all() failed");
+                }
+                Py_XDECREF(results);
+                Py_DECREF(load_all);
+            }
+            Py_DECREF(plugins);
+        }
+
+        Py_DECREF(lf);
+    }
 #endif
 
     std::filesystem::path get_user_packages_dir() {
@@ -279,6 +347,9 @@ sys.stderr = OutputCapture(True)
             Py_DECREF(lf_module);
             LOG_INFO("Successfully pre-imported lichtfeld module");
         }
+
+        // Load plugins after lichtfeld is fully imported
+        ensure_plugins_loaded();
 
         for (const auto& script : scripts) {
             if (!std::filesystem::exists(script)) {
@@ -502,6 +573,194 @@ def _lfs_format_code(code):
             cb(dt);
 #endif
         }
+    }
+
+    CapabilityResult invoke_capability(const std::string& name, const std::string& args_json) {
+#ifndef LFS_BUILD_PYTHON_BINDINGS
+        return {false, "", "Python bindings disabled"};
+#else
+        ensure_initialized();
+        const PyGILState_STATE gil = PyGILState_Ensure();
+        CapabilityResult result;
+
+        PyObject* lichtfeld = PyImport_ImportModule("lichtfeld");
+        if (!lichtfeld) {
+            PyErr_Print();
+            PyGILState_Release(gil);
+            return {false, "", "Failed to import lichtfeld"};
+        }
+        Py_DECREF(lichtfeld);
+
+        ensure_plugins_loaded();
+
+        PyObject* lfs_plugins = PyImport_ImportModule("lfs_plugins");
+        if (!lfs_plugins) {
+            PyErr_Print();
+            PyGILState_Release(gil);
+            return {false, "", "Failed to import lfs_plugins"};
+        }
+
+        PyObject* registry_class = PyObject_GetAttrString(lfs_plugins, "CapabilityRegistry");
+        if (!registry_class) {
+            Py_DECREF(lfs_plugins);
+            PyGILState_Release(gil);
+            return {false, "", "CapabilityRegistry not found"};
+        }
+
+        PyObject* instance_method = PyObject_GetAttrString(registry_class, "instance");
+        PyObject* registry = PyObject_CallNoArgs(instance_method);
+        Py_DECREF(instance_method);
+        Py_DECREF(registry_class);
+
+        if (!registry) {
+            Py_DECREF(lfs_plugins);
+            PyGILState_Release(gil);
+            return {false, "", "Failed to get capability registry instance"};
+        }
+
+        PyObject* json_module = PyImport_ImportModule("json");
+        PyObject* loads = PyObject_GetAttrString(json_module, "loads");
+        PyObject* dumps = PyObject_GetAttrString(json_module, "dumps");
+        PyObject* py_args_str = PyUnicode_FromString(args_json.c_str());
+        PyObject* args_dict = PyObject_CallOneArg(loads, py_args_str);
+        Py_DECREF(py_args_str);
+
+        if (!args_dict) {
+            PyErr_Clear();
+            args_dict = PyDict_New();
+        }
+
+        PyObject* invoke_method = PyObject_GetAttrString(registry, "invoke");
+        PyObject* py_name = PyUnicode_FromString(name.c_str());
+        PyObject* py_result = PyObject_CallFunctionObjArgs(invoke_method, py_name, args_dict, nullptr);
+        Py_DECREF(py_name);
+        Py_DECREF(args_dict);
+        Py_DECREF(invoke_method);
+
+        if (py_result && PyDict_Check(py_result)) {
+            PyObject* success = PyDict_GetItemString(py_result, "success");
+            result.success = success && PyObject_IsTrue(success);
+
+            if (!result.success) {
+                PyObject* error = PyDict_GetItemString(py_result, "error");
+                if (error && PyUnicode_Check(error)) {
+                    result.error = PyUnicode_AsUTF8(error);
+                }
+            }
+
+            PyObject* json_str = PyObject_CallOneArg(dumps, py_result);
+            if (json_str) {
+                result.result_json = PyUnicode_AsUTF8(json_str);
+                Py_DECREF(json_str);
+            }
+            Py_DECREF(py_result);
+        } else {
+            if (PyErr_Occurred())
+                PyErr_Print();
+            result = {false, "", "Capability invocation failed"};
+        }
+
+        Py_DECREF(dumps);
+        Py_DECREF(loads);
+        Py_DECREF(json_module);
+        Py_DECREF(registry);
+        Py_DECREF(lfs_plugins);
+        PyGILState_Release(gil);
+        return result;
+#endif
+    }
+
+    bool has_capability(const std::string& name) {
+#ifndef LFS_BUILD_PYTHON_BINDINGS
+        return false;
+#else
+        ensure_initialized();
+        const PyGILState_STATE gil = PyGILState_Ensure();
+        bool result = false;
+
+        PyObject* lfs_plugins = PyImport_ImportModule("lfs_plugins");
+        if (lfs_plugins) {
+            PyObject* registry_class = PyObject_GetAttrString(lfs_plugins, "CapabilityRegistry");
+            if (registry_class) {
+                PyObject* instance_method = PyObject_GetAttrString(registry_class, "instance");
+                PyObject* registry = PyObject_CallNoArgs(instance_method);
+                if (registry) {
+                    PyObject* has_method = PyObject_GetAttrString(registry, "has");
+                    PyObject* py_name = PyUnicode_FromString(name.c_str());
+                    PyObject* py_result = PyObject_CallOneArg(has_method, py_name);
+                    if (py_result) {
+                        result = PyObject_IsTrue(py_result);
+                        Py_DECREF(py_result);
+                    }
+                    Py_DECREF(py_name);
+                    Py_DECREF(has_method);
+                    Py_DECREF(registry);
+                }
+                Py_DECREF(instance_method);
+                Py_DECREF(registry_class);
+            }
+            Py_DECREF(lfs_plugins);
+        }
+
+        PyGILState_Release(gil);
+        return result;
+#endif
+    }
+
+    std::vector<CapabilityInfo> list_capabilities() {
+        std::vector<CapabilityInfo> result;
+#ifndef LFS_BUILD_PYTHON_BINDINGS
+        return result;
+#else
+        ensure_initialized();
+        const PyGILState_STATE gil = PyGILState_Ensure();
+
+        PyObject* lfs_plugins = PyImport_ImportModule("lfs_plugins");
+        if (lfs_plugins) {
+            PyObject* registry_class = PyObject_GetAttrString(lfs_plugins, "CapabilityRegistry");
+            if (registry_class) {
+                PyObject* instance_method = PyObject_GetAttrString(registry_class, "instance");
+                PyObject* registry = PyObject_CallNoArgs(instance_method);
+                if (registry) {
+                    PyObject* list_method = PyObject_GetAttrString(registry, "list_all");
+                    PyObject* caps = PyObject_CallNoArgs(list_method);
+                    if (caps && PyList_Check(caps)) {
+                        const Py_ssize_t n = PyList_Size(caps);
+                        for (Py_ssize_t i = 0; i < n; ++i) {
+                            PyObject* cap = PyList_GetItem(caps, i);
+                            CapabilityInfo info;
+
+                            PyObject* name = PyObject_GetAttrString(cap, "name");
+                            if (name && PyUnicode_Check(name))
+                                info.name = PyUnicode_AsUTF8(name);
+                            Py_XDECREF(name);
+
+                            PyObject* desc = PyObject_GetAttrString(cap, "description");
+                            if (desc && PyUnicode_Check(desc))
+                                info.description = PyUnicode_AsUTF8(desc);
+                            Py_XDECREF(desc);
+
+                            PyObject* plugin = PyObject_GetAttrString(cap, "plugin_name");
+                            if (plugin && PyUnicode_Check(plugin))
+                                info.plugin_name = PyUnicode_AsUTF8(plugin);
+                            Py_XDECREF(plugin);
+
+                            result.push_back(info);
+                        }
+                        Py_DECREF(caps);
+                    }
+                    Py_DECREF(list_method);
+                    Py_DECREF(registry);
+                }
+                Py_DECREF(instance_method);
+                Py_DECREF(registry_class);
+            }
+            Py_DECREF(lfs_plugins);
+        }
+
+        PyGILState_Release(gil);
+        return result;
+#endif
     }
 
 } // namespace lfs::python

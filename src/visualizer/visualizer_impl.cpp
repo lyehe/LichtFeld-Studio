@@ -10,6 +10,7 @@
 #include "core/logger.hpp"
 #include "core/path_utils.hpp"
 #include "core/services.hpp"
+#include "python/py_panel_registry.hpp"
 #include "python/runner.hpp"
 #include "scene/scene_manager.hpp"
 #include "tools/align_tool.hpp"
@@ -332,6 +333,59 @@ namespace lfs::vis {
             if (rendering_manager_) {
                 rendering_manager_->setOutputScreenPositions(true);
             }
+
+            // Set up view callback for Python rendering API
+            vis::set_view_callback([this]() -> std::optional<vis::ViewInfo> {
+                if (!rendering_manager_)
+                    return std::nullopt;
+
+                const auto& settings = rendering_manager_->getSettings();
+                const auto R = viewport_.getRotationMatrix();
+                const auto T = viewport_.getTranslation();
+
+                vis::ViewInfo info;
+                for (int i = 0; i < 3; ++i)
+                    for (int j = 0; j < 3; ++j)
+                        info.rotation[i * 3 + j] = R[j][i];
+                info.translation = {T.x, T.y, T.z};
+                info.width = viewport_.windowSize.x;
+                info.height = viewport_.windowSize.y;
+                info.fov = settings.fov;
+                return info;
+            });
+
+            // Set up viewport render callback for Python rendering API
+            vis::set_viewport_render_callback([this]() -> std::optional<vis::ViewportRender> {
+                if (!rendering_manager_)
+                    return std::nullopt;
+
+                const auto& result = rendering_manager_->getCachedResult();
+                if (!result.valid || !result.image)
+                    return std::nullopt;
+
+                return vis::ViewportRender{result.image, result.screen_positions};
+            });
+
+            // Set up generic capability invocation callback (runs on IPC thread, waits for main thread)
+            selection_server_->setInvokeCapabilityCallback(
+                [this](const std::string& name, const std::string& args) -> CapabilityInvokeResult {
+                    std::mutex mtx;
+                    std::condition_variable cv;
+                    CapabilityInvokeResult result;
+                    bool done = false;
+
+                    // Queue request for main thread
+                    {
+                        std::lock_guard lock(capability_request_mutex_);
+                        pending_capability_request_ = CapabilityRequest{name, args, &result, &mtx, &cv, &done};
+                    }
+
+                    // Wait for main thread to process
+                    std::unique_lock lock(mtx);
+                    cv.wait(lock, [&done] { return done; });
+
+                    return result;
+                });
         }
 
         // Create selection service
@@ -350,6 +404,23 @@ namespace lfs::vis {
         // Process MCP selection commands from the IPC server
         if (selection_server_) {
             selection_server_->process_pending_commands();
+        }
+
+        // Process pending capability request from IPC thread
+        {
+            std::lock_guard lock(capability_request_mutex_);
+            if (pending_capability_request_) {
+                auto& req = *pending_capability_request_;
+                *req.result = processCapabilityRequest(req.name, req.args);
+
+                // Signal completion
+                {
+                    std::lock_guard done_lock(*req.mtx);
+                    *req.done = true;
+                }
+                req.cv->notify_one();
+                pending_capability_request_.reset();
+            }
         }
 
         if (gui_manager_) {
@@ -847,6 +918,24 @@ namespace lfs::vis {
 
     void VisualizerImpl::handleSwitchToLatestCheckpoint() {
         LOG_WARN("Switch to latest checkpoint not implemented without project management");
+    }
+
+    CapabilityInvokeResult VisualizerImpl::processCapabilityRequest(const std::string& name, const std::string& args) {
+        LOG_INFO("processCapabilityRequest: {} args={}", name, args);
+
+        if (!scene_manager_) {
+            LOG_WARN("processCapabilityRequest: scene_manager_ is NULL");
+            return {false, "", "No scene available"};
+        }
+
+        python::SceneContextGuard ctx(&scene_manager_->getScene());
+        auto result = python::invoke_capability(name, args);
+
+        if (result.success && rendering_manager_) {
+            rendering_manager_->markDirty();
+        }
+
+        return {result.success, result.result_json, result.error};
     }
 
 } // namespace lfs::vis

@@ -10,6 +10,7 @@
 #include "core/image_io.hpp"
 #include "core/logger.hpp"
 #include "io/exporter.hpp"
+#include "python/runner.hpp"
 #include "rendering/gs_rasterizer_tensor.hpp"
 #include "rendering/rasterizer/rasterization/include/rasterization_api_tensor.h"
 #include "training/checkpoint.hpp"
@@ -831,6 +832,58 @@ namespace lfs::mcp {
                 scene->setSelectionMask(empty_mask);
 
                 return json{{"success", true}};
+            });
+
+        registry.register_tool(
+            McpTool{
+                .name = "plugin.invoke",
+                .description = "Invoke a plugin capability by name. Use plugin.list to see available capabilities.",
+                .input_schema = {
+                    .type = "object",
+                    .properties = json{
+                        {"capability", json{{"type", "string"}, {"description", "Capability name (e.g., 'selection.by_text')"}}},
+                        {"args", json{{"type", "object"}, {"description", "Arguments to pass to the capability"}}}},
+                    .required = {"capability"}}},
+            [](const json& args) -> json {
+                const auto capability = args.value("capability", "");
+                if (capability.empty()) {
+                    return json{{"error", "Missing capability name"}};
+                }
+
+                SelectionClient client;
+                if (!client.is_gui_running()) {
+                    return json{{"error", "GUI not running"}};
+                }
+
+                const std::string args_json = args.contains("args") ? args["args"].dump() : "{}";
+                auto result = client.invoke_capability(capability, args_json);
+                if (!result) {
+                    return json{{"error", result.error()}};
+                }
+
+                if (!result->success) {
+                    return json{{"success", false}, {"error", result->error}};
+                }
+
+                try {
+                    return json::parse(result->result_json);
+                } catch (...) {
+                    return json{{"success", true}};
+                }
+            });
+
+        registry.register_tool(
+            McpTool{
+                .name = "plugin.list",
+                .description = "List all registered plugin capabilities",
+                .input_schema = {.type = "object", .properties = json::object(), .required = {}}},
+            [](const json&) -> json {
+                auto capabilities = python::list_capabilities();
+                json result = json::array();
+                for (const auto& cap : capabilities) {
+                    result.push_back({{"name", cap.name}, {"description", cap.description}, {"plugin", cap.plugin_name}});
+                }
+                return json{{"success", true}, {"capabilities", result}};
             });
 
         registry.register_tool(

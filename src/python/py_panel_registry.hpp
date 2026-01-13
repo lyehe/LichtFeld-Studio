@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -42,5 +44,36 @@ namespace lfs::python {
     bool has_python_panels(PanelSpace space);
     std::vector<std::string> get_python_panel_names(PanelSpace space);
     void invoke_python_cleanup();
+
+    // Operation context for Python code (short-lived, per-call)
+    void set_scene_for_python(void* scene);
+    void* get_scene_for_python();
+
+    // RAII guard for operation context (used for capability invocations)
+    class SceneContextGuard {
+    public:
+        explicit SceneContextGuard(void* scene) { set_scene_for_python(scene); }
+        ~SceneContextGuard() { set_scene_for_python(nullptr); }
+
+        SceneContextGuard(const SceneContextGuard&) = delete;
+        SceneContextGuard& operator=(const SceneContextGuard&) = delete;
+        SceneContextGuard(SceneContextGuard&&) = delete;
+        SceneContextGuard& operator=(SceneContextGuard&&) = delete;
+    };
+
+    // Application scene context (long-lived, persists while model is loaded)
+    class ApplicationSceneContext {
+    public:
+        void set(vis::Scene* scene);
+        vis::Scene* get() const;
+        uint64_t generation() const;
+
+    private:
+        std::atomic<vis::Scene*> scene_{nullptr};
+        std::atomic<uint64_t> generation_{0};
+    };
+
+    void set_application_scene(vis::Scene* scene);
+    vis::Scene* get_application_scene();
 
 } // namespace lfs::python

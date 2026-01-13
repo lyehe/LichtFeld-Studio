@@ -96,6 +96,7 @@ add_library(lfs_visualizer STATIC
 
         # IPC for MCP integration
         ipc/selection_server.cpp
+        ipc/view_context.cpp
 
         gui/panels/menu_bar.cpp
         gui/panels/menu_bar.hpp

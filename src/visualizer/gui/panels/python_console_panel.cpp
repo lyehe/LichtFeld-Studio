@@ -23,6 +23,7 @@
 
 #include "core/services.hpp"
 #include "python/package_manager.hpp"
+#include "python/py_panel_registry.hpp"
 #include "python/runner.hpp"
 #include "scene/scene_manager.hpp"
 
@@ -296,46 +297,16 @@ namespace lfs::vis::gui::panels {
             // Store thread ID for interrupt support
             script_thread_id_ = PyThreadState_Get()->thread_id;
 
-            // Import lichtfeld and inject scene context
+            // Set scene context for Python code
             lfs::vis::Scene* scene = nullptr;
             if (auto* sm = lfs::vis::services().sceneOrNull()) {
                 scene = &sm->getScene();
             }
 
-            if (scene) {
-                PyObject* lf_module = PyImport_ImportModule("lichtfeld");
-                if (lf_module) {
-                    PyObject* set_ctx = PyObject_GetAttrString(lf_module, "_set_scene_context");
-                    if (set_ctx && PyCallable_Check(set_ctx)) {
-                        PyObject* capsule = PyCapsule_New(scene, nullptr, nullptr);
-                        if (capsule) {
-                            PyObject* args = PyTuple_Pack(1, capsule);
-                            PyObject_Call(set_ctx, args, nullptr);
-                            Py_DECREF(args);
-                            Py_DECREF(capsule);
-                        }
-                    }
-                    Py_XDECREF(set_ctx);
-                    Py_DECREF(lf_module);
-                }
-            }
-
+            lfs::python::SceneContextGuard ctx(scene);
             const int result = PyRun_SimpleString(code.c_str());
             if (result != 0) {
                 PyErr_Print();
-            }
-
-            // Clear scene context
-            if (scene) {
-                PyObject* lf_module = PyImport_ImportModule("lichtfeld");
-                if (lf_module) {
-                    PyObject* clear_ctx = PyObject_GetAttrString(lf_module, "_clear_scene_context");
-                    if (clear_ctx && PyCallable_Check(clear_ctx)) {
-                        PyObject_CallNoArgs(clear_ctx);
-                    }
-                    Py_XDECREF(clear_ctx);
-                    Py_DECREF(lf_module);
-                }
             }
 
             script_thread_id_ = 0;

@@ -485,9 +485,6 @@ namespace lfs::vis::tools {
         depth_filter_enabled_ = false;
 
         if (tool_context_) {
-            if (auto* const sm = tool_context_->getSceneManager()) {
-                sm->getScene().resetSelectionState();
-            }
             if (auto* const rm = tool_context_->getRenderingManager()) {
                 rm->setOutputScreenPositions(enabled);
                 rm->clearBrushState();

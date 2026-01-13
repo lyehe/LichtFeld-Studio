@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -28,6 +29,14 @@ struct DeselectAllCmd {};
 
 using SelectionCommand = std::variant<SelectRectCmd, ApplyMaskCmd, DeselectAllCmd>;
 
+struct CapabilityInvokeResult {
+    bool success = false;
+    std::string result_json;
+    std::string error;
+};
+
+using InvokeCapabilityCallback = std::function<CapabilityInvokeResult(const std::string& name, const std::string& args)>;
+
 class SelectionServer {
 public:
     static constexpr const char* SOCKET_PATH = "/tmp/lichtfeld-selection.sock";
@@ -43,6 +52,8 @@ public:
     [[nodiscard]] bool is_running() const { return running_; }
 
     void process_pending_commands();
+
+    void setInvokeCapabilityCallback(InvokeCapabilityCallback callback) { invoke_capability_callback_ = std::move(callback); }
 
 private:
     static constexpr size_t RECV_BUFFER_SIZE = 65536;
@@ -61,6 +72,8 @@ private:
 
     std::mutex command_queue_mutex_;
     std::queue<SelectionCommand> command_queue_;
+
+    InvokeCapabilityCallback invoke_capability_callback_;
 };
 
 } // namespace lfs::vis

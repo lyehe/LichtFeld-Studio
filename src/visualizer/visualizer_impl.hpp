@@ -20,8 +20,12 @@
 #include "visualizer/visualizer.hpp"
 #include "window/window_manager.hpp"
 #include "ipc/selection_server.hpp"
+#include "ipc/view_context.hpp"
 #include "selection/selection_service.hpp"
+#include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 
 // Forward declaration for GLFW
@@ -157,6 +161,9 @@ namespace lfs::vis {
         // Tool initialization
         void initializeTools();
 
+        // Plugin capability invocation (runs on main thread with scene context)
+        [[nodiscard]] CapabilityInvokeResult processCapabilityRequest(const std::string& name, const std::string& args);
+
         // Options
         ViewerOptions options_;
 
@@ -188,6 +195,18 @@ namespace lfs::vis {
 
         // Selection service
         std::unique_ptr<SelectionService> selection_service_;
+
+        // Capability request synchronization (IPC thread waits for main thread to process)
+        struct CapabilityRequest {
+            std::string name;
+            std::string args;
+            CapabilityInvokeResult* result = nullptr;
+            std::mutex* mtx = nullptr;
+            std::condition_variable* cv = nullptr;
+            bool* done = nullptr;
+        };
+        std::optional<CapabilityRequest> pending_capability_request_;
+        std::mutex capability_request_mutex_;
 
         // State tracking
         bool window_initialized_ = false;

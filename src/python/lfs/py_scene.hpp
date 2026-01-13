@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "core/events.hpp"
 #include "py_splat_data.hpp"
 #include "py_tensor.hpp"
 #include "visualizer/scene/scene.hpp"
@@ -253,15 +254,23 @@ namespace lfs::python {
         std::optional<PyCropBox> get_cropbox_data(int32_t cropbox_id);
         void set_cropbox_data(int32_t cropbox_id, const PyCropBox& data);
 
-        // Selection
+        // Selection (auto-invalidate + redraw for UI update)
         std::optional<PyTensor> selection_mask() const;
         void set_selection(const std::vector<size_t>& indices) {
             scene_->setSelection(indices);
+            scene_->invalidateCache();
+            core::events::state::SceneChanged{}.emit();
         }
         void set_selection_mask(const PyTensor& mask) {
             scene_->setSelectionMask(std::make_shared<core::Tensor>(mask.tensor()));
+            scene_->invalidateCache();
+            core::events::state::SceneChanged{}.emit();
         }
-        void clear_selection() { scene_->clearSelection(); }
+        void clear_selection() {
+            scene_->clearSelection();
+            scene_->invalidateCache();
+            core::events::state::SceneChanged{}.emit();
+        }
         bool has_selection() const { return scene_->hasSelection(); }
 
         // Selection groups
@@ -285,8 +294,16 @@ namespace lfs::python {
         }
         std::vector<PySelectionGroup> selection_groups() const;
         void update_selection_group_counts() { scene_->updateSelectionGroupCounts(); }
-        void clear_selection_group(uint8_t id) { scene_->clearSelectionGroup(id); }
-        void reset_selection_state() { scene_->resetSelectionState(); }
+        void clear_selection_group(uint8_t id) {
+            scene_->clearSelectionGroup(id);
+            scene_->invalidateCache();
+            core::events::state::SceneChanged{}.emit();
+        }
+        void reset_selection_state() {
+            scene_->resetSelectionState();
+            scene_->invalidateCache();
+            core::events::state::SceneChanged{}.emit();
+        }
 
         // Training data
         bool has_training_data() const { return scene_->hasTrainingData(); }
