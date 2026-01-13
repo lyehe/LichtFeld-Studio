@@ -28,6 +28,8 @@ namespace lfs::gui {
         constexpr float SKIP_ICON_SIZE = 5.0f;
         constexpr float TIMELINE_HEIGHT = 20.0f;
         constexpr float PLAYHEAD_HANDLE_SIZE = 6.0f;
+        constexpr float MIN_TICK_SPACING = 4.0f;
+        constexpr float MARKER_HEIGHT = 6.0f;
 
         [[nodiscard]] std::string formatTime(const double seconds) {
             const int mins = static_cast<int>(seconds) / 60;
@@ -81,6 +83,52 @@ namespace lfs::gui {
             if (output_dir_.empty()) {
                 output_dir_ = video_path_.parent_path() / (video_path_.stem().string() + "_frames");
             }
+        }
+    }
+
+    int VideoExtractorDialog::calculateEstimatedFrames() const {
+        if (!player_ || !player_->isOpen()) {
+            return 0;
+        }
+        const double trim_duration = static_cast<double>(trim_end_ - trim_start_);
+        if (mode_selection_ == 0) {
+            return static_cast<int>(trim_duration * static_cast<double>(fps_));
+        }
+        const double video_fps = player_->fps();
+        return static_cast<int>((trim_duration * video_fps) / frame_interval_);
+    }
+
+    void VideoExtractorDialog::renderExtractionMarkers(
+        ImDrawList* const dl, const ImVec2 pos, const float width, const float height, const double duration) {
+
+        const int frame_count = calculateEstimatedFrames();
+        if (frame_count <= 0) {
+            return;
+        }
+
+        const float dur_f = static_cast<float>(duration);
+        const float trim_start_x = pos.x + (trim_start_ / dur_f) * width;
+        const float trim_end_x = pos.x + (trim_end_ / dur_f) * width;
+        const float pixels_per_frame = (trim_end_x - trim_start_x) / static_cast<float>(frame_count);
+
+        const auto& t = lfs::vis::theme();
+        const float y_top = pos.y + height - MARKER_HEIGHT;
+        const float y_bot = pos.y + height - 1.0f;
+
+        if (pixels_per_frame >= MIN_TICK_SPACING) {
+            const ImU32 color = lfs::vis::toU32WithAlpha(t.palette.warning, 0.7f);
+            const float time_step = (mode_selection_ == 0)
+                ? 1.0f / fps_
+                : static_cast<float>(frame_interval_) / static_cast<float>(player_->fps());
+            const float px_per_sec = width / dur_f;
+
+            for (int i = 0; i < frame_count; ++i) {
+                const float x = pos.x + (trim_start_ + static_cast<float>(i) * time_step) * px_per_sec;
+                dl->AddLine(ImVec2(x, y_top), ImVec2(x, y_bot), color, 1.0f);
+            }
+        } else {
+            const ImU32 color = lfs::vis::toU32WithAlpha(t.palette.warning, 0.3f);
+            dl->AddRectFilled(ImVec2(trim_start_x, y_top), ImVec2(trim_end_x, y_bot), color);
         }
     }
 
@@ -300,6 +348,9 @@ namespace lfs::gui {
         dl->AddLine(ImVec2(trim_end_x, pos.y), ImVec2(trim_end_x, pos.y + height),
                     lfs::vis::toU32WithAlpha(t.palette.error, 0.8f), 2.0f);
 
+        // Extraction frame markers
+        renderExtractionMarkers(dl, pos, width, height, duration);
+
         // Progress bar
         const float progress = static_cast<float>(current / duration);
         const float progress_x = pos.x + progress * width;
@@ -392,16 +443,8 @@ namespace lfs::gui {
         }
 
         // Show estimated frame count
-        const double trim_duration = static_cast<double>(trim_end_ - trim_start_);
-        int estimated_frames = 0;
-        if (mode_selection_ == 0) {
-            estimated_frames = static_cast<int>(trim_duration * static_cast<double>(fps_));
-        } else {
-            const double video_fps = player_->fps();
-            estimated_frames = static_cast<int>((trim_duration * video_fps) / frame_interval_);
-        }
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(~%d frames)", estimated_frames);
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(~%d frames)", calculateEstimatedFrames());
     }
 
     void VideoExtractorDialog::renderFileSelection() {

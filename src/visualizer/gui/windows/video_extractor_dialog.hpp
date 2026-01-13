@@ -14,6 +14,9 @@
 #include <glad/glad.h>
 #include <string>
 
+struct ImDrawList;
+struct ImVec2;
+
 namespace lfs::gui {
 
 struct VideoExtractionParams {
@@ -62,6 +65,8 @@ private:
     void renderOutputSettings();
     void updatePreviewTexture();
     void openVideo(const std::filesystem::path& path);
+    void renderExtractionMarkers(ImDrawList* dl, ImVec2 pos, float width, float height, double duration);
+    [[nodiscard]] int calculateEstimatedFrames() const;
 
     std::filesystem::path video_path_;
     std::filesystem::path output_dir_;
