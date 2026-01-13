@@ -77,6 +77,9 @@ add_library(lfs_visualizer STATIC
         tools/align_tool.cpp
         tools/selection_tool.cpp
 
+        # Selection system
+        selection/selection_service.cpp
+
         # Sequencer (camera animation)
         sequencer/sequencer_controller.cpp
         sequencer/sequencer_panel.cpp
@@ -90,6 +93,10 @@ add_library(lfs_visualizer STATIC
         command/commands/sequencer_command.cpp
         command/commands/mirror_command.cpp
         command/commands/transform_command.cpp
+
+        # IPC for MCP integration
+        ipc/selection_server.cpp
+
         gui/panels/menu_bar.cpp
         gui/panels/menu_bar.hpp
         gui/utils/windows_utils.cpp

@@ -86,6 +86,7 @@ nanobind_add_module(
     lfs/py_plugins.cpp
     lfs/py_ui.cpp
     lfs/py_mcp.cpp
+    lfs/py_rendering.cpp
 )
 
 set_target_properties(lfs_py PROPERTIES
@@ -107,6 +108,7 @@ target_link_libraries(lfs_py PRIVATE
     lfs_geometry
     lfs_io
     lfs_visualizer
+    lfs_rendering       # For render_view, compute_screen_positions
     lfs_mcp
     lfs_panel_registry
     OpenImageIO::OpenImageIO

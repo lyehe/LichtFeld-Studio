@@ -4,6 +4,7 @@
 #include "mcp_training_context.hpp"
 #include "llm_client.hpp"
 #include "mcp_tools.hpp"
+#include "selection_client.hpp"
 
 #include "core/event_bridge/command_center_bridge.hpp"
 #include "core/image_io.hpp"
@@ -571,9 +572,23 @@ namespace lfs::mcp {
                         {"mode", json{{"type", "string"}, {"enum", json::array({"replace", "add", "remove"})}, {"description", "Selection mode (default: replace)"}}}},
                     .required = {"x0", "y0", "x1", "y1"}}},
             [](const json& args) -> json {
-                auto& ctx = TrainingContext::instance();
+                const float x0 = args["x0"].get<float>();
+                const float y0 = args["y0"].get<float>();
+                const float x1 = args["x1"].get<float>();
+                const float y1 = args["y1"].get<float>();
+                const std::string mode = args.value("mode", "replace");
+                const int camera_index = args.value("camera_index", 0);
 
-                int camera_index = args.value("camera_index", 0);
+                SelectionClient client;
+                if (client.is_gui_running()) {
+                    auto result = client.select_rect(x0, y0, x1, y1, mode, camera_index);
+                    if (!result) {
+                        return json{{"error", result.error()}};
+                    }
+                    return json{{"success", true}, {"via_gui", true}};
+                }
+
+                auto& ctx = TrainingContext::instance();
                 auto screen_pos_result = ctx.compute_screen_positions(camera_index);
                 if (!screen_pos_result) {
                     return json{{"error", screen_pos_result.error()}};
@@ -583,12 +598,6 @@ namespace lfs::mcp {
                 if (!scene) {
                     return json{{"error", "No scene loaded"}};
                 }
-
-                const float x0 = args["x0"].get<float>();
-                const float y0 = args["y0"].get<float>();
-                const float x1 = args["x1"].get<float>();
-                const float y1 = args["y1"].get<float>();
-                const std::string mode = args.value("mode", "replace");
 
                 const auto& screen_positions = *screen_pos_result;
                 const int64_t N = screen_positions.shape()[0];
@@ -898,6 +907,22 @@ namespace lfs::mcp {
                 const float x1 = bbox["x1"].get<float>();
                 const float y1 = bbox["y1"].get<float>();
 
+                // Try to send selection to GUI if running
+                SelectionClient selection_client;
+                if (selection_client.is_gui_running()) {
+                    auto sel_result = selection_client.select_rect(x0, y0, x1, y1, "replace", camera_index);
+                    if (!sel_result) {
+                        return json{{"error", sel_result.error()}};
+                    }
+                    json gui_response;
+                    gui_response["success"] = true;
+                    gui_response["via_gui"] = true;
+                    gui_response["bounding_box"] = bbox;
+                    gui_response["description"] = description;
+                    return gui_response;
+                }
+
+                // Fall back to headless selection
                 auto screen_pos_result = ctx.compute_screen_positions(camera_index);
                 if (!screen_pos_result) {
                     return json{{"error", screen_pos_result.error()}};

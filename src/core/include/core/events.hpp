@@ -89,6 +89,9 @@ namespace lfs::core {
             EVENT(SelectAll, );
             EVENT(CopySelection, );
             EVENT(PasteSelection, );
+            EVENT(SelectRect, float x0; float y0; float x1; float y1; int camera_index; std::string mode;);
+            EVENT(SelectByDescription, std::string description; int camera_index;);
+            EVENT(ApplySelectionMask, std::vector<uint8_t> mask;);
             // Sequencer
             EVENT(SequencerAddKeyframe, );
             EVENT(SequencerUpdateKeyframe, );  // Update selected keyframe to current camera

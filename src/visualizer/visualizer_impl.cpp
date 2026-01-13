@@ -201,6 +201,8 @@ namespace lfs::vis {
         cmd::SelectAll::when([this](const auto&) { selectAll(); });
         cmd::CopySelection::when([this](const auto&) { copySelection(); });
         cmd::PasteSelection::when([this](const auto&) { pasteSelection(); });
+        cmd::SelectRect::when([this](const auto& e) { selectRect(e.x0, e.y0, e.x1, e.y1, e.mode); });
+        cmd::ApplySelectionMask::when([this](const auto& e) { applySelectionMask(e.mask); });
 
         // NOTE: ui::RenderSettingsChanged, ui::CameraMove, state::SceneChanged,
         // ui::PointCloudModeChanged are handled by RenderingManager::setupEventHandlers()
@@ -323,12 +325,32 @@ namespace lfs::vis {
             initializeTools();
         }
 
+        // Start IPC server for MCP selection commands
+        if (!selection_server_) {
+            selection_server_ = std::make_unique<SelectionServer>();
+            selection_server_->start();
+            if (rendering_manager_) {
+                rendering_manager_->setOutputScreenPositions(true);
+            }
+        }
+
+        // Create selection service
+        if (!selection_service_) {
+            selection_service_ = std::make_unique<SelectionService>(scene_manager_.get(), rendering_manager_.get(),
+                                                                    &command_history_);
+        }
+
         fully_initialized = true;
         return true;
     }
 
     void VisualizerImpl::update() {
         window_manager_->updateWindowSize();
+
+        // Process MCP selection commands from the IPC server
+        if (selection_server_) {
+            selection_server_->process_pending_commands();
+        }
 
         if (gui_manager_) {
             const auto& size = gui_manager_->getViewportSize();
@@ -714,6 +736,26 @@ namespace lfs::vis {
 
         if (rendering_manager_)
             rendering_manager_->markDirty();
+    }
+
+    void VisualizerImpl::selectRect(float x0, float y0, float x1, float y1, const std::string& mode) {
+        if (!selection_service_)
+            return;
+
+        SelectionMode sel_mode = SelectionMode::Replace;
+        if (mode == "add")
+            sel_mode = SelectionMode::Add;
+        else if (mode == "remove")
+            sel_mode = SelectionMode::Remove;
+
+        selection_service_->selectRect(x0, y0, x1, y1, sel_mode);
+    }
+
+    void VisualizerImpl::applySelectionMask(const std::vector<uint8_t>& mask) {
+        if (!selection_service_)
+            return;
+
+        selection_service_->applyMask(mask, SelectionMode::Replace);
     }
 
     void VisualizerImpl::run() {

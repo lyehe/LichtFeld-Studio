@@ -19,6 +19,8 @@
 #include "training/training_manager.hpp"
 #include "visualizer/visualizer.hpp"
 #include "window/window_manager.hpp"
+#include "ipc/selection_server.hpp"
+#include "selection/selection_service.hpp"
 #include <memory>
 #include <string>
 
@@ -126,6 +128,8 @@ namespace lfs::vis {
         void selectAll();
         void copySelection();
         void pasteSelection();
+        void selectRect(float x0, float y0, float x1, float y1, const std::string& mode);
+        void applySelectionMask(const std::vector<uint8_t>& mask);
 
         // GUI manager
         std::unique_ptr<gui::GuiManager> gui_manager_;
@@ -178,6 +182,12 @@ namespace lfs::vis {
 
         // Centralized editor state
         EditorContext editor_context_;
+
+        // IPC for MCP selection commands
+        std::unique_ptr<SelectionServer> selection_server_;
+
+        // Selection service
+        std::unique_ptr<SelectionService> selection_service_;
 
         // State tracking
         bool window_initialized_ = false;

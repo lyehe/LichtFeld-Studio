@@ -8,6 +8,7 @@ add_library(lfs_mcp STATIC
     mcp_server.cpp
     mcp_training_context.cpp
     llm_client.cpp
+    selection_client.cpp
 )
 
 target_include_directories(lfs_mcp

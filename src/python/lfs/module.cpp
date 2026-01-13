@@ -13,6 +13,7 @@
 #include "py_packages.hpp"
 #include "py_params.hpp"
 #include "py_plugins.hpp"
+#include "py_rendering.hpp"
 #include "py_scene.hpp"
 #include "py_splat_data.hpp"
 #include "py_tensor.hpp"
@@ -377,10 +378,16 @@ namespace {
     }
 
     // Set scene context for GUI console execution
-    void set_scene_context(lfs::vis::Scene* scene) { g_console_scene = scene; }
+    void set_scene_context(lfs::vis::Scene* scene) {
+        g_console_scene = scene;
+        lfs::python::set_render_scene_context(scene);
+    }
 
     // Clear scene context after GUI console execution
-    void clear_scene_context() { g_console_scene = nullptr; }
+    void clear_scene_context() {
+        g_console_scene = nullptr;
+        lfs::python::set_render_scene_context(nullptr);
+    }
 
 } // namespace
 
@@ -534,6 +541,9 @@ NB_MODULE(lichtfeld, m) {
     lfs::python::register_splat_data(scene_module);
     lfs::python::register_scene(scene_module);
     lfs::python::register_cameras(scene_module);
+
+    // Rendering functions (render_view, compute_screen_positions, etc.)
+    lfs::python::register_rendering(m);
 
     // I/O submodule
     auto io_module = m.def_submodule("io", "File I/O operations");
