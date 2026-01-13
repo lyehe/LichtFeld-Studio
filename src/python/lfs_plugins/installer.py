@@ -147,6 +147,10 @@ def parse_github_url(url: str) -> Tuple[str, str, Optional[str]]:
         if len(parts) == 2 and not url.startswith("."):
             return parts[0], parts[1], None
 
+    # Normalize URLs without scheme (github.com/owner/repo -> https://github.com/owner/repo)
+    if url.startswith("github.com/") or url.startswith("www.github.com/"):
+        url = "https://" + url
+
     # Handle full URLs
     parsed = urlparse(url)
     if parsed.netloc not in ("github.com", "www.github.com"):
