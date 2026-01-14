@@ -30,6 +30,10 @@ using namespace lichtfeld::Strings;
 #ifdef LFS_BUILD_PYTHON_BINDINGS
 #include "python/runner.hpp"
 #include <Python.h>
+// Python.h defines PLATFORM macro that conflicts with string_keys.hpp
+#ifdef PLATFORM
+#undef PLATFORM
+#endif
 #endif
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT

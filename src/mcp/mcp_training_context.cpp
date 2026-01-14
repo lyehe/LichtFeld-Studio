@@ -601,7 +601,7 @@ namespace lfs::mcp {
                 }
 
                 const auto& screen_positions = *screen_pos_result;
-                const int64_t N = screen_positions.shape()[0];
+                const auto N = static_cast<size_t>(screen_positions.shape()[0]);
 
                 core::Tensor selection = core::Tensor::zeros({N}, core::Device::CUDA, core::DataType::UInt8);
 
@@ -682,7 +682,7 @@ namespace lfs::mcp {
 
                 const std::string mode = args.value("mode", "replace");
                 const auto& screen_positions = *screen_pos_result;
-                const int64_t N = screen_positions.shape()[0];
+                const auto N = static_cast<size_t>(screen_positions.shape()[0]);
 
                 core::Tensor selection = core::Tensor::zeros({N}, core::Device::CUDA, core::DataType::UInt8);
 
@@ -750,7 +750,7 @@ namespace lfs::mcp {
                 const float radius = args.value("radius", 20.0f);
 
                 const auto& screen_positions = *screen_pos_result;
-                const int64_t N = screen_positions.shape()[0];
+                const auto N = static_cast<size_t>(screen_positions.shape()[0]);
 
                 core::Tensor selection = core::Tensor::zeros({N}, core::Device::CUDA, core::DataType::UInt8);
                 rendering::brush_select_tensor(screen_positions, x, y, radius, selection);
@@ -826,7 +826,7 @@ namespace lfs::mcp {
                     return json{{"error", "No model loaded"}};
                 }
 
-                const int64_t N = static_cast<int64_t>(model->size());
+                const auto N = model->size();
                 auto empty_mask = std::make_shared<core::Tensor>(
                     core::Tensor::zeros({N}, core::Device::CUDA, core::DataType::UInt8));
                 scene->setSelectionMask(empty_mask);
@@ -987,7 +987,7 @@ namespace lfs::mcp {
                 }
 
                 const auto& screen_positions = *screen_pos_result;
-                const int64_t N = screen_positions.shape()[0];
+                const auto N = static_cast<size_t>(screen_positions.shape()[0]);
 
                 core::Tensor selection = core::Tensor::zeros({static_cast<size_t>(N)}, core::Device::CUDA, core::DataType::UInt8);
                 rendering::rect_select_tensor(screen_positions, x0, y0, x1, y1, selection);
