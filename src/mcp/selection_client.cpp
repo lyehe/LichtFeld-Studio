@@ -7,9 +7,14 @@
 
 #include <cstring>
 #include <nlohmann/json.hpp>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#endif
 
 namespace lfs::mcp {
 
@@ -29,9 +34,62 @@ namespace lfs::mcp {
             }
         }
 
+#ifdef _WIN32
+        std::string socket_path_to_pipe_name(const std::string& socket_path) {
+            // Convert Unix socket path to Windows named pipe
+            // /tmp/lichtfeld-selection.sock -> \\.\pipe\lichtfeld-selection
+            std::string name = socket_path;
+            if (name.find("/tmp/") == 0) {
+                name = name.substr(5);
+            }
+            auto dot_pos = name.rfind('.');
+            if (dot_pos != std::string::npos) {
+                name = name.substr(0, dot_pos);
+            }
+            return R"(\\.\pipe\)" + name;
+        }
+#endif
+
     } // namespace
 
     SelectionClient::SelectionClient(const std::string& socket_path) : socket_path_(socket_path) {}
+
+#ifdef _WIN32
+
+    bool SelectionClient::is_gui_running() const {
+        const std::string pipe_name = socket_path_to_pipe_name(socket_path_);
+        HANDLE pipe = CreateFileA(pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (pipe == INVALID_HANDLE_VALUE)
+            return false;
+        CloseHandle(pipe);
+        return true;
+    }
+
+    std::expected<std::string, std::string> SelectionClient::send_command(const std::string& json_command) {
+        const std::string pipe_name = socket_path_to_pipe_name(socket_path_);
+        HANDLE pipe = CreateFileA(pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (pipe == INVALID_HANDLE_VALUE)
+            return std::unexpected("GUI not running");
+
+        DWORD bytes_written = 0;
+        if (!WriteFile(pipe, json_command.c_str(), static_cast<DWORD>(json_command.size()), &bytes_written, nullptr)) {
+            CloseHandle(pipe);
+            return std::unexpected("Failed to send command");
+        }
+
+        char buffer[RECV_BUFFER_SIZE];
+        DWORD bytes_read = 0;
+        if (!ReadFile(pipe, buffer, sizeof(buffer) - 1, &bytes_read, nullptr) || bytes_read == 0) {
+            CloseHandle(pipe);
+            return std::unexpected("No response from GUI");
+        }
+
+        CloseHandle(pipe);
+        buffer[bytes_read] = '\0';
+        return std::string(buffer);
+    }
+
+#else
 
     bool SelectionClient::is_gui_running() const {
         const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -76,6 +134,8 @@ namespace lfs::mcp {
         buffer[bytes_read] = '\0';
         return std::string(buffer);
     }
+
+#endif
 
     std::expected<void, std::string> SelectionClient::select_rect(float x0, float y0, float x1, float y1,
                                                                   const std::string& mode, int camera_index) {

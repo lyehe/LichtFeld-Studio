@@ -8,6 +8,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <BaseTsd.h>
+using ssize_t = SSIZE_T;
 #else
 #include <sys/types.h>
 #endif

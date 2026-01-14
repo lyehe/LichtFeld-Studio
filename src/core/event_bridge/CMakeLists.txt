@@ -21,6 +21,8 @@ target_include_directories(lfs_event_bridge
 target_link_libraries(lfs_event_bridge
     PUBLIC
         CUDA::cudart
+    PRIVATE
+        spdlog::spdlog
 )
 
 target_compile_definitions(lfs_event_bridge
@@ -35,4 +37,7 @@ set_target_properties(lfs_event_bridge PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN ON
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug
 )

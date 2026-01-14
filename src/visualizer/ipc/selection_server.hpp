@@ -13,6 +13,10 @@
 #include <variant>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace lfs::vis {
 
 struct SelectRectCmd {
@@ -61,12 +65,22 @@ private:
     static constexpr int SELECT_TIMEOUT_US = 100000;
 
     void server_loop();
-    void handle_client(int client_fd);
     void queue_command(SelectionCommand cmd);
+
+#ifdef _WIN32
+    void handle_client(HANDLE client_pipe);
+    void send_response(HANDLE client_pipe, bool success, const char* error = nullptr);
+#else
+    void handle_client(int client_fd);
     void send_response(int client_fd, bool success, const char* error = nullptr);
+#endif
 
     std::string socket_path_;
+#ifdef _WIN32
+    HANDLE pipe_handle_ = INVALID_HANDLE_VALUE;
+#else
     int server_fd_ = -1;
+#endif
     std::atomic<bool> running_{false};
     std::thread server_thread_;
 

@@ -4,7 +4,7 @@
 
 #include "control_boundary.hpp"
 
-#include "core/logger.hpp"
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cuda_runtime.h>
@@ -84,7 +84,7 @@ namespace lfs::training {
         }
 
         if (cudaSetDevice(0) != cudaSuccess) {
-            LOG_ERROR("cudaSetDevice failed in hook drain");
+            spdlog::error("cudaSetDevice failed in hook drain");
             return;
         }
 
@@ -92,7 +92,7 @@ namespace lfs::training {
             try {
                 pending.cb(pending.ctx);
             } catch (...) {
-                LOG_ERROR("Hook callback threw");
+                spdlog::error("Hook callback threw");
             }
         }
     }

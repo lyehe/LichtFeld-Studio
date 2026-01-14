@@ -29,11 +29,19 @@ target_link_libraries(lfs_panel_registry
         Python::Python
 )
 
+target_compile_definitions(lfs_panel_registry
+    PRIVATE
+        LFS_PANEL_REGISTRY_EXPORTS
+)
+
 set_target_properties(lfs_panel_registry PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug
 )
 
 # Static library for other Python utilities
@@ -124,14 +132,24 @@ target_include_directories(lfs_py PRIVATE
     ${CMAKE_SOURCE_DIR}/src/visualizer
 )
 
-# Generate type stubs for IDE support
+# Multi-config generators (MSVC) output to Release/Debug subdirs - copy to parent for Python to find
+if(CMAKE_CONFIGURATION_TYPES)
+    add_custom_command(TARGET lfs_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:lfs_py>"
+            "${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:lfs_py>"
+        COMMENT "Copying $<TARGET_FILE_NAME:lfs_py> to ${CMAKE_CURRENT_BINARY_DIR}"
+    )
+endif()
+
+# Type stubs for IDE support (output to typings/ to avoid runtime conflicts)
 nanobind_add_stub(lichtfeld_stub
     MODULE lichtfeld
-    OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}
+    OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/typings
     PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS lfs_py
     RECURSIVE
-    MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/lichtfeld/py.typed
+    MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
 )
 
 # Copy lfs_plugins Python module to build directory

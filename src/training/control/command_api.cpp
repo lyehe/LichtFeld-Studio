@@ -325,7 +325,7 @@ namespace lfs::training {
                 return std::unexpected("Vector length mismatch with attribute dimension");
             }
             const std::vector<float> vec_f(vec.begin(), vec.end());
-            auto value_tensor = core::Tensor::from_vector(vec_f, {1, static_cast<int>(dim)}, tensor.device());
+            auto value_tensor = core::Tensor::from_vector(vec_f, {size_t{1}, dim}, tensor.device());
             value_tensor = value_tensor.broadcast_to(tensor.shape());
             const auto mask_float = mask_full.to(tensor.dtype());
             const auto keep = mask_full.logical_not().to(tensor.dtype());
