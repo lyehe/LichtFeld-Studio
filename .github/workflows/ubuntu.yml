@@ -57,6 +57,7 @@ jobs:
             ! -name 'libcudadevrt.a' \
             ! -name 'libnvjpeg_static.a' \
             ! -name 'libnvjpeg2k_static.a' \
+            ! -name 'libculibos.a' \
             -delete 2>/dev/null || true
           df -h
 

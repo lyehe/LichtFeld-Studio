@@ -23,6 +23,16 @@ namespace lfs::python {
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
     static std::once_flag g_py_init_once;
+
+    namespace {
+        struct EnsureInitializedRegistrar {
+            EnsureInitializedRegistrar() {
+                set_ensure_initialized_callback(ensure_initialized);
+            }
+        };
+        static EnsureInitializedRegistrar g_registrar;
+    } // namespace
+
     static std::function<void(const std::string&, bool)> g_output_callback;
     static std::mutex g_output_mutex;
 

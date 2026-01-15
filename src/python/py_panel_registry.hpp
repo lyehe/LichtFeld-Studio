@@ -39,8 +39,10 @@ namespace lfs::python {
     using HasPanelsCallback = std::function<bool(PanelSpace)>;
     using GetPanelNamesCallback = std::function<std::vector<std::string>(PanelSpace)>;
     using CleanupCallback = std::function<void()>;
+    using EnsureInitializedCallback = std::function<void()>;
 
     // Register callbacks from the Python module
+    LFS_PANEL_REGISTRY_API void set_ensure_initialized_callback(EnsureInitializedCallback cb);
     LFS_PANEL_REGISTRY_API void set_panel_draw_callback(DrawPanelsCallback cb);
     LFS_PANEL_REGISTRY_API void set_panel_draw_single_callback(DrawSinglePanelCallback cb);
     LFS_PANEL_REGISTRY_API void set_panel_has_callback(HasPanelsCallback cb);

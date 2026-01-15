@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "py_panel_registry.hpp"
-#include "runner.hpp"
 
 namespace lfs::python {
 
     namespace {
+        EnsureInitializedCallback g_ensure_initialized_callback;
         DrawPanelsCallback g_draw_callback;
         DrawSinglePanelCallback g_draw_single_callback;
         HasPanelsCallback g_has_callback;
@@ -39,6 +39,10 @@ namespace lfs::python {
 
     vis::Scene* get_application_scene() { return g_app_scene_context.get(); }
 
+    void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
+        g_ensure_initialized_callback = std::move(cb);
+    }
+
     void set_panel_draw_callback(DrawPanelsCallback cb) {
         g_draw_callback = std::move(cb);
     }
@@ -60,6 +64,7 @@ namespace lfs::python {
     }
 
     void clear_panel_callbacks() {
+        g_ensure_initialized_callback = nullptr;
         g_draw_callback = nullptr;
         g_draw_single_callback = nullptr;
         g_has_callback = nullptr;
@@ -81,9 +86,9 @@ namespace lfs::python {
     }
 
     bool has_python_panels(PanelSpace space) {
-        // Ensure Python is initialized and plugins are loaded before checking for panels
-        // This is idempotent - safe to call multiple times
-        ensure_initialized();
+        if (g_ensure_initialized_callback) {
+            g_ensure_initialized_callback();
+        }
 
         if (g_has_callback) {
             return g_has_callback(space);
@@ -92,8 +97,9 @@ namespace lfs::python {
     }
 
     std::vector<std::string> get_python_panel_names(PanelSpace space) {
-        // Ensure Python is initialized and plugins are loaded
-        ensure_initialized();
+        if (g_ensure_initialized_callback) {
+            g_ensure_initialized_callback();
+        }
 
         if (g_panel_names_callback) {
             return g_panel_names_callback(space);
