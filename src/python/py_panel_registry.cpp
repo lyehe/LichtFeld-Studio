@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "py_panel_registry.hpp"
+#include "runner.hpp"
 
 namespace lfs::python {
 
@@ -80,6 +81,10 @@ namespace lfs::python {
     }
 
     bool has_python_panels(PanelSpace space) {
+        // Ensure Python is initialized and plugins are loaded before checking for panels
+        // This is idempotent - safe to call multiple times
+        ensure_initialized();
+
         if (g_has_callback) {
             return g_has_callback(space);
         }
@@ -87,6 +92,9 @@ namespace lfs::python {
     }
 
     std::vector<std::string> get_python_panel_names(PanelSpace space) {
+        // Ensure Python is initialized and plugins are loaded
+        ensure_initialized();
+
         if (g_panel_names_callback) {
             return g_panel_names_callback(space);
         }

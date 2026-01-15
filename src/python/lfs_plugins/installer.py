@@ -85,7 +85,16 @@ class PluginInstaller:
 
     def _find_uv(self) -> Optional[Path]:
         """Find uv binary."""
-        # First check bundled location (build directory)
+        # First try to get uv path from the C++ PackageManager (most reliable)
+        try:
+            import lichtfeld
+            uv_path = lichtfeld.packages.uv_path()
+            if uv_path:
+                return Path(uv_path)
+        except (ImportError, AttributeError):
+            pass
+
+        # Fallback: check bundled location (build directory)
         exe_dir = Path(sys.executable).parent
         bundled_paths = [
             exe_dir / "bin" / "uv",

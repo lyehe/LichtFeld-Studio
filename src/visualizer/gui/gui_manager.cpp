@@ -669,16 +669,24 @@ namespace lfs::vis::gui {
             menu_bar_->render();
         }
 
+        // Check for popups/modals and text input state - used to prevent input overrides
+        // when UI elements like popups or text fields should receive input
+        const bool any_popup_or_modal_open = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+        const bool imgui_wants_input = ImGui::GetIO().WantTextInput || ImGui::GetIO().WantCaptureKeyboard;
+
         // Override ImGui's mouse capture for gizmo interaction
         // If ImGuizmo is being used or hovered, let it handle the mouse
-        if (ImGuizmo::IsOver() || ImGuizmo::IsUsing()) {
+        // But not if a popup/modal is open - those should take priority for input
+        if ((ImGuizmo::IsOver() || ImGuizmo::IsUsing()) && !any_popup_or_modal_open) {
             ImGui::GetIO().WantCaptureMouse = false;
             ImGui::GetIO().WantCaptureKeyboard = false;
         }
 
         // Override ImGui's mouse capture for right/middle buttons when in viewport
         // This ensures that camera controls work properly
-        if (mouse_in_viewport && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+        // Skip if any popup/modal is open or ImGui wants text input (e.g., input fields are focused)
+        if (mouse_in_viewport && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) &&
+            !any_popup_or_modal_open && !imgui_wants_input) {
             if (ImGui::IsMouseDown(ImGuiMouseButton_Right) ||
                 ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
                 ImGui::GetIO().WantCaptureMouse = false;
@@ -698,7 +706,8 @@ namespace lfs::vis::gui {
         if (rendering_manager) {
             const auto& settings = rendering_manager->getSettings();
             if (settings.point_cloud_mode && mouse_in_viewport &&
-                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+                !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) &&
+                !any_popup_or_modal_open && !imgui_wants_input) {
                 ImGui::GetIO().WantCaptureMouse = false;
                 ImGui::GetIO().WantCaptureKeyboard = false;
             }

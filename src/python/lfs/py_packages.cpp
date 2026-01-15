@@ -76,6 +76,14 @@ namespace lfs::python {
             "Check if uv is available");
 
         pkg.def(
+            "uv_path",
+            []() -> std::string {
+                const auto path = PackageManager::instance().uv_path();
+                return path.empty() ? "" : path.string();
+            },
+            "Get path to uv binary (empty string if not found)");
+
+        pkg.def(
             "install_torch",
             [](const std::string& cuda, const std::string& version) {
                 auto& pm = PackageManager::instance();

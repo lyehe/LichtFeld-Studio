@@ -47,6 +47,7 @@ namespace lfs::python {
         void heading(const std::string& text);
         void text_colored(const std::string& text, std::tuple<float, float, float, float> color);
         void text_selectable(const std::string& text, float height = 0);
+        void text_wrapped(const std::string& text);
         void bullet_text(const std::string& text);
 
         // Buttons

@@ -219,6 +219,12 @@ sys.stderr = OutputCapture(True)
             g_main_thread_state = PyEval_SaveThread();
             LOG_INFO("Python interpreter initialized and GIL released");
         });
+
+        // Load plugins after Python is initialized (idempotent, safe to call multiple times)
+        // This ensures builtin panels like Plugin Manager are registered
+        const PyGILState_STATE gil = PyGILState_Ensure();
+        ensure_plugins_loaded();
+        PyGILState_Release(gil);
 #endif
     }
 

@@ -89,6 +89,10 @@ namespace lfs::python {
         ImGui::BulletText("%s", text.c_str());
     }
 
+    void PyUILayout::text_wrapped(const std::string& text) {
+        ImGui::TextWrapped("%s", text.c_str());
+    }
+
     bool PyUILayout::button(const std::string& label, std::tuple<float, float> size) {
         return ImGui::Button(label.c_str(), {std::get<0>(size), std::get<1>(size)});
     }
@@ -912,6 +916,7 @@ namespace lfs::python {
             .def("heading", &PyUILayout::heading, nb::arg("text"))
             .def("text_colored", &PyUILayout::text_colored, nb::arg("text"), nb::arg("color"))
             .def("text_selectable", &PyUILayout::text_selectable, nb::arg("text"), nb::arg("height") = 0.0f)
+            .def("text_wrapped", &PyUILayout::text_wrapped, nb::arg("text"))
             .def("bullet_text", &PyUILayout::bullet_text, nb::arg("text"))
             // Buttons
             .def("button", &PyUILayout::button, nb::arg("label"), nb::arg("size") = std::make_tuple(0.0f, 0.0f))
