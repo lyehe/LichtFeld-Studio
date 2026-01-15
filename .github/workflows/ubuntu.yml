@@ -50,8 +50,9 @@ jobs:
           # CUDA extras - samples, docs, tools we don't need
           rm -rf /usr/local/cuda/nsight* /usr/local/cuda/compute-sanitizer
           rm -rf /usr/local/cuda/extras /usr/local/cuda/tools
-          rm -rf /usr/local/cuda/targets/x86_64-linux/lib/*.a
           rm -rf /usr/local/cuda/doc
+          # Remove large static libs but keep cudart_static (needed for CMake CUDA detection)
+          find /usr/local/cuda/targets/x86_64-linux/lib -name '*.a' ! -name 'libcudart_static.a' ! -name 'libcudadevrt.a' -delete 2>/dev/null || true
           df -h
 
       - name: Install build dependencies
