@@ -215,6 +215,7 @@ set(TEST_FILES
     test_python_io.cpp
     test_extended_unary_ops_vs_torch.cpp
     test_property_system.cpp
+    test_scene_validity.cpp
 )
 
 # Build test sources list

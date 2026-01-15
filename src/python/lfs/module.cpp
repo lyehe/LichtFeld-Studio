@@ -599,6 +599,13 @@ NB_MODULE(lichtfeld, m) {
         },
         "Get the current scene (None if not available)");
 
+    // Get scene generation counter for validity checking
+    m.def(
+        "get_scene_generation", []() -> uint64_t {
+            return lfs::python::get_scene_generation();
+        },
+        "Get current scene generation counter (for validity checking)");
+
     // Get train/val cameras from scene
     m.def(
         "train_cameras", []() -> std::optional<lfs::python::PyCameraDataset> {

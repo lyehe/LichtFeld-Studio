@@ -87,5 +87,6 @@ namespace lfs::python {
 
     LFS_PANEL_REGISTRY_API void set_application_scene(vis::Scene* scene);
     LFS_PANEL_REGISTRY_API vis::Scene* get_application_scene();
+    LFS_PANEL_REGISTRY_API uint64_t get_scene_generation();
 
 } // namespace lfs::python

@@ -191,9 +191,11 @@ namespace lfs::python {
     // Main scene wrapper
     class PyScene {
     public:
-        explicit PyScene(vis::Scene* scene) : scene_(scene) {
-            assert(scene_ != nullptr);
-        }
+        explicit PyScene(vis::Scene* scene);
+
+        // Thread-safe validity checking
+        bool is_valid() const;
+        uint64_t generation() const { return generation_; }
 
         // Node CRUD
         int32_t add_group(const std::string& name, int32_t parent = vis::NULL_NODE);
@@ -330,6 +332,7 @@ namespace lfs::python {
 
     private:
         vis::Scene* scene_;
+        uint64_t generation_;
     };
 
     // Register scene classes with nanobind module

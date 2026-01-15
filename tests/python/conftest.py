@@ -66,6 +66,15 @@ def benchmark_ply(test_data_dir):
 
 
 @pytest.fixture
+def test_sog():
+    """Path to test SOG file in tests/data."""
+    sog_path = PROJECT_ROOT / "tests" / "data" / "bicycle_ref.sog"
+    if not sog_path.exists():
+        pytest.skip(f"Test SOG not available: {sog_path}")
+    return sog_path
+
+
+@pytest.fixture
 def tmp_output(tmp_path):
     """Temporary directory for test outputs."""
     return tmp_path

@@ -39,6 +39,8 @@ namespace lfs::python {
 
     vis::Scene* get_application_scene() { return g_app_scene_context.get(); }
 
+    uint64_t get_scene_generation() { return g_app_scene_context.generation(); }
+
     void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
         g_ensure_initialized_callback = std::move(cb);
     }

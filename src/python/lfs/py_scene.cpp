@@ -4,6 +4,7 @@
 
 #include "py_scene.hpp"
 #include "core/events.hpp"
+#include "python/py_panel_registry.hpp"
 #include <nanobind/ndarray.h>
 
 namespace lfs::python {
@@ -112,6 +113,17 @@ namespace lfs::python {
     }
 
     // PyScene implementation
+    PyScene::PyScene(vis::Scene* scene)
+        : scene_(scene)
+        , generation_(get_scene_generation()) {
+        assert(scene_ != nullptr);
+    }
+
+    bool PyScene::is_valid() const {
+        auto* current = get_application_scene();
+        return scene_ == current && generation_ == get_scene_generation();
+    }
+
     int32_t PyScene::add_group(const std::string& name, int32_t parent) {
         return scene_->addGroup(name, parent);
     }
@@ -380,6 +392,11 @@ namespace lfs::python {
 
         // Scene class
         nb::class_<PyScene>(m, "Scene")
+            // Thread-safe validity checking
+            .def("is_valid", &PyScene::is_valid,
+                 "Check if scene reference is still valid (thread-safe)")
+            .def_prop_ro("generation", &PyScene::generation,
+                 "Generation counter when scene was acquired")
             // Node CRUD
             .def("add_group", &PyScene::add_group,
                  nb::arg("name"), nb::arg("parent") = vis::NULL_NODE)
