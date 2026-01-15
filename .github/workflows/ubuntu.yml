@@ -45,8 +45,13 @@ jobs:
         run: |
           apt-get clean
           rm -rf /var/lib/apt/lists/*
+          # Host paths (may not exist in container)
           rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache /usr/local/lib/android /opt/az
+          # CUDA extras - samples, docs, tools we don't need
           rm -rf /usr/local/cuda/nsight* /usr/local/cuda/compute-sanitizer
+          rm -rf /usr/local/cuda/extras /usr/local/cuda/tools
+          rm -rf /usr/local/cuda/targets/x86_64-linux/lib/*.a
+          rm -rf /usr/local/cuda/doc
           df -h
 
       - name: Install build dependencies
@@ -97,7 +102,8 @@ jobs:
           cmake -B build -S . -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-            -DBUILD_PYTHON_BINDINGS=ON
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DCUDA_DEVICE_DEBUG=OFF
 
       - name: Clean vcpkg buildtrees
         run: |
@@ -105,4 +111,4 @@ jobs:
           df -h
 
       - name: Build
-        run: cmake --build build -j 2
+        run: cmake --build build -j $(nproc)

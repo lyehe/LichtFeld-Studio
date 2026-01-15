@@ -301,9 +301,22 @@ configure_file(
 # Project-wide definitions
 add_definitions(-DPROJECT_ROOT_PATH="${PROJ_ROOT_DIR}")
 
+# CUDA device debugging (-G flag) generates huge object files. Disable in CI.
+option(CUDA_DEVICE_DEBUG "Enable CUDA device debugging (-G flag)" ON)
+
+if(CUDA_DEVICE_DEBUG)
+    set(LFS_CUDA_DEVICE_DEBUG_FLAGS "-G" CACHE INTERNAL "")
+else()
+    set(LFS_CUDA_DEVICE_DEBUG_FLAGS "" CACHE INTERNAL "")
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
-    set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -g -G -O0")
+    if(CUDA_DEVICE_DEBUG)
+        set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -g -G -O0")
+    else()
+        set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -g -O0")
+    endif()
 endif()
 
 # External dependencies (EXCLUDE_FROM_ALL to handle install ourselves)

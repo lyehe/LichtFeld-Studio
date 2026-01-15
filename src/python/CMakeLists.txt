@@ -143,14 +143,18 @@ if(CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Type stubs for IDE support (output to typings/ to avoid runtime conflicts)
-nanobind_add_stub(lichtfeld_stub
-    MODULE lichtfeld
-    OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/typings
-    PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS lfs_py
-    RECURSIVE
-    MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
-)
+# Disabled by default on Windows CI where CUDA DLLs aren't in Python's DLL search path
+option(BUILD_PYTHON_STUBS "Generate Python type stubs (requires loading the module)" ON)
+if(BUILD_PYTHON_STUBS)
+    nanobind_add_stub(lichtfeld_stub
+        MODULE lichtfeld
+        OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/typings
+        PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
+        DEPENDS lfs_py
+        RECURSIVE
+        MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
+    )
+endif()
 
 # Copy lfs_plugins Python module to build directory
 file(GLOB LFS_PLUGINS_FILES "${CMAKE_CURRENT_SOURCE_DIR}/lfs_plugins/*.py")
