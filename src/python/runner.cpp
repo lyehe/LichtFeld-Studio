@@ -11,6 +11,7 @@
 
 #include <core/executable_path.hpp>
 #include <core/logger.hpp>
+#include <core/path_utils.hpp>
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
 #include "py_panel_registry.hpp"
@@ -192,6 +193,16 @@ sys.stderr = OutputCapture(True)
 #ifdef LFS_BUILD_PYTHON_BINDINGS
         std::call_once(g_py_init_once, [] {
             install_output_capture();
+
+            // Set Python home to help find standard library (esp. on Windows)
+            const auto python_home = lfs::core::getPythonHome();
+            static std::wstring python_home_wstr;
+            if (!python_home.empty()) {
+                python_home_wstr = python_home.wstring();
+                Py_SetPythonHome(python_home_wstr.c_str());
+                LOG_INFO("Set Python home: {}", lfs::core::path_to_utf8(python_home));
+            }
+
             Py_Initialize();
             PyEval_InitThreads();
 
@@ -207,17 +218,23 @@ sys.stderr = OutputCapture(True)
 
             PyObject* sys_path = PySys_GetObject("path");
             if (sys_path) {
-                PyObject* py_path = PyUnicode_FromString(user_packages.string().c_str());
+                const auto user_packages_utf8 = lfs::core::path_to_utf8(user_packages);
+                PyObject* py_path = PyUnicode_FromString(user_packages_utf8.c_str());
                 PyList_Insert(sys_path, 0, py_path);
                 Py_DECREF(py_path);
-                LOG_INFO("Added user packages dir to Python path: {}", user_packages.string());
+                LOG_INFO("Added user packages dir to Python path: {}", user_packages_utf8);
 
                 const auto python_module_dir = lfs::core::getPythonModuleDir();
                 if (!python_module_dir.empty()) {
-                    PyObject* const py_mod_path = PyUnicode_FromString(python_module_dir.string().c_str());
+                    const auto python_module_dir_utf8 = lfs::core::path_to_utf8(python_module_dir);
+                    PyObject* const py_mod_path = PyUnicode_FromString(python_module_dir_utf8.c_str());
                     PyList_Insert(sys_path, 0, py_mod_path);
                     Py_DECREF(py_mod_path);
-                    LOG_INFO("Added Python module dir to path: {}", python_module_dir.string());
+                    LOG_INFO("Added Python module dir to path: {}", python_module_dir_utf8);
+                } else {
+                    const auto exe_dir_utf8 = lfs::core::path_to_utf8(lfs::core::getExecutableDir());
+                    LOG_WARN("Python module (lichtfeld.pyd) not found. Searched: {}/src/python, {}",
+                             exe_dir_utf8, exe_dir_utf8);
                 }
             }
 
@@ -307,7 +324,7 @@ sys.stderr = OutputCapture(True)
 
         PyObject* const sys_path = PySys_GetObject("path");
         if (sys_path) {
-            const auto path_str = packages.string();
+            const auto path_str = lfs::core::path_to_utf8(packages);
             PyObject* const py_path = PyUnicode_FromString(path_str.c_str());
             if (PySequence_Contains(sys_path, py_path) == 0) {
                 PyList_Insert(sys_path, 0, py_path);
@@ -339,11 +356,12 @@ sys.stderr = OutputCapture(True)
         {
             const auto python_module_dir = lfs::core::getPythonModuleDir();
             if (!python_module_dir.empty()) {
+                const auto python_module_dir_utf8 = lfs::core::path_to_utf8(python_module_dir);
                 PyObject* sys_path = PySys_GetObject("path"); // borrowed
-                PyObject* py_path = PyUnicode_FromString(python_module_dir.string().c_str());
+                PyObject* py_path = PyUnicode_FromString(python_module_dir_utf8.c_str());
                 PyList_Append(sys_path, py_path);
                 Py_DECREF(py_path);
-                LOG_DEBUG("Added {} to Python path", python_module_dir.string());
+                LOG_DEBUG("Added {} to Python path", python_module_dir_utf8);
             }
         }
 
@@ -363,36 +381,41 @@ sys.stderr = OutputCapture(True)
         ensure_plugins_loaded();
 
         for (const auto& script : scripts) {
+            const auto script_utf8 = lfs::core::path_to_utf8(script);
             if (!std::filesystem::exists(script)) {
                 PyGILState_Release(gil_state);
-                return std::unexpected(std::format("Python script not found: {}", script.string()));
+                return std::unexpected(std::format("Python script not found: {}", script_utf8));
             }
 
             // Ensure script directory is on sys.path
-            const auto parent = script.parent_path().string();
-            if (!parent.empty()) {
+            const auto parent_utf8 = lfs::core::path_to_utf8(script.parent_path());
+            if (!parent_utf8.empty()) {
                 PyObject* sys_path = PySys_GetObject("path"); // borrowed ref
-                PyObject* py_parent = PyUnicode_FromString(parent.c_str());
+                PyObject* py_parent = PyUnicode_FromString(parent_utf8.c_str());
                 if (sys_path && py_parent) {
                     PyList_Append(sys_path, py_parent);
                 }
                 Py_XDECREF(py_parent);
             }
 
-            FILE* const fp = fopen(script.string().c_str(), "r");
+#ifdef _WIN32
+            FILE* const fp = _wfopen(script.wstring().c_str(), L"r");
+#else
+            FILE* const fp = fopen(script.c_str(), "r");
+#endif
             if (!fp) {
                 PyGILState_Release(gil_state);
-                return std::unexpected(std::format("Failed to open Python script: {}", script.string()));
+                return std::unexpected(std::format("Failed to open Python script: {}", script_utf8));
             }
 
-            LOG_INFO("Executing Python script: {}", script.string());
-            const int rc = PyRun_SimpleFileEx(fp, script.string().c_str(), /*closeit=*/1);
+            LOG_INFO("Executing Python script: {}", script_utf8);
+            const int rc = PyRun_SimpleFileEx(fp, script_utf8.c_str(), /*closeit=*/1);
             if (rc != 0) {
                 PyGILState_Release(gil_state);
-                return std::unexpected(std::format("Python script failed: {} (rc={})", script.string(), rc));
+                return std::unexpected(std::format("Python script failed: {} (rc={})", script_utf8, rc));
             }
 
-            LOG_INFO("Python script completed: {}", script.string());
+            LOG_INFO("Python script completed: {}", script_utf8);
         }
 
         PyGILState_Release(gil_state);

@@ -7,10 +7,12 @@
 # Located in external/libvterm as git submodule
 
 set(LIBVTERM_SOURCE_DIR ${CMAKE_SOURCE_DIR}/external/libvterm)
-
-# Generate encoding tables (required by libvterm)
-find_package(Perl REQUIRED)
 set(LIBVTERM_ENC_DIR ${LIBVTERM_SOURCE_DIR}/src/encoding)
+
+# Generate encoding tables if not present (pre-generated in submodule)
+if(NOT EXISTS ${LIBVTERM_ENC_DIR}/DECdrawing.inc OR NOT EXISTS ${LIBVTERM_ENC_DIR}/uk.inc)
+    find_package(Perl REQUIRED)
+endif()
 
 if(NOT EXISTS ${LIBVTERM_ENC_DIR}/DECdrawing.inc)
     execute_process(

@@ -102,10 +102,20 @@ namespace lfs::core {
         const auto exe_dir = getExecutableDir();
 
         auto module_exists = [](const std::filesystem::path& dir) {
-            return std::filesystem::exists(dir / "lichtfeld.abi3.so") ||
-                   std::filesystem::exists(dir / "lichtfeld.so") ||
-                   std::filesystem::exists(dir / "lichtfeld.pyd") ||
-                   std::filesystem::exists(dir / "lichtfeld.abi3.pyd");
+            // Check various naming patterns nanobind might produce
+            for (const auto& name : {
+                "lichtfeld.abi3.so",
+                "lichtfeld.so",
+                "lichtfeld.pyd",
+                "lichtfeld.abi3.pyd",
+                "lichtfeld.cp312-win_amd64.pyd",
+                "lichtfeld.cp311-win_amd64.pyd"
+            }) {
+                if (std::filesystem::exists(dir / name)) {
+                    return true;
+                }
+            }
+            return false;
         };
 
         // Production: exe in bin/, module in ../lib/python/
@@ -117,6 +127,49 @@ namespace lfs::core {
         if (const auto dev = exe_dir / "src" / "python"; module_exists(dev)) {
             return dev;
         }
+
+        // Fallback: module in same directory as exe (Windows dev builds)
+        if (module_exists(exe_dir)) {
+            return exe_dir;
+        }
+
+        return {};
+    }
+
+    // Python home directory (for embedded Python)
+    inline std::filesystem::path getPythonHome() {
+        const auto exe_dir = getExecutableDir();
+
+#ifdef _WIN32
+        // Windows Production: exe in bin/, Python stdlib in ../lib/python3.12/
+        // Py_SetPythonHome expects the parent of lib/ on Windows too when using Unix-style layout
+        if (const auto prod = exe_dir.parent_path() / "lib" / "python3.12";
+            std::filesystem::exists(prod)) {
+            return exe_dir.parent_path();
+        }
+
+        // Windows Development (vcpkg): python in vcpkg_installed/x64-windows/tools/python3/
+        // vcpkg Python on Windows has Lib/ directly in tools/python3/
+        const auto vcpkg = exe_dir / "vcpkg_installed" / "x64-windows" / "tools" / "python3";
+        if (std::filesystem::exists(vcpkg / "python.exe")) {
+            return vcpkg;
+        }
+#else
+        // Linux Production: exe in bin/, Python stdlib in ../lib/python3.12/
+        if (const auto prod = exe_dir.parent_path() / "lib" / "python3.12";
+            std::filesystem::exists(prod)) {
+            return exe_dir.parent_path();
+        }
+
+        // Linux Development (vcpkg): python3.12 in vcpkg_installed/x64-linux/tools/python3/
+        // but stdlib is in vcpkg_installed/x64-linux/lib/python3.12/
+        const auto vcpkg_tools = exe_dir / "vcpkg_installed" / "x64-linux" / "tools" / "python3";
+        const auto vcpkg_lib = exe_dir / "vcpkg_installed" / "x64-linux" / "lib" / "python3.12";
+        if (std::filesystem::exists(vcpkg_tools / "python3.12") && std::filesystem::exists(vcpkg_lib)) {
+            // Return the prefix (parent of lib/)
+            return exe_dir / "vcpkg_installed" / "x64-linux";
+        }
+#endif
 
         return {};
     }

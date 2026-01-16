@@ -40,8 +40,10 @@ set_target_properties(lfs_panel_registry PROPERTIES
     CXX_STANDARD_REQUIRED ON
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR}
 )
 
 # Static library for other Python utilities
@@ -143,17 +145,55 @@ if(CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # Type stubs for IDE support (output to typings/ to avoid runtime conflicts)
-# Disabled by default on Windows CI where CUDA DLLs aren't in Python's DLL search path
 option(BUILD_PYTHON_STUBS "Generate Python type stubs (requires loading the module)" ON)
 if(BUILD_PYTHON_STUBS)
-    nanobind_add_stub(lichtfeld_stub
-        MODULE lichtfeld
-        OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/typings
-        PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
-        DEPENDS lfs_py
-        RECURSIVE
-        MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
-    )
+    if(WIN32)
+        # On Windows, we need to set PATH for DLL loading before running stubgen
+        # Find the stubgen script
+        get_target_property(NB_DIR nanobind-static SOURCE_DIR)
+        if(EXISTS "${NB_DIR}/src/stubgen.py")
+            set(NB_STUBGEN "${NB_DIR}/src/stubgen.py")
+        else()
+            set(NB_STUBGEN "${NB_DIR}/stubgen.py")
+        endif()
+
+        # Build PATH with all required DLL directories
+        set(STUBGEN_DLL_PATHS
+            "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin"
+            "${CMAKE_BINARY_DIR}"
+        )
+        # Add CUDA bin if available
+        if(DEFINED ENV{CUDA_PATH})
+            list(APPEND STUBGEN_DLL_PATHS "$ENV{CUDA_PATH}/bin")
+        elseif(CUDAToolkit_BIN_DIR)
+            list(APPEND STUBGEN_DLL_PATHS "${CUDAToolkit_BIN_DIR}")
+        endif()
+        list(JOIN STUBGEN_DLL_PATHS "\\;" STUBGEN_PATH_STR)
+
+        add_custom_command(
+            OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${STUBGEN_PATH_STR}\\;$ENV{PATH}"
+                    "${Python_EXECUTABLE}" "${NB_STUBGEN}"
+                    -m lichtfeld
+                    -M ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
+                    -O ${CMAKE_CURRENT_BINARY_DIR}/typings
+                    -r
+                    -P ${CMAKE_CURRENT_BINARY_DIR}
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            DEPENDS lfs_py "${NB_STUBGEN}"
+            COMMENT "Generating Python stubs for lichtfeld (Windows)"
+        )
+        add_custom_target(lichtfeld_stub ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed)
+    else()
+        nanobind_add_stub(lichtfeld_stub
+            MODULE lichtfeld
+            OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/typings
+            PYTHON_PATH ${CMAKE_CURRENT_BINARY_DIR}
+            DEPENDS lfs_py
+            RECURSIVE
+            MARKER_FILE ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
+        )
+    endif()
 endif()
 
 # Copy lfs_plugins Python module to build directory
@@ -200,4 +240,128 @@ if(BUILD_PYTHON_STUBS)
         DESTINATION "${PYTHON_INSTALL_DIR}"
         OPTIONAL  # May not exist if stub generation failed
     )
+endif()
+
+# =============================================================================
+# PORTABLE BUILD - Bundle vcpkg Python interpreter and standard library
+# =============================================================================
+if(BUILD_PORTABLE AND BUILD_PYTHON_BINDINGS)
+    message(STATUS "Portable build: bundling Python ${Python_VERSION}")
+
+    # Get vcpkg Python directories
+    get_filename_component(VCPKG_PYTHON_TOOLS_DIR "${Python_EXECUTABLE}" DIRECTORY)
+
+    if(WIN32)
+        # Windows: Python layout is tools/python3/{python.exe, Lib/, DLLs/, python312.dll}
+        # We install to lib/python3.12/ to match Linux layout for simpler getPythonHome()
+        set(VCPKG_PYTHON_STDLIB "${VCPKG_PYTHON_TOOLS_DIR}/Lib")
+        set(VCPKG_PYTHON_DLLS "${VCPKG_PYTHON_TOOLS_DIR}/DLLs")
+        set(PYTHON_INSTALL_STDLIB "${CMAKE_INSTALL_LIBDIR}/python3.12")
+
+        # Install Python executable to bin/
+        install(PROGRAMS "${Python_EXECUTABLE}"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}"
+            COMPONENT runtime
+        )
+
+        # Install python3.dll and python312.dll to bin/ (where exe is)
+        file(GLOB PYTHON_DLLS "${VCPKG_PYTHON_TOOLS_DIR}/python*.dll")
+        if(PYTHON_DLLS)
+            install(FILES ${PYTHON_DLLS}
+                DESTINATION "${CMAKE_INSTALL_BINDIR}"
+                COMPONENT runtime
+            )
+        endif()
+
+        # Also check parent dir for python DLLs (vcpkg sometimes puts them there)
+        file(GLOB PYTHON_DLLS_PARENT "${VCPKG_PYTHON_TOOLS_DIR}/../bin/python*.dll")
+        if(PYTHON_DLLS_PARENT)
+            install(FILES ${PYTHON_DLLS_PARENT}
+                DESTINATION "${CMAKE_INSTALL_BINDIR}"
+                COMPONENT runtime
+            )
+        endif()
+
+        # Install Python standard library
+        if(EXISTS "${VCPKG_PYTHON_STDLIB}")
+            install(DIRECTORY "${VCPKG_PYTHON_STDLIB}/"
+                DESTINATION "${PYTHON_INSTALL_STDLIB}"
+                COMPONENT runtime
+                PATTERN "__pycache__" EXCLUDE
+                PATTERN "*.pyc" EXCLUDE
+                PATTERN "test" EXCLUDE
+                PATTERN "tests" EXCLUDE
+                PATTERN "idle_test" EXCLUDE
+                PATTERN "tkinter" EXCLUDE
+                PATTERN "turtledemo" EXCLUDE
+            )
+            message(STATUS "  Will bundle Python stdlib from: ${VCPKG_PYTHON_STDLIB}")
+        else()
+            message(WARNING "Python stdlib not found at ${VCPKG_PYTHON_STDLIB}")
+        endif()
+
+        # Install DLLs directory (compiled extensions like _socket.pyd, etc.)
+        if(EXISTS "${VCPKG_PYTHON_DLLS}")
+            install(DIRECTORY "${VCPKG_PYTHON_DLLS}/"
+                DESTINATION "${PYTHON_INSTALL_STDLIB}/lib-dynload"
+                COMPONENT runtime
+                PATTERN "__pycache__" EXCLUDE
+            )
+        endif()
+
+    else()
+        # Linux: Python layout is tools/python3/python3.12, lib/python3.12/
+        set(VCPKG_PYTHON_STDLIB "${VCPKG_PYTHON_TOOLS_DIR}/../../lib/python3.12")
+        get_filename_component(VCPKG_PYTHON_STDLIB "${VCPKG_PYTHON_STDLIB}" ABSOLUTE)
+        set(PYTHON_INSTALL_STDLIB "${CMAKE_INSTALL_LIBDIR}/python3.12")
+
+        # Install Python executable
+        install(PROGRAMS "${Python_EXECUTABLE}"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}"
+            RENAME "python3"
+            COMPONENT runtime
+        )
+
+        # Create python3.12 symlink
+        install(CODE "
+            execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+                python3 \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/python3.12\")
+        " COMPONENT runtime)
+
+        # Install libpython if it exists (shared library builds)
+        file(GLOB PYTHON_SHARED_LIBS "${VCPKG_PYTHON_TOOLS_DIR}/../../lib/libpython3.12.so*")
+        if(PYTHON_SHARED_LIBS)
+            install(FILES ${PYTHON_SHARED_LIBS}
+                DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+                COMPONENT runtime
+            )
+        endif()
+
+        # Install Python standard library
+        if(EXISTS "${VCPKG_PYTHON_STDLIB}")
+            install(DIRECTORY "${VCPKG_PYTHON_STDLIB}/"
+                DESTINATION "${PYTHON_INSTALL_STDLIB}"
+                COMPONENT runtime
+                PATTERN "__pycache__" EXCLUDE
+                PATTERN "*.pyc" EXCLUDE
+                PATTERN "test" EXCLUDE
+                PATTERN "tests" EXCLUDE
+                PATTERN "idle_test" EXCLUDE
+                PATTERN "tkinter" EXCLUDE
+                PATTERN "turtledemo" EXCLUDE
+                PATTERN "lib-dynload" EXCLUDE
+            )
+
+            # Install lib-dynload separately (compiled extensions)
+            if(EXISTS "${VCPKG_PYTHON_STDLIB}/lib-dynload")
+                install(DIRECTORY "${VCPKG_PYTHON_STDLIB}/lib-dynload"
+                    DESTINATION "${PYTHON_INSTALL_STDLIB}"
+                    COMPONENT runtime
+                )
+            endif()
+        endif()
+    endif()
+
+    message(STATUS "  Python executable: ${Python_EXECUTABLE}")
+    message(STATUS "  Python stdlib: ${VCPKG_PYTHON_STDLIB}")
 endif()

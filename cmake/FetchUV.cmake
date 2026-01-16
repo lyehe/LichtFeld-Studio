@@ -26,7 +26,12 @@ set(UV_DOWNLOAD_URL "https://github.com/astral-sh/uv/releases/download/${UV_VERS
 set(UV_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/_deps/uv")
 set(UV_ARCHIVE_PATH "${UV_DOWNLOAD_DIR}/uv${UV_ARCHIVE_EXT}")
 set(UV_EXTRACT_DIR "${UV_DOWNLOAD_DIR}/extract")
-set(UV_BINARY_PATH "${UV_EXTRACT_DIR}/uv-${UV_PLATFORM}/${UV_BINARY_NAME}")
+# Windows zip extracts flat, Linux tar.gz extracts to subdirectory
+if(WIN32)
+    set(UV_BINARY_PATH "${UV_EXTRACT_DIR}/${UV_BINARY_NAME}")
+else()
+    set(UV_BINARY_PATH "${UV_EXTRACT_DIR}/uv-${UV_PLATFORM}/${UV_BINARY_NAME}")
+endif()
 
 # Function to download and extract uv
 function(fetch_uv)
