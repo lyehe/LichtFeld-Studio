@@ -425,16 +425,20 @@ endif()
 if(WIN32 AND BUILD_PYTHON_BINDINGS)
     get_filename_component(VCPKG_PYTHON_DIR "${Python_EXECUTABLE}" DIRECTORY)
 
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${VCPKG_PYTHON_DIR}/python3.dll"
-            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${VCPKG_PYTHON_DIR}/python312.dll"
-            "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-        COMMENT "Copying Python DLLs to executable directory"
+    # Glob python*.dll - check both tools/python3/ and parent bin/ (vcpkg layout varies)
+    file(GLOB PYTHON_RUNTIME_DLLS
+        "${VCPKG_PYTHON_DIR}/python*.dll"
+        "${VCPKG_PYTHON_DIR}/../bin/python*.dll"
     )
-    message(STATUS "Post-build: Python DLLs will be copied from ${VCPKG_PYTHON_DIR}")
+    if(PYTHON_RUNTIME_DLLS)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${PYTHON_RUNTIME_DLLS}
+                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+            COMMENT "Copying Python DLLs to executable directory"
+        )
+        message(STATUS "Post-build: Python DLLs will be copied: ${PYTHON_RUNTIME_DLLS}")
+    endif()
 endif()
 
 # Before extension post-build copying: remove stale 'extensions' file if present (prevent mkdir failure)
