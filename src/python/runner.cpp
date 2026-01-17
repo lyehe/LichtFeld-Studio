@@ -24,6 +24,7 @@ namespace lfs::python {
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
     static std::once_flag g_py_init_once;
+    static bool g_we_initialized_python = false;
 
     namespace {
         struct EnsureInitializedRegistrar {
@@ -211,14 +212,17 @@ sys.stderr = OutputCapture(True)
                 }
 
                 Py_Initialize();
+                g_we_initialized_python = true;
+                LOG_INFO("Python interpreter initialized by application");
             } else {
-                LOG_WARN("Python already initialized by external code");
+                LOG_WARN("Python already initialized by external code (e.g., .pyd loading)");
+                g_we_initialized_python = false;
             }
 
             PyEval_InitThreads();
             register_output_module_post_init();
 
-            // Add user site-packages to sys.path (before releasing GIL)
+            // Add user site-packages to sys.path
             std::filesystem::path user_packages = get_user_packages_dir();
             if (!std::filesystem::exists(user_packages)) {
                 std::error_code ec;
@@ -250,8 +254,16 @@ sys.stderr = OutputCapture(True)
                 }
             }
 
-            g_main_thread_state = PyEval_SaveThread();
-            LOG_INFO("Python interpreter initialized and GIL released");
+            // Only save thread state if we initialized Python ourselves.
+            // When Python was externally initialized (e.g., by .pyd loading on Windows),
+            // we don't own the main thread state and shouldn't try to save/restore it.
+            if (g_we_initialized_python) {
+                g_main_thread_state = PyEval_SaveThread();
+                LOG_INFO("GIL released (main thread state saved)");
+            } else {
+                g_main_thread_state = nullptr;
+                LOG_INFO("External Python init - using PyGILState for GIL management");
+            }
         });
 
         // Load plugins after Python is initialized (idempotent, safe to call multiple times)
@@ -264,43 +276,55 @@ sys.stderr = OutputCapture(True)
 
     void finalize() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        if (g_main_thread_state && Py_IsInitialized()) {
-            // Restore the main thread state (reacquire GIL)
+        if (!Py_IsInitialized()) {
+            return;
+        }
+
+        // Acquire GIL appropriately based on how Python was initialized
+        if (g_main_thread_state) {
+            // We initialized Python - restore main thread state
             PyEval_RestoreThread(g_main_thread_state);
             g_main_thread_state = nullptr;
-
-            // Clear all callbacks that hold Python objects (nanobind::object)
-            // This must be done while GIL is held since nanobind::object
-            // destructor decrements Python reference counts
-            lfs::training::ControlBoundary::instance().clear_all();
-
-            // Clear frame callback if set
-            clear_frame_callback();
-
-            // Clear Python UI registries that hold nb::object references
-            // These singletons would otherwise destroy nb::objects during
-            // static destruction, after Python is gone
-            invoke_python_cleanup();
-
-            // Run garbage collection to clean up cycles
-            PyGC_Collect();
-
-            // NOTE: We intentionally do NOT call Py_FinalizeEx() here.
-            // nanobind stores type information in static storage that gets
-            // destroyed during C++ static destruction (after main returns).
-            // If we call Py_FinalizeEx(), Python type objects are destroyed,
-            // and then nanobind's static destructors crash trying to access them.
-            //
-            // By not calling Py_FinalizeEx():
-            // 1. All our callbacks and references are properly cleaned up above
-            // 2. Python interpreter stays alive until program exit
-            // 3. OS reclaims all memory when process exits (no actual leak)
-            // 4. No crashes during static destruction
-            //
-            // This is a known limitation of embedding Python with nanobind.
-            // The memory "leak" is only until process exit.
-            LOG_INFO("Python cleanup completed (interpreter left running for safe exit)");
+        } else if (g_we_initialized_python) {
+            // We initialized but thread state is null (shouldn't happen)
+            LOG_WARN("finalize: unexpected null thread state");
+            return;
+        } else {
+            // External initialization - use PyGILState
+            PyGILState_Ensure();
         }
+
+        // Clear all callbacks that hold Python objects (nanobind::object)
+        // This must be done while GIL is held since nanobind::object
+        // destructor decrements Python reference counts
+        lfs::training::ControlBoundary::instance().clear_all();
+
+        // Clear frame callback if set
+        clear_frame_callback();
+
+        // Clear Python UI registries that hold nb::object references
+        // These singletons would otherwise destroy nb::objects during
+        // static destruction, after Python is gone
+        invoke_python_cleanup();
+
+        // Run garbage collection to clean up cycles
+        PyGC_Collect();
+
+        // NOTE: We intentionally do NOT call Py_FinalizeEx() here.
+        // nanobind stores type information in static storage that gets
+        // destroyed during C++ static destruction (after main returns).
+        // If we call Py_FinalizeEx(), Python type objects are destroyed,
+        // and then nanobind's static destructors crash trying to access them.
+        //
+        // By not calling Py_FinalizeEx():
+        // 1. All our callbacks and references are properly cleaned up above
+        // 2. Python interpreter stays alive until program exit
+        // 3. OS reclaims all memory when process exits (no actual leak)
+        // 4. No crashes during static destruction
+        //
+        // This is a known limitation of embedding Python with nanobind.
+        // The memory "leak" is only until process exit.
+        LOG_INFO("Python cleanup completed (interpreter left running for safe exit)");
 #endif
     }
 

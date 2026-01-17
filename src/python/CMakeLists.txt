@@ -81,9 +81,13 @@ set_target_properties(lfs_python_utils PROPERTIES
 )
 
 # nanobind module (Python import name: lichtfeld)
+# NOTE: We intentionally do NOT use STABLE_ABI here because:
+# 1. The main app embeds Python and links to python312.dll
+# 2. STABLE_ABI would make the .pyd link to python3.dll instead
+# 3. On Windows, having both DLLs loaded causes double Python initialization
+# 4. This makes the .pyd version-specific but avoids the DLL conflict
 nanobind_add_module(
     lfs_py
-    STABLE_ABI
     NB_STATIC
     lfs/module.cpp
     lfs/py_tensor.cpp
