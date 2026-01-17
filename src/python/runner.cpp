@@ -65,9 +65,16 @@ namespace lfs::python {
         return PyModule_Create(&g_capture_module);
     }
 
-    static void install_output_capture() {
-        // Register the capture module
-        PyImport_AppendInittab("_lfs_output", init_capture_module);
+    static void register_output_module_post_init() {
+        PyObject* modules = PyImport_GetModuleDict();
+        if (PyDict_GetItemString(modules, "_lfs_output")) {
+            return;
+        }
+        PyObject* module = PyModule_Create(&g_capture_module);
+        if (module) {
+            PyDict_SetItemString(modules, "_lfs_output", module);
+            Py_DECREF(module);
+        }
     }
 
     static void redirect_output() {
@@ -192,19 +199,24 @@ sys.stderr = OutputCapture(True)
     void ensure_initialized() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
         std::call_once(g_py_init_once, [] {
-            install_output_capture();
+            if (!Py_IsInitialized()) {
+                PyImport_AppendInittab("_lfs_output", init_capture_module);
 
-            // Set Python home to help find standard library (esp. on Windows)
-            const auto python_home = lfs::core::getPythonHome();
-            static std::wstring python_home_wstr;
-            if (!python_home.empty()) {
-                python_home_wstr = python_home.wstring();
-                Py_SetPythonHome(python_home_wstr.c_str());
-                LOG_INFO("Set Python home: {}", lfs::core::path_to_utf8(python_home));
+                const auto python_home = lfs::core::getPythonHome();
+                static std::wstring python_home_wstr;
+                if (!python_home.empty()) {
+                    python_home_wstr = python_home.wstring();
+                    Py_SetPythonHome(python_home_wstr.c_str());
+                    LOG_INFO("Set Python home: {}", lfs::core::path_to_utf8(python_home));
+                }
+
+                Py_Initialize();
+            } else {
+                LOG_WARN("Python already initialized by external code");
             }
 
-            Py_Initialize();
             PyEval_InitThreads();
+            register_output_module_post_init();
 
             // Add user site-packages to sys.path (before releasing GIL)
             std::filesystem::path user_packages = get_user_packages_dir();
