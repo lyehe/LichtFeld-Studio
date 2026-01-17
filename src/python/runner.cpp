@@ -125,17 +125,61 @@ sys.stderr = OutputCapture(True)
     static PyThreadState* g_main_thread_state = nullptr;
     static bool g_plugins_loaded = false;
 
+    static void add_dll_directories() {
+#ifdef _WIN32
+        // Python 3.8+ on Windows requires os.add_dll_directory() for DLL loading
+        // First add the executable directory using C++ (more reliable)
+        const auto exe_dir = lfs::core::getExecutableDir();
+        const auto exe_dir_str = lfs::core::path_to_utf8(exe_dir);
+
+        std::string add_dll_code = std::format(R"(
+import os
+def _add_dll_dirs():
+    dirs_to_add = [
+        r'{}',  # Executable directory
+    ]
+    # Also add CUDA path if available
+    cuda_path = os.environ.get('CUDA_PATH')
+    if cuda_path:
+        dirs_to_add.append(os.path.join(cuda_path, 'bin'))
+
+    # Add vcpkg bin if it exists
+    vcpkg_bin = os.path.join(r'{}', 'vcpkg_installed', 'x64-windows', 'bin')
+    if os.path.isdir(vcpkg_bin):
+        dirs_to_add.append(vcpkg_bin)
+
+    for d in dirs_to_add:
+        if os.path.isdir(d):
+            try:
+                os.add_dll_directory(d)
+                print(f'[DLL] Added: {{d}}')
+            except Exception as e:
+                print(f'[DLL] Failed to add {{d}}: {{e}}')
+_add_dll_dirs()
+)",
+                                               exe_dir_str, exe_dir_str);
+
+        PyRun_SimpleString(add_dll_code.c_str());
+        LOG_INFO("Windows DLL directories configured for: {}", exe_dir_str);
+#endif
+    }
+
     static void ensure_plugins_loaded() {
         if (g_plugins_loaded)
             return;
         g_plugins_loaded = true;
 
+        add_dll_directories();
+
+        LOG_INFO("Attempting to import lichtfeld module...");
         PyObject* lf = PyImport_ImportModule("lichtfeld");
         if (!lf) {
             PyErr_Print();
             LOG_ERROR("Failed to import lichtfeld for plugin loading");
+            LOG_ERROR("Check that lichtfeld.pyd is in sys.path and all DLL dependencies are available");
             return;
         }
+        LOG_INFO("lichtfeld module imported successfully");
 
         PyObject* lfs_plugins = PyImport_ImportModule("lfs_plugins");
         if (lfs_plugins) {
@@ -268,9 +312,13 @@ sys.stderr = OutputCapture(True)
 
         // Load plugins after Python is initialized (idempotent, safe to call multiple times)
         // This ensures builtin panels like Plugin Manager are registered
+        LOG_INFO("Acquiring GIL for plugin loading...");
         const PyGILState_STATE gil = PyGILState_Ensure();
+        LOG_INFO("GIL acquired, loading plugins...");
         ensure_plugins_loaded();
+        LOG_INFO("Plugin loading complete, releasing GIL...");
         PyGILState_Release(gil);
+        LOG_INFO("GIL released after plugin loading");
 #endif
     }
 
