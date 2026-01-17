@@ -5,6 +5,7 @@
 #include "runner.hpp"
 #include "package_manager.hpp"
 
+#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -313,7 +314,10 @@ _add_dll_dirs()
         // Load plugins after Python is initialized (idempotent, safe to call multiple times)
         // This ensures builtin panels like Plugin Manager are registered
         LOG_INFO("Acquiring GIL for plugin loading...");
+        std::fflush(stdout);
+        std::fflush(stderr);
         const PyGILState_STATE gil = PyGILState_Ensure();
+        LOG_INFO("GIL acquired successfully");
         LOG_INFO("GIL acquired, loading plugins...");
         ensure_plugins_loaded();
         LOG_INFO("Plugin loading complete, releasing GIL...");

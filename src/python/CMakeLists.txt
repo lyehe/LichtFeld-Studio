@@ -148,6 +148,53 @@ if(CMAKE_CONFIGURATION_TYPES)
     )
 endif()
 
+# Windows: Copy required DLLs next to the .pyd for Python module loading
+# Python's DLL search doesn't use the app's directory, only the module's directory
+if(WIN32)
+    # Copy project DLLs
+    add_custom_command(TARGET lfs_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:lfs_panel_registry>"
+            "$<TARGET_FILE:lfs_event_bridge>"
+            "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMENT "Copying project DLLs to Python module directory"
+    )
+
+    # Copy CUDA DLLs
+    set(CUDA_DLLS_FOR_PYD
+        "${CUDAToolkit_BIN_DIR}/cudart64_12.dll"
+        "${CUDAToolkit_BIN_DIR}/curand64_10.dll"
+        "${CUDAToolkit_BIN_DIR}/cublas64_12.dll"
+        "${CUDAToolkit_BIN_DIR}/cublasLt64_12.dll"
+    )
+    foreach(DLL ${CUDA_DLLS_FOR_PYD})
+        if(EXISTS "${DLL}")
+            add_custom_command(TARGET lfs_py POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "${CMAKE_CURRENT_BINARY_DIR}"
+                COMMENT "Copying ${DLL} to Python module directory"
+            )
+        endif()
+    endforeach()
+
+    # Copy vcpkg runtime DLLs
+    add_custom_command(TARGET lfs_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin"
+            "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMENT "Copying vcpkg DLLs to Python module directory"
+    )
+
+    # Copy nvimgcodec
+    if(TARGET nvimgcodec)
+        add_custom_command(TARGET lfs_py POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:nvimgcodec>"
+                "${CMAKE_CURRENT_BINARY_DIR}"
+            COMMENT "Copying nvimgcodec to Python module directory"
+        )
+    endif()
+endif()
+
 # Type stubs for IDE support (output to typings/ to avoid runtime conflicts)
 option(BUILD_PYTHON_STUBS "Generate Python type stubs (requires loading the module)" ON)
 if(BUILD_PYTHON_STUBS)

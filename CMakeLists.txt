@@ -441,6 +441,27 @@ if(WIN32 AND BUILD_PYTHON_BINDINGS)
     endif()
 endif()
 
+# Copy CUDA runtime DLLs for Windows (needed for Python module loading)
+if(WIN32 AND CUDAToolkit_FOUND)
+    set(CUDA_RUNTIME_DLLS
+        "${CUDAToolkit_BIN_DIR}/cudart64_12.dll"
+        "${CUDAToolkit_BIN_DIR}/curand64_10.dll"
+        "${CUDAToolkit_BIN_DIR}/cublas64_12.dll"
+        "${CUDAToolkit_BIN_DIR}/cublasLt64_12.dll"
+    )
+    foreach(CUDA_DLL ${CUDA_RUNTIME_DLLS})
+        if(EXISTS "${CUDA_DLL}")
+            add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CUDA_DLL}"
+                    "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
+                COMMENT "Copying ${CUDA_DLL} to executable directory"
+            )
+        endif()
+    endforeach()
+    message(STATUS "Post-build: CUDA DLLs will be copied from ${CUDAToolkit_BIN_DIR}")
+endif()
+
 # Before extension post-build copying: remove stale 'extensions' file if present (prevent mkdir failure)
 set(_target_extensions_dir "${CMAKE_BINARY_DIR}/extensions")
 if(EXISTS "${_target_extensions_dir}" AND NOT IS_DIRECTORY "${_target_extensions_dir}")
