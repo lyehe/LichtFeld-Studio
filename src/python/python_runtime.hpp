@@ -111,4 +111,11 @@ namespace lfs::python {
     LFS_PYTHON_RUNTIME_API void mark_plugins_loaded();
     LFS_PYTHON_RUNTIME_API bool are_plugins_loaded();
 
+    // ImGui context sharing - must be in shared library to work across DLL boundaries
+    // On Windows, each DLL has its own copy of ImGui's GImGui global, so we need to
+    // explicitly share the context pointer from the exe to the pyd
+    // Note: void* used to avoid imgui.h dependency in header
+    LFS_PYTHON_RUNTIME_API void set_imgui_context(void* ctx);
+    LFS_PYTHON_RUNTIME_API void* get_imgui_context();
+
 } // namespace lfs::python

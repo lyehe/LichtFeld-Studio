@@ -10,6 +10,7 @@
 #include "core/property_registry.hpp"
 #include "gui/utils/windows_utils.hpp"
 #include "py_params.hpp"
+#include "python/python_runtime.hpp"
 #include "python/ui_hooks.hpp"
 #include "visualizer/core/editor_context.hpp"
 #include "visualizer/theme/theme.hpp"
@@ -33,6 +34,40 @@ namespace lfs::python {
 
         ImVec4 tuple_to_imvec4(const std::tuple<float, float, float, float>& t) {
             return {std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t)};
+        }
+
+        // Ensure ImGui context is set (required for Windows DLL boundaries)
+        // Called once at init, not per-frame
+        bool g_imgui_context_initialized = false;
+
+        void ensure_imgui_context() {
+            if (g_imgui_context_initialized) {
+                return;
+            }
+
+            void* shared_ctx = get_imgui_context();
+            void* current_ctx = ImGui::GetCurrentContext();
+
+            std::fprintf(stderr, "[py_ui] ensure_imgui_context: shared=%p, current=%p\n",
+                         shared_ctx, current_ctx);
+            std::fflush(stderr);
+
+            if (!shared_ctx) {
+                std::fprintf(stderr, "[py_ui] ERROR: No shared ImGui context! set_imgui_context() not called?\n");
+                std::fflush(stderr);
+                return;
+            }
+
+            if (current_ctx != shared_ctx) {
+                std::fprintf(stderr, "[py_ui] Setting ImGui context from %p to %p\n",
+                             current_ctx, shared_ctx);
+                std::fflush(stderr);
+                ImGui::SetCurrentContext(static_cast<ImGuiContext*>(shared_ctx));
+            }
+
+            g_imgui_context_initialized = true;
+            std::fprintf(stderr, "[py_ui] ImGui context initialized for pyd module\n");
+            std::fflush(stderr);
         }
     } // namespace
 
@@ -641,6 +676,9 @@ namespace lfs::python {
             return;
         }
 
+        // Ensure ImGui context is set (Windows DLL boundary fix)
+        ensure_imgui_context();
+
         // GIL is already held by caller (py_panel_registry.cpp)
 
         for (auto& panel : panels_copy) {
@@ -778,6 +816,9 @@ namespace lfs::python {
         std::fprintf(stderr, "[py_ui] draw_single_panel: 'draw' method exists\n");
         std::fflush(stderr);
 
+        // Ensure ImGui context is set (Windows DLL boundary fix)
+        ensure_imgui_context();
+
         std::fprintf(stderr, "[py_ui] draw_single_panel: creating PyUILayout\n");
         std::fflush(stderr);
         try {
@@ -787,10 +828,24 @@ namespace lfs::python {
             panel_copy.panel_instance.attr("draw")(layout);
             std::fprintf(stderr, "[py_ui] draw_single_panel: draw() returned OK\n");
             std::fflush(stderr);
-        } catch (const nb::python_error& e) {
-            std::fprintf(stderr, "[py_ui] draw_single_panel: PYTHON ERROR: %s\n", e.what());
+        } catch (const nb::python_error&) {
+            std::fprintf(stderr, "[py_ui] draw_single_panel: PYTHON ERROR caught\n");
             std::fflush(stderr);
-            LOG_ERROR("Python panel '{}' error: {}", label, e.what());
+            // Don't call e.what() - crashes on Windows. Use Python C API instead.
+            PyObject *type, *value, *tb;
+            PyErr_Fetch(&type, &value, &tb);
+            if (value) {
+                PyObject* str = PyObject_Str(value);
+                if (str) {
+                    const char* msg = PyUnicode_AsUTF8(str);
+                    std::fprintf(stderr, "[py_ui] Python error: %s\n", msg ? msg : "(null)");
+                    LOG_ERROR("Python panel '{}' error: {}", label, msg ? msg : "(unknown)");
+                    Py_DECREF(str);
+                }
+            }
+            Py_XDECREF(type);
+            Py_XDECREF(value);
+            Py_XDECREF(tb);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "[py_ui] draw_single_panel: STD ERROR: %s\n", e.what());
             std::fflush(stderr);
@@ -953,6 +1008,9 @@ namespace lfs::python {
         if (callbacks_to_invoke.empty()) {
             return;
         }
+
+        // Ensure ImGui context is set (Windows DLL boundary fix)
+        ensure_imgui_context();
 
         nb::gil_scoped_acquire gil;
 

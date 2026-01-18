@@ -46,6 +46,9 @@ namespace lfs::python {
         std::once_flag g_py_init_once;
         std::once_flag g_redirect_once;
         std::atomic<bool> g_plugins_loaded{false};
+
+        // ImGui context - shared from exe to pyd for Windows DLL boundary crossing
+        void* g_imgui_context{nullptr};
     } // namespace
 
     // Operation context (short-lived)
@@ -110,6 +113,17 @@ namespace lfs::python {
 
     void mark_plugins_loaded() { g_plugins_loaded.store(true, std::memory_order_release); }
     bool are_plugins_loaded() { return g_plugins_loaded.load(std::memory_order_acquire); }
+
+    // ImGui context sharing
+    void set_imgui_context(void* ctx) {
+        std::fprintf(stderr, "[pyrt] set_imgui_context: %p -> %p\n", g_imgui_context, ctx);
+        std::fflush(stderr);
+        g_imgui_context = ctx;
+    }
+
+    void* get_imgui_context() {
+        return g_imgui_context;
+    }
 
     void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
         std::fprintf(stderr, "[pyrt] set_ensure_initialized_callback: %p -> %p (globals at %p)\n",

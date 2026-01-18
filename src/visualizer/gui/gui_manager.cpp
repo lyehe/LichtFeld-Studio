@@ -362,6 +362,13 @@ namespace lfs::vis::gui {
         // ImGui initialization
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
+
+        // Share ImGui context with Python module (required for Windows DLL boundaries)
+        ImGuiContext* ctx = ImGui::GetCurrentContext();
+        std::fprintf(stderr, "[gui] ImGui context created: %p\n", static_cast<void*>(ctx));
+        std::fflush(stderr);
+        lfs::python::set_imgui_context(ctx);
+
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
