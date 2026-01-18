@@ -244,6 +244,16 @@ _add_dll_dirs()
 
     void ensure_initialized() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
+        // Early exit if Python is already initialized by another binary.
+        // When lfs_python_utils is statically linked into both exe and pyd,
+        // each gets its own g_py_init_once. The pyd's g_registrar may overwrite
+        // the callback in lfs_panel_registry.dll to point to this copy.
+        // Without this check, the pyd's call_once would run and try to call
+        // PyEval_SaveThread() when the GIL isn't held, causing a crash.
+        if (Py_IsInitialized()) {
+            return;
+        }
+
         std::call_once(g_py_init_once, [] {
             if (!Py_IsInitialized()) {
                 PyImport_AppendInittab("_lfs_output", init_capture_module);
