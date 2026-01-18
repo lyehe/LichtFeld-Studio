@@ -5,6 +5,7 @@
 #include "runner.hpp"
 #include "package_manager.hpp"
 
+#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -24,6 +25,7 @@ namespace lfs::python {
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
     static std::once_flag g_py_init_once;
+    static bool g_we_initialized_python = false;
 
     namespace {
         struct EnsureInitializedRegistrar {
@@ -65,9 +67,16 @@ namespace lfs::python {
         return PyModule_Create(&g_capture_module);
     }
 
-    static void install_output_capture() {
-        // Register the capture module
-        PyImport_AppendInittab("_lfs_output", init_capture_module);
+    static void register_output_module_post_init() {
+        PyObject* modules = PyImport_GetModuleDict();
+        if (PyDict_GetItemString(modules, "_lfs_output")) {
+            return;
+        }
+        PyObject* module = PyModule_Create(&g_capture_module);
+        if (module) {
+            PyDict_SetItemString(modules, "_lfs_output", module);
+            Py_DECREF(module);
+        }
     }
 
     static void redirect_output() {
@@ -117,17 +126,61 @@ sys.stderr = OutputCapture(True)
     static PyThreadState* g_main_thread_state = nullptr;
     static bool g_plugins_loaded = false;
 
+    static void add_dll_directories() {
+#ifdef _WIN32
+        // Python 3.8+ on Windows requires os.add_dll_directory() for DLL loading
+        // First add the executable directory using C++ (more reliable)
+        const auto exe_dir = lfs::core::getExecutableDir();
+        const auto exe_dir_str = lfs::core::path_to_utf8(exe_dir);
+
+        std::string add_dll_code = std::format(R"(
+import os
+def _add_dll_dirs():
+    dirs_to_add = [
+        r'{}',  # Executable directory
+    ]
+    # Also add CUDA path if available
+    cuda_path = os.environ.get('CUDA_PATH')
+    if cuda_path:
+        dirs_to_add.append(os.path.join(cuda_path, 'bin'))
+
+    # Add vcpkg bin if it exists
+    vcpkg_bin = os.path.join(r'{}', 'vcpkg_installed', 'x64-windows', 'bin')
+    if os.path.isdir(vcpkg_bin):
+        dirs_to_add.append(vcpkg_bin)
+
+    for d in dirs_to_add:
+        if os.path.isdir(d):
+            try:
+                os.add_dll_directory(d)
+                print(f'[DLL] Added: {{d}}')
+            except Exception as e:
+                print(f'[DLL] Failed to add {{d}}: {{e}}')
+_add_dll_dirs()
+)",
+                                               exe_dir_str, exe_dir_str);
+
+        PyRun_SimpleString(add_dll_code.c_str());
+        LOG_INFO("Windows DLL directories configured for: {}", exe_dir_str);
+#endif
+    }
+
     static void ensure_plugins_loaded() {
         if (g_plugins_loaded)
             return;
         g_plugins_loaded = true;
 
+        add_dll_directories();
+
+        LOG_INFO("Attempting to import lichtfeld module...");
         PyObject* lf = PyImport_ImportModule("lichtfeld");
         if (!lf) {
             PyErr_Print();
             LOG_ERROR("Failed to import lichtfeld for plugin loading");
+            LOG_ERROR("Check that lichtfeld.pyd is in sys.path and all DLL dependencies are available");
             return;
         }
+        LOG_INFO("lichtfeld module imported successfully");
 
         PyObject* lfs_plugins = PyImport_ImportModule("lfs_plugins");
         if (lfs_plugins) {
@@ -192,21 +245,29 @@ sys.stderr = OutputCapture(True)
     void ensure_initialized() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
         std::call_once(g_py_init_once, [] {
-            install_output_capture();
+            if (!Py_IsInitialized()) {
+                PyImport_AppendInittab("_lfs_output", init_capture_module);
 
-            // Set Python home to help find standard library (esp. on Windows)
-            const auto python_home = lfs::core::getPythonHome();
-            static std::wstring python_home_wstr;
-            if (!python_home.empty()) {
-                python_home_wstr = python_home.wstring();
-                Py_SetPythonHome(python_home_wstr.c_str());
-                LOG_INFO("Set Python home: {}", lfs::core::path_to_utf8(python_home));
+                const auto python_home = lfs::core::getPythonHome();
+                static std::wstring python_home_wstr;
+                if (!python_home.empty()) {
+                    python_home_wstr = python_home.wstring();
+                    Py_SetPythonHome(python_home_wstr.c_str());
+                    LOG_INFO("Set Python home: {}", lfs::core::path_to_utf8(python_home));
+                }
+
+                Py_Initialize();
+                g_we_initialized_python = true;
+                LOG_INFO("Python interpreter initialized by application");
+            } else {
+                LOG_WARN("Python already initialized by external code (e.g., .pyd loading)");
+                g_we_initialized_python = false;
             }
 
-            Py_Initialize();
             PyEval_InitThreads();
+            register_output_module_post_init();
 
-            // Add user site-packages to sys.path (before releasing GIL)
+            // Add user site-packages to sys.path
             std::filesystem::path user_packages = get_user_packages_dir();
             if (!std::filesystem::exists(user_packages)) {
                 std::error_code ec;
@@ -238,57 +299,62 @@ sys.stderr = OutputCapture(True)
                 }
             }
 
-            g_main_thread_state = PyEval_SaveThread();
-            LOG_INFO("Python interpreter initialized and GIL released");
-        });
+            ensure_plugins_loaded();
 
-        // Load plugins after Python is initialized (idempotent, safe to call multiple times)
-        // This ensures builtin panels like Plugin Manager are registered
-        const PyGILState_STATE gil = PyGILState_Ensure();
-        ensure_plugins_loaded();
-        PyGILState_Release(gil);
+            g_main_thread_state = PyEval_SaveThread();
+            set_gil_state_ready(true);
+            LOG_DEBUG("GIL released, external_init={}", !g_we_initialized_python);
+        });
 #endif
     }
 
     void finalize() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        if (g_main_thread_state && Py_IsInitialized()) {
-            // Restore the main thread state (reacquire GIL)
+        if (!Py_IsInitialized()) {
+            return;
+        }
+
+        set_gil_state_ready(false);
+
+        if (g_main_thread_state) {
             PyEval_RestoreThread(g_main_thread_state);
             g_main_thread_state = nullptr;
-
-            // Clear all callbacks that hold Python objects (nanobind::object)
-            // This must be done while GIL is held since nanobind::object
-            // destructor decrements Python reference counts
-            lfs::training::ControlBoundary::instance().clear_all();
-
-            // Clear frame callback if set
-            clear_frame_callback();
-
-            // Clear Python UI registries that hold nb::object references
-            // These singletons would otherwise destroy nb::objects during
-            // static destruction, after Python is gone
-            invoke_python_cleanup();
-
-            // Run garbage collection to clean up cycles
-            PyGC_Collect();
-
-            // NOTE: We intentionally do NOT call Py_FinalizeEx() here.
-            // nanobind stores type information in static storage that gets
-            // destroyed during C++ static destruction (after main returns).
-            // If we call Py_FinalizeEx(), Python type objects are destroyed,
-            // and then nanobind's static destructors crash trying to access them.
-            //
-            // By not calling Py_FinalizeEx():
-            // 1. All our callbacks and references are properly cleaned up above
-            // 2. Python interpreter stays alive until program exit
-            // 3. OS reclaims all memory when process exits (no actual leak)
-            // 4. No crashes during static destruction
-            //
-            // This is a known limitation of embedding Python with nanobind.
-            // The memory "leak" is only until process exit.
-            LOG_INFO("Python cleanup completed (interpreter left running for safe exit)");
+        } else {
+            LOG_WARN("No saved thread state, using PyGILState_Ensure");
+            PyGILState_Ensure();
         }
+
+        // Clear all callbacks that hold Python objects (nanobind::object)
+        // This must be done while GIL is held since nanobind::object
+        // destructor decrements Python reference counts
+        lfs::training::ControlBoundary::instance().clear_all();
+
+        // Clear frame callback if set
+        clear_frame_callback();
+
+        // Clear Python UI registries that hold nb::object references
+        // These singletons would otherwise destroy nb::objects during
+        // static destruction, after Python is gone
+        invoke_python_cleanup();
+
+        // Run garbage collection to clean up cycles
+        PyGC_Collect();
+
+        // NOTE: We intentionally do NOT call Py_FinalizeEx() here.
+        // nanobind stores type information in static storage that gets
+        // destroyed during C++ static destruction (after main returns).
+        // If we call Py_FinalizeEx(), Python type objects are destroyed,
+        // and then nanobind's static destructors crash trying to access them.
+        //
+        // By not calling Py_FinalizeEx():
+        // 1. All our callbacks and references are properly cleaned up above
+        // 2. Python interpreter stays alive until program exit
+        // 3. OS reclaims all memory when process exits (no actual leak)
+        // 4. No crashes during static destruction
+        //
+        // This is a known limitation of embedding Python with nanobind.
+        // The memory "leak" is only until process exit.
+        LOG_INFO("Python cleanup completed (interpreter left running for safe exit)");
 #endif
     }
 
@@ -423,24 +489,24 @@ sys.stderr = OutputCapture(True)
 #endif
     }
 
-    std::string format_python_code(const std::string& code) {
+    FormatResult format_python_code(const std::string& code) {
 #ifndef LFS_BUILD_PYTHON_BINDINGS
-        return code;
+        return {code, "", true};
 #else
         if (code.empty())
-            return code;
+            return {code, "", true};
 
         auto& pm = PackageManager::instance();
         if (!pm.is_installed("black")) {
             if (!pm.ensure_venv()) {
                 LOG_ERROR("Failed to create venv for black");
-                return code;
+                return {code, "Failed to create venv for black", false};
             }
             LOG_INFO("Installing black...");
             const auto install_result = pm.install("black");
             if (!install_result.success) {
                 LOG_ERROR("Failed to install black: {}", install_result.error);
-                return code;
+                return {code, install_result.error, false};
             }
             update_python_path();
         }
@@ -455,8 +521,7 @@ def _lfs_format_code(code):
     try:
         import black
     except ImportError as e:
-        print(f"[format] ImportError: {e}", file=sys.stderr)
-        return None
+        return (None, f"ImportError: {e}")
 
     # Normalize unicode characters that break parsing (from copy-paste)
     replacements = {
@@ -484,7 +549,7 @@ def _lfs_format_code(code):
         lines.pop()
 
     if not lines:
-        return code
+        return (code, None)
 
     # Convert tabs to spaces consistently
     lines = [line.replace('\t', '    ') for line in lines]
@@ -496,7 +561,7 @@ def _lfs_format_code(code):
             indents.append(len(line) - len(line.lstrip()))
 
     if not indents:
-        return code
+        return (code, None)
 
     # If first line has 0 indent but others have consistent indent,
     # this is likely a copy-paste issue - use the mode of other indents
@@ -526,11 +591,9 @@ def _lfs_format_code(code):
     cleaned = '\n'.join(dedented)
 
     try:
-        return black.format_str(cleaned, mode=black.Mode())
+        return (black.format_str(cleaned, mode=black.Mode()), None)
     except Exception as e:
-        print(f"[format] Error: {e}", file=sys.stderr)
-        print(f"[format] Code was:\n{repr(cleaned)}", file=sys.stderr)
-        return None
+        return (None, str(e))
 )";
 
         PyRun_SimpleString(FORMAT_CODE);
@@ -538,30 +601,47 @@ def _lfs_format_code(code):
         PyObject* const main_module = PyImport_AddModule("__main__");
         if (!main_module) {
             PyGILState_Release(gil);
-            return code;
+            return {code, "Failed to get __main__ module", false};
         }
 
         PyObject* const main_dict = PyModule_GetDict(main_module);
         PyObject* const format_func = PyDict_GetItemString(main_dict, "_lfs_format_code");
         if (!format_func || !PyCallable_Check(format_func)) {
             PyGILState_Release(gil);
-            return code;
+            return {code, "Format function not found", false};
         }
 
-        std::string result = code;
+        FormatResult result{code, "", false};
         PyObject* const py_code = PyUnicode_FromString(code.c_str());
         PyObject* const py_result = PyObject_CallFunctionObjArgs(format_func, py_code, nullptr);
         Py_DECREF(py_code);
 
-        if (py_result) {
-            if (PyUnicode_Check(py_result)) {
-                const char* const formatted = PyUnicode_AsUTF8(py_result);
-                if (formatted)
-                    result = formatted;
+        if (py_result && PyTuple_Check(py_result) && PyTuple_Size(py_result) == 2) {
+            PyObject* formatted = PyTuple_GetItem(py_result, 0);
+            PyObject* error = PyTuple_GetItem(py_result, 1);
+
+            if (formatted && PyUnicode_Check(formatted)) {
+                const char* const str = PyUnicode_AsUTF8(formatted);
+                if (str) {
+                    result.code = str;
+                    result.success = true;
+                }
             }
+
+            if (error && !Py_IsNone(error) && PyUnicode_Check(error)) {
+                const char* const err = PyUnicode_AsUTF8(error);
+                if (err) {
+                    result.error = err;
+                    result.success = false;
+                }
+            }
+
             Py_DECREF(py_result);
         } else {
-            PyErr_Clear();
+            if (PyErr_Occurred()) {
+                PyErr_Clear();
+            }
+            result.error = "Format function returned unexpected result";
         }
 
         PyGILState_Release(gil);

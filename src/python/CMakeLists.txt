@@ -81,9 +81,13 @@ set_target_properties(lfs_python_utils PROPERTIES
 )
 
 # nanobind module (Python import name: lichtfeld)
+# NOTE: We intentionally do NOT use STABLE_ABI here because:
+# 1. The main app embeds Python and links to python312.dll
+# 2. STABLE_ABI would make the .pyd link to python3.dll instead
+# 3. On Windows, having both DLLs loaded causes double Python initialization
+# 4. This makes the .pyd version-specific but avoids the DLL conflict
 nanobind_add_module(
     lfs_py
-    STABLE_ABI
     NB_STATIC
     lfs/module.cpp
     lfs/py_tensor.cpp
@@ -142,6 +146,53 @@ if(CMAKE_CONFIGURATION_TYPES)
             "${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:lfs_py>"
         COMMENT "Copying $<TARGET_FILE_NAME:lfs_py> to ${CMAKE_CURRENT_BINARY_DIR}"
     )
+endif()
+
+# Windows: Copy required DLLs next to the .pyd for Python module loading
+# Python's DLL search doesn't use the app's directory, only the module's directory
+if(WIN32)
+    # Copy project DLLs
+    add_custom_command(TARGET lfs_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:lfs_panel_registry>"
+            "$<TARGET_FILE:lfs_event_bridge>"
+            "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMENT "Copying project DLLs to Python module directory"
+    )
+
+    # Copy CUDA DLLs
+    set(CUDA_DLLS_FOR_PYD
+        "${CUDAToolkit_BIN_DIR}/cudart64_12.dll"
+        "${CUDAToolkit_BIN_DIR}/curand64_10.dll"
+        "${CUDAToolkit_BIN_DIR}/cublas64_12.dll"
+        "${CUDAToolkit_BIN_DIR}/cublasLt64_12.dll"
+    )
+    foreach(DLL ${CUDA_DLLS_FOR_PYD})
+        if(EXISTS "${DLL}")
+            add_custom_command(TARGET lfs_py POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DLL}" "${CMAKE_CURRENT_BINARY_DIR}"
+                COMMENT "Copying ${DLL} to Python module directory"
+            )
+        endif()
+    endforeach()
+
+    # Copy vcpkg runtime DLLs
+    add_custom_command(TARGET lfs_py POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin"
+            "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMENT "Copying vcpkg DLLs to Python module directory"
+    )
+
+    # Copy nvimgcodec
+    if(TARGET nvimgcodec)
+        add_custom_command(TARGET lfs_py POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:nvimgcodec>"
+                "${CMAKE_CURRENT_BINARY_DIR}"
+            COMMENT "Copying nvimgcodec to Python module directory"
+        )
+    endif()
 endif()
 
 # Type stubs for IDE support (output to typings/ to avoid runtime conflicts)
