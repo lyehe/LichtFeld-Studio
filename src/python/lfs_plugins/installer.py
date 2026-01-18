@@ -19,6 +19,17 @@ class PluginInstaller:
     def __init__(self, plugin: PluginInstance):
         self.plugin = plugin
 
+    def _get_embedded_python(self) -> Optional[Path]:
+        """Get path to the embedded Python executable."""
+        try:
+            import lichtfeld
+            python_path = lichtfeld.packages.embedded_python_path()
+            if python_path:
+                return Path(python_path)
+        except (ImportError, AttributeError):
+            pass
+        return None
+
     def ensure_venv(self) -> bool:
         """Create plugin-specific venv if needed."""
         venv_path = self.plugin.info.path / ".venv"
@@ -31,8 +42,14 @@ class PluginInstaller:
         if not uv:
             raise PluginDependencyError("uv not found")
 
+        cmd = [str(uv), "venv", str(venv_path), "--allow-existing"]
+
+        embedded_python = self._get_embedded_python()
+        if embedded_python and embedded_python.exists():
+            cmd.extend(["--python", str(embedded_python)])
+
         result = subprocess.run(
-            [str(uv), "venv", str(venv_path), "--allow-existing"],
+            cmd,
             capture_output=True,
             text=True,
         )

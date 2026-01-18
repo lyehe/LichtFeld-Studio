@@ -111,6 +111,10 @@ set_target_properties(lfs_py PROPERTIES
     OUTPUT_NAME lichtfeld
 )
 
+target_compile_definitions(lfs_py PRIVATE
+    LFS_PYTHON_EXECUTABLE="${Python_EXECUTABLE}"
+)
+
 #Need to explicitly link tensor kernels since they're linked privately in lfs_tensor
 #When building a shared library(nanobind module), all symbols must be resolved at link time
 target_link_libraries(lfs_py PRIVATE

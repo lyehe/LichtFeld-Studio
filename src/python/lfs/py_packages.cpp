@@ -84,6 +84,17 @@ namespace lfs::python {
             "Get path to uv binary (empty string if not found)");
 
         pkg.def(
+            "embedded_python_path",
+            []() -> std::string {
+#ifdef LFS_PYTHON_EXECUTABLE
+                return LFS_PYTHON_EXECUTABLE;
+#else
+                return "";
+#endif
+            },
+            "Get path to embedded Python executable (empty string if not available)");
+
+        pkg.def(
             "install_torch",
             [](const std::string& cuda, const std::string& version) {
                 auto& pm = PackageManager::instance();
