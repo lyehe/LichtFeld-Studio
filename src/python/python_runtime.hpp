@@ -33,13 +33,14 @@ namespace lfs::python {
         ViewportOverlay
     };
 
-    // Callback types for the Python panel system
-    using DrawPanelsCallback = std::function<void(PanelSpace)>;
-    using DrawSinglePanelCallback = std::function<void(const std::string&)>;
-    using HasPanelsCallback = std::function<bool(PanelSpace)>;
-    using GetPanelNamesCallback = std::function<std::vector<std::string>(PanelSpace)>;
-    using CleanupCallback = std::function<void()>;
-    using EnsureInitializedCallback = std::function<void()>;
+    // Panel callbacks (C-style function pointers for DLL boundary safety)
+    using DrawPanelsCallback = void (*)(PanelSpace);
+    using DrawSinglePanelCallback = void (*)(const char*);
+    using HasPanelsCallback = bool (*)(PanelSpace);
+    using CleanupCallback = void (*)();
+    using EnsureInitializedCallback = void (*)();
+    using PanelNameVisitor = void (*)(const char* name, void* user_data);
+    using GetPanelNamesCallback = void (*)(PanelSpace, PanelNameVisitor, void* user_data);
 
     // Register callbacks from the Python module
     LFS_PYTHON_RUNTIME_API void set_ensure_initialized_callback(EnsureInitializedCallback cb);

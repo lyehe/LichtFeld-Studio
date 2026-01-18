@@ -185,7 +185,7 @@ namespace lfs::python {
             invoker = g_python_hook_invoker;
         }
         if (invoker) {
-            invoker(panel, section, prepend);
+            invoker(panel.c_str(), section.c_str(), prepend);
         } else {
             static bool warned_scene = false;
             static bool warned_training = false;

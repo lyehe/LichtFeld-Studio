@@ -15,6 +15,7 @@
 #include "visualizer/theme/theme.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <unordered_map>
 #include <imgui.h>
 
@@ -716,55 +717,40 @@ namespace lfs::python {
     }
 
     void PyPanelRegistry::draw_single_panel(const std::string& label) {
-        LOG_INFO("draw_single_panel: entering for '{}'", label);
-
         PyPanelInfo panel_copy;
         bool found = false;
         {
-            LOG_INFO("draw_single_panel: acquiring mutex");
             std::lock_guard lock(mutex_);
-            LOG_INFO("draw_single_panel: mutex acquired, searching {} panels", panels_.size());
             for (const auto& panel : panels_) {
                 if (panel.label == label && panel.enabled) {
-                    LOG_INFO("draw_single_panel: found panel, copying");
                     panel_copy = panel;
-                    LOG_INFO("draw_single_panel: panel copied");
                     found = true;
                     break;
                 }
             }
         }
-        LOG_INFO("draw_single_panel: mutex released, found={}", found);
 
         if (!found) {
-            LOG_INFO("Panel '{}' not found or disabled", label);
             return;
         }
 
-        LOG_INFO("draw_single_panel: checking is_valid");
         if (!panel_copy.panel_instance.is_valid()) {
             LOG_ERROR("Panel '{}' has invalid instance", label);
             return;
         }
 
-        LOG_INFO("draw_single_panel: checking hasattr draw");
         if (!nb::hasattr(panel_copy.panel_instance, "draw")) {
             LOG_ERROR("Panel '{}' has no draw method", label);
             return;
         }
 
-        LOG_INFO("draw_single_panel: calling draw() for '{}'", label);
-
         try {
             PyUILayout layout;
             panel_copy.panel_instance.attr("draw")(layout);
-            LOG_INFO("draw_single_panel: draw() completed for '{}'", label);
         } catch (const nb::python_error& e) {
-            LOG_ERROR("Python panel '{}' Python error: {}", panel_copy.label, e.what());
+            LOG_ERROR("Python panel '{}' error: {}", label, e.what());
         } catch (const std::exception& e) {
-            LOG_ERROR("Python panel '{}' error: {}", panel_copy.label, e.what());
-        } catch (...) {
-            LOG_ERROR("Python panel '{}' unknown error", panel_copy.label);
+            LOG_ERROR("Python panel '{}' error: {}", label, e.what());
         }
     }
 
@@ -1256,30 +1242,20 @@ namespace lfs::python {
             },
             nb::arg("tool"), "Switch to a toolbar tool (none, selection, translate, rotate, scale, mirror, brush, align, cropbox)");
 
-        // Register callbacks for the visualizer to call into the Python panel system
-        set_panel_draw_callback([](PanelSpace space) {
-            PyPanelRegistry::instance().draw_panels(space);
+        // Panel system callbacks
+        set_panel_draw_callback([](PanelSpace space) { PyPanelRegistry::instance().draw_panels(space); });
+        set_panel_draw_single_callback([](const char* label) { PyPanelRegistry::instance().draw_single_panel(label); });
+        set_panel_has_callback([](PanelSpace space) { return PyPanelRegistry::instance().has_panels(space); });
+        set_panel_names_callback([](PanelSpace space, PanelNameVisitor visitor, void* ctx) {
+            for (const auto& name : PyPanelRegistry::instance().get_panel_names(space)) {
+                visitor(name.c_str(), ctx);
+            }
         });
-
-        set_panel_draw_single_callback([](const std::string& label) {
-            PyPanelRegistry::instance().draw_single_panel(label);
-        });
-
-        set_panel_has_callback([](PanelSpace space) {
-            return PyPanelRegistry::instance().has_panels(space);
-        });
-
-        set_panel_names_callback([](PanelSpace space) {
-            return PyPanelRegistry::instance().get_panel_names(space);
-        });
-
-        // Register cleanup callback for proper shutdown
         set_python_cleanup_callback([]() {
             PyPanelRegistry::instance().unregister_all();
             PyUIHookRegistry::instance().clear_all();
         });
-
-        set_python_hook_invoker([](const std::string& panel, const std::string& section, bool prepend) {
+        set_python_hook_invoker([](const char* panel, const char* section, bool prepend) {
             auto& registry = PyUIHookRegistry::instance();
             if (registry.has_hooks(panel, section)) {
                 registry.invoke(panel, section, prepend ? PyHookPosition::Prepend : PyHookPosition::Append);

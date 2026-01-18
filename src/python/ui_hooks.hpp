@@ -53,18 +53,11 @@ namespace lfs::python {
     // Get list of registered hook points (for debugging/introspection)
     std::vector<std::string> get_registered_hook_points();
 
-    // Callback type for Python hook invocation
-    // Parameters: panel name, section name, prepend (true) or append (false)
-    using PythonHookInvoker = std::function<void(const std::string&, const std::string&, bool)>;
+    // Python hook invoker (C-style pointer for DLL boundary safety)
+    using PythonHookInvoker = void (*)(const char* panel, const char* section, bool prepend);
 
-    // Set the Python hook invoker callback (called from py_ui.cpp when module loads)
     void set_python_hook_invoker(PythonHookInvoker invoker);
-
-    // Clear the Python hook invoker callback
     void clear_python_hook_invoker();
-
-    // C++ interface for invoking Python hooks from panels (no nanobind dependency)
-    // This is the primary interface for C++ panel code to invoke hooks
     void invoke_python_hooks(const std::string& panel, const std::string& section, bool prepend);
 
 } // namespace lfs::python

@@ -5,7 +5,6 @@
 #include "python_runtime.hpp"
 
 #include <atomic>
-#include <cstdio>
 #include <mutex>
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
@@ -104,27 +103,27 @@ namespace lfs::python {
     bool are_plugins_loaded() { return g_plugins_loaded.load(std::memory_order_acquire); }
 
     void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
-        g_ensure_initialized_callback = std::move(cb);
+        g_ensure_initialized_callback = cb;
     }
 
     void set_panel_draw_callback(DrawPanelsCallback cb) {
-        g_draw_callback = std::move(cb);
+        g_draw_callback = cb;
     }
 
     void set_panel_draw_single_callback(DrawSinglePanelCallback cb) {
-        g_draw_single_callback = std::move(cb);
+        g_draw_single_callback = cb;
     }
 
     void set_panel_has_callback(HasPanelsCallback cb) {
-        g_has_callback = std::move(cb);
+        g_has_callback = cb;
     }
 
     void set_panel_names_callback(GetPanelNamesCallback cb) {
-        g_panel_names_callback = std::move(cb);
+        g_panel_names_callback = cb;
     }
 
     void set_python_cleanup_callback(CleanupCallback cb) {
-        g_cleanup_callback = std::move(cb);
+        g_cleanup_callback = cb;
     }
 
     void clear_panel_callbacks() {
@@ -158,15 +157,7 @@ namespace lfs::python {
 
     bool has_python_panels(PanelSpace space) {
         if (g_ensure_initialized_callback) {
-            try {
-                g_ensure_initialized_callback();
-            } catch (const std::exception& e) {
-                std::fprintf(stderr, "[error] has_python_panels: initialization failed: %s\n", e.what());
-                return false;
-            } catch (...) {
-                std::fprintf(stderr, "[error] has_python_panels: initialization failed with unknown exception\n");
-                return false;
-            }
+            g_ensure_initialized_callback();
         }
 
         if (g_has_callback) {
@@ -174,14 +165,7 @@ namespace lfs::python {
             if (!Py_IsInitialized() || !is_gil_state_ready())
                 return false;
             const PyGILState_STATE gil = PyGILState_Ensure();
-            bool result = false;
-            try {
-                result = g_has_callback(space);
-            } catch (const std::exception& e) {
-                std::fprintf(stderr, "[error] has_python_panels: callback failed: %s\n", e.what());
-            } catch (...) {
-                std::fprintf(stderr, "[error] has_python_panels: callback failed with unknown exception\n");
-            }
+            const bool result = g_has_callback(space);
             PyGILState_Release(gil);
             return result;
 #else
@@ -193,65 +177,44 @@ namespace lfs::python {
 
     std::vector<std::string> get_python_panel_names(PanelSpace space) {
         if (g_ensure_initialized_callback) {
-            try {
-                g_ensure_initialized_callback();
-            } catch (const std::exception& e) {
-                std::fprintf(stderr, "[error] get_python_panel_names: initialization failed: %s\n", e.what());
-                return {};
-            } catch (...) {
-                std::fprintf(stderr, "[error] get_python_panel_names: initialization failed with unknown exception\n");
-                return {};
-            }
+            g_ensure_initialized_callback();
         }
 
-        if (g_panel_names_callback) {
+        if (!g_panel_names_callback)
+            return {};
+
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-            if (!Py_IsInitialized() || !is_gil_state_ready())
-                return {};
-            const PyGILState_STATE gil = PyGILState_Ensure();
-            std::vector<std::string> result;
-            try {
-                result = g_panel_names_callback(space);
-            } catch (const std::exception& e) {
-                std::fprintf(stderr, "[error] get_python_panel_names: callback failed: %s\n", e.what());
-            } catch (...) {
-                std::fprintf(stderr, "[error] get_python_panel_names: callback failed with unknown exception\n");
-            }
-            PyGILState_Release(gil);
-            return result;
-#else
-            return g_panel_names_callback(space);
+        if (!Py_IsInitialized() || !is_gil_state_ready())
+            return {};
+        const PyGILState_STATE gil = PyGILState_Ensure();
 #endif
-        }
-        return {};
+
+        std::vector<std::string> result;
+        g_panel_names_callback(
+            space,
+            [](const char* name, void* ctx) {
+                static_cast<std::vector<std::string>*>(ctx)->emplace_back(name);
+            },
+            &result);
+
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        PyGILState_Release(gil);
+#endif
+        return result;
     }
 
     void draw_python_panel(const std::string& name, lfs::vis::Scene* /* scene */) {
         if (!g_draw_single_callback) {
-            std::fprintf(stderr, "[info] draw_python_panel: no callback registered for '%s'\n", name.c_str());
             return;
         }
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        if (!Py_IsInitialized()) {
-            std::fprintf(stderr, "[info] draw_python_panel: Python not initialized\n");
+        if (!Py_IsInitialized() || !is_gil_state_ready())
             return;
-        }
-        if (!is_gil_state_ready()) {
-            std::fprintf(stderr, "[info] draw_python_panel: GIL state not ready\n");
-            return;
-        }
-        std::fprintf(stderr, "[info] draw_python_panel: drawing '%s'\n", name.c_str());
         const PyGILState_STATE gil = PyGILState_Ensure();
-        try {
-            g_draw_single_callback(name);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "[error] draw_python_panel: exception drawing '%s': %s\n", name.c_str(), e.what());
-        } catch (...) {
-            std::fprintf(stderr, "[error] draw_python_panel: unknown exception drawing '%s'\n", name.c_str());
-        }
+        g_draw_single_callback(name.c_str());
         PyGILState_Release(gil);
 #else
-        g_draw_single_callback(name);
+        g_draw_single_callback(name.c_str());
 #endif
     }
 
