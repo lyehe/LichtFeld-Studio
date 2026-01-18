@@ -17,7 +17,7 @@
 #include "geometry/euclidean_transform.hpp"
 #include "gui/panels/gizmo_toolbar.hpp"
 #include "io/loader.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "training/checkpoint.hpp"
 #include "training/trainer.hpp"

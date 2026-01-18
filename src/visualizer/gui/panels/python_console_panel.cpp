@@ -24,7 +24,7 @@
 #include "core/executable_path.hpp"
 #include "core/services.hpp"
 #include "python/package_manager.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include "python/runner.hpp"
 #include "scene/scene_manager.hpp"
 

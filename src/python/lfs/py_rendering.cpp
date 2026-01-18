@@ -5,7 +5,7 @@
 #include "core/camera.hpp"
 #include "core/tensor.hpp"
 #include "py_scene.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include "rendering/gs_rasterizer_tensor.hpp"
 #include "training/dataset.hpp"
 #include "visualizer/ipc/view_context.hpp"

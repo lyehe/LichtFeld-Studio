@@ -599,7 +599,7 @@ namespace lfs::python {
             return;
         }
 
-        nb::gil_scoped_acquire gil;
+        // GIL is already held by caller (py_panel_registry.cpp)
 
         for (auto& panel : panels_copy) {
             if (panel.space != space || !panel.enabled) {
@@ -694,7 +694,7 @@ namespace lfs::python {
             return;
         }
 
-        nb::gil_scoped_acquire gil;
+        // GIL is already held by caller (py_panel_registry.cpp)
 
         try {
             PyUILayout layout;

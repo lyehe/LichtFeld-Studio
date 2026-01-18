@@ -12,29 +12,29 @@ message(STATUS "Configuring Python components (runner + nanobind module)")
 find_package(Python REQUIRED COMPONENTS Interpreter Development Development.Module Development.SABIModule)
 find_package(nanobind CONFIG REQUIRED)
 
-# Shared library for panel registry - must be shared to avoid duplicate statics
+# Shared library for Python runtime state - must be shared to avoid duplicate statics
 # when linked into both the main executable and the Python module
-add_library(lfs_panel_registry SHARED
-    py_panel_registry.cpp
+add_library(lfs_python_runtime SHARED
+    python_runtime.cpp
 )
 
-target_include_directories(lfs_panel_registry
+target_include_directories(lfs_python_runtime
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/src
 )
 
-target_link_libraries(lfs_panel_registry
+target_link_libraries(lfs_python_runtime
     PUBLIC
         Python::Python
 )
 
-target_compile_definitions(lfs_panel_registry
+target_compile_definitions(lfs_python_runtime
     PRIVATE
-        LFS_PANEL_REGISTRY_EXPORTS
+        LFS_PYTHON_RUNTIME_EXPORTS
 )
 
-set_target_properties(lfs_panel_registry PROPERTIES
+set_target_properties(lfs_python_runtime PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
@@ -65,7 +65,7 @@ target_link_libraries(lfs_python_utils
     PUBLIC
         Python::Python
         lfs_core
-        lfs_panel_registry
+        lfs_python_runtime
 )
 
 target_compile_definitions(lfs_python_utils
@@ -124,7 +124,7 @@ target_link_libraries(lfs_py PRIVATE
     lfs_visualizer
     lfs_rendering       # For render_view, compute_screen_positions
     lfs_mcp
-    lfs_panel_registry
+    lfs_python_runtime
     OpenImageIO::OpenImageIO
     CUDA::cudart
     CUDA::cublas
@@ -154,7 +154,7 @@ if(WIN32)
     # Copy project DLLs
     add_custom_command(TARGET lfs_py POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:lfs_panel_registry>"
+            "$<TARGET_FILE:lfs_python_runtime>"
             "$<TARGET_FILE:lfs_event_bridge>"
             "${CMAKE_CURRENT_BINARY_DIR}"
         COMMENT "Copying project DLLs to Python module directory"
@@ -220,7 +220,7 @@ import os, sys
 
 # Add DLL directories (Python 3.8+ requirement on Windows)
 dll_dirs = [
-    r'$<TARGET_FILE_DIR:lfs_panel_registry>',
+    r'$<TARGET_FILE_DIR:lfs_python_runtime>',
     r'${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin',
     r'${CMAKE_BINARY_DIR}/external/nvImageCodec/src',
     r'${CUDAToolkit_BIN_DIR}',
@@ -246,7 +246,7 @@ runpy.run_path(r'${NB_STUBGEN}', run_name='__main__')
                 OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed
                 COMMAND "${Python_EXECUTABLE}" "${STUBGEN_WRAPPER}"
                 WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-                DEPENDS lfs_py lfs_panel_registry "${NB_STUBGEN}"
+                DEPENDS lfs_py lfs_python_runtime "${NB_STUBGEN}"
                 COMMENT "Generating Python stubs for lichtfeld (Windows)"
             )
             add_custom_target(lichtfeld_stub ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/typings/lichtfeld/py.typed)
@@ -289,8 +289,8 @@ install(TARGETS lfs_py
     RUNTIME DESTINATION "${PYTHON_INSTALL_DIR}"  # Windows DLLs
 )
 
-# Install lfs_panel_registry shared library (required by lichtfeld module)
-install(TARGETS lfs_panel_registry
+# Install lfs_python_runtime shared library (required by lichtfeld module and exe)
+install(TARGETS lfs_python_runtime
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"  # Windows DLLs
 )

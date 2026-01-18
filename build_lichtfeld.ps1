@@ -602,7 +602,7 @@ function Copy-RequiredDLLs {
 
     # Add Python DLLs if building with Python bindings (default)
     if (-not $NoPythonBindings) {
-        $DLLSources += @{ Source = "src\python\$Config\lfs_panel_registry.dll"; Name = "lfs_panel_registry.dll" }
+        $DLLSources += @{ Source = "src\python\$Config\lfs_python_runtime.dll"; Name = "lfs_python_runtime.dll" }
         $DLLSources += @{ Source = "src\python\$Config\python3.dll"; Name = "python3.dll" }
     }
 

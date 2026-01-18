@@ -45,7 +45,7 @@
 #include "core/parameters.hpp"
 #include "core/services.hpp"
 #include "python/package_manager.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include "rendering/rendering.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "scene/scene.hpp"

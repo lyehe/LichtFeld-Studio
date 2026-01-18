@@ -15,7 +15,7 @@
 #include <core/path_utils.hpp>
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-#include "py_panel_registry.hpp"
+#include "python_runtime.hpp"
 #include "training/control/control_boundary.hpp"
 #include <Python.h>
 #include <mutex>
@@ -24,7 +24,6 @@
 namespace lfs::python {
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-    static std::once_flag g_py_init_once;
     static bool g_we_initialized_python = false;
 
     namespace {
@@ -123,9 +122,6 @@ sys.stderr = OutputCapture(True)
     }
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-    static PyThreadState* g_main_thread_state = nullptr;
-    static bool g_plugins_loaded = false;
-
     static void add_dll_directories() {
 #ifdef _WIN32
         // Python 3.8+ on Windows requires os.add_dll_directory() for DLL loading
@@ -166,9 +162,9 @@ _add_dll_dirs()
     }
 
     static void ensure_plugins_loaded() {
-        if (g_plugins_loaded)
+        if (are_plugins_loaded())
             return;
-        g_plugins_loaded = true;
+        mark_plugins_loaded();
 
         add_dll_directories();
 
@@ -244,7 +240,7 @@ _add_dll_dirs()
 
     void ensure_initialized() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        std::call_once(g_py_init_once, [] {
+        call_once_py_init([] {
             if (!Py_IsInitialized()) {
                 PyImport_AppendInittab("_lfs_output", init_capture_module);
 
@@ -301,7 +297,7 @@ _add_dll_dirs()
 
             ensure_plugins_loaded();
 
-            g_main_thread_state = PyEval_SaveThread();
+            set_main_thread_state(PyEval_SaveThread());
             set_gil_state_ready(true);
             LOG_DEBUG("GIL released, external_init={}", !g_we_initialized_python);
         });
@@ -316,9 +312,8 @@ _add_dll_dirs()
 
         set_gil_state_ready(false);
 
-        if (g_main_thread_state) {
-            PyEval_RestoreThread(g_main_thread_state);
-            g_main_thread_state = nullptr;
+        if (get_main_thread_state()) {
+            acquire_gil_main_thread();
         } else {
             LOG_WARN("No saved thread state, using PyGILState_Ensure");
             PyGILState_Ensure();
@@ -360,19 +355,15 @@ _add_dll_dirs()
 
     bool was_python_used() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        return g_main_thread_state != nullptr || Py_IsInitialized();
+        return get_main_thread_state() != nullptr || Py_IsInitialized();
 #else
         return false;
 #endif
     }
 
-#ifdef LFS_BUILD_PYTHON_BINDINGS
-    static std::once_flag g_redirect_once;
-#endif
-
     void install_output_redirect() {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        std::call_once(g_redirect_once, [] {
+        call_once_redirect([] {
             const PyGILState_STATE gil = PyGILState_Ensure();
             redirect_output();
             PyGILState_Release(gil);
@@ -416,7 +407,7 @@ _add_dll_dirs()
         const PyGILState_STATE gil_state = PyGILState_Ensure();
 
         // Install output redirect (calls redirect_output() once)
-        std::call_once(g_redirect_once, [] { redirect_output(); });
+        call_once_redirect([] { redirect_output(); });
 
         // Add Python module directory (where lichtfeld.so lives) to sys.path
         {

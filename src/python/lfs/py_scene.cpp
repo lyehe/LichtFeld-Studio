@@ -4,7 +4,7 @@
 
 #include "py_scene.hpp"
 #include "core/events.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include <nanobind/ndarray.h>
 
 namespace lfs::python {

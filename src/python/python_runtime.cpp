@@ -2,9 +2,10 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-#include "py_panel_registry.hpp"
+#include "python_runtime.hpp"
 
 #include <atomic>
+#include <mutex>
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
 #include <Python.h>
@@ -25,6 +26,18 @@ namespace lfs::python {
 
         ApplicationSceneContext g_app_scene_context;
         std::atomic<bool> g_gil_state_ready{false};
+
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        // Main thread GIL state - stored here in the shared library
+        // to ensure single copy across all modules
+        PyThreadState* g_main_thread_state = nullptr;
+        std::mutex g_main_thread_gil_mutex;
+#endif
+
+        // Initialization guards - must be in shared library
+        std::once_flag g_py_init_once;
+        std::once_flag g_redirect_once;
+        std::atomic<bool> g_plugins_loaded{false};
     } // namespace
 
     // Operation context (short-lived)
@@ -49,6 +62,49 @@ namespace lfs::python {
 
     void set_gil_state_ready(const bool ready) { g_gil_state_ready.store(ready, std::memory_order_release); }
     bool is_gil_state_ready() { return g_gil_state_ready.load(std::memory_order_acquire); }
+
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+    void set_main_thread_state(void* state) {
+        std::lock_guard lock(g_main_thread_gil_mutex);
+        g_main_thread_state = static_cast<PyThreadState*>(state);
+    }
+
+    void* get_main_thread_state() {
+        std::lock_guard lock(g_main_thread_gil_mutex);
+        return g_main_thread_state;
+    }
+
+    void acquire_gil_main_thread() {
+        std::lock_guard lock(g_main_thread_gil_mutex);
+        if (g_main_thread_state) {
+            PyEval_RestoreThread(g_main_thread_state);
+            g_main_thread_state = nullptr;
+        }
+    }
+
+    void release_gil_main_thread() {
+        std::lock_guard lock(g_main_thread_gil_mutex);
+        g_main_thread_state = PyEval_SaveThread();
+    }
+#else
+    // Stubs when Python bindings disabled
+    void set_main_thread_state(void*) {}
+    void* get_main_thread_state() { return nullptr; }
+    void acquire_gil_main_thread() {}
+    void release_gil_main_thread() {}
+#endif
+
+    // Initialization guards
+    void call_once_py_init(std::function<void()> fn) {
+        std::call_once(g_py_init_once, std::move(fn));
+    }
+
+    void call_once_redirect(std::function<void()> fn) {
+        std::call_once(g_redirect_once, std::move(fn));
+    }
+
+    void mark_plugins_loaded() { g_plugins_loaded.store(true, std::memory_order_release); }
+    bool are_plugins_loaded() { return g_plugins_loaded.load(std::memory_order_acquire); }
 
     void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
         g_ensure_initialized_callback = std::move(cb);
@@ -95,9 +151,9 @@ namespace lfs::python {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
         if (!Py_IsInitialized() || !is_gil_state_ready())
             return;
-        const PyGILState_STATE gil = PyGILState_Ensure();
+        acquire_gil_main_thread();
         g_draw_callback(space);
-        PyGILState_Release(gil);
+        release_gil_main_thread();
 #else
         g_draw_callback(space);
 #endif
@@ -112,9 +168,9 @@ namespace lfs::python {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
             if (!Py_IsInitialized() || !is_gil_state_ready())
                 return false;
-            const PyGILState_STATE gil = PyGILState_Ensure();
+            acquire_gil_main_thread();
             const bool result = g_has_callback(space);
-            PyGILState_Release(gil);
+            release_gil_main_thread();
             return result;
 #else
             return g_has_callback(space);
@@ -132,9 +188,9 @@ namespace lfs::python {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
             if (!Py_IsInitialized() || !is_gil_state_ready())
                 return {};
-            const PyGILState_STATE gil = PyGILState_Ensure();
+            acquire_gil_main_thread();
             const auto result = g_panel_names_callback(space);
-            PyGILState_Release(gil);
+            release_gil_main_thread();
             return result;
 #else
             return g_panel_names_callback(space);
@@ -149,9 +205,9 @@ namespace lfs::python {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
         if (!Py_IsInitialized() || !is_gil_state_ready())
             return;
-        const PyGILState_STATE gil = PyGILState_Ensure();
+        acquire_gil_main_thread();
         g_draw_single_callback(name);
-        PyGILState_Release(gil);
+        release_gil_main_thread();
 #else
         g_draw_single_callback(name);
 #endif

@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>

@@ -10,7 +10,7 @@
 #include "core/logger.hpp"
 #include "core/path_utils.hpp"
 #include "core/services.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include "python/runner.hpp"
 #include "scene/scene_manager.hpp"
 #include "tools/align_tool.hpp"

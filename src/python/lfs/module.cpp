@@ -25,7 +25,7 @@
 #include "core/event_bridge/scoped_handler.hpp"
 #include "core/events.hpp"
 #include "core/logger.hpp"
-#include "python/py_panel_registry.hpp"
+#include "python/python_runtime.hpp"
 #include "python/runner.hpp"
 #include "training/strategies/istrategy.hpp"
 #include "training/trainer.hpp"
