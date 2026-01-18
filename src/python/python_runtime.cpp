@@ -30,8 +30,7 @@ namespace lfs::python {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
         // Main thread GIL state - stored here in the shared library
         // to ensure single copy across all modules
-        PyThreadState* g_main_thread_state = nullptr;
-        std::mutex g_main_thread_gil_mutex;
+        std::atomic<PyThreadState*> g_main_thread_state{nullptr};
 #endif
 
         // Initialization guards - must be in shared library
@@ -65,26 +64,23 @@ namespace lfs::python {
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
     void set_main_thread_state(void* state) {
-        std::lock_guard lock(g_main_thread_gil_mutex);
-        g_main_thread_state = static_cast<PyThreadState*>(state);
+        g_main_thread_state.store(static_cast<PyThreadState*>(state), std::memory_order_release);
     }
 
     void* get_main_thread_state() {
-        std::lock_guard lock(g_main_thread_gil_mutex);
-        return g_main_thread_state;
+        return g_main_thread_state.load(std::memory_order_acquire);
     }
 
     void acquire_gil_main_thread() {
-        std::lock_guard lock(g_main_thread_gil_mutex);
-        if (g_main_thread_state) {
-            PyEval_RestoreThread(g_main_thread_state);
-            g_main_thread_state = nullptr;
+        PyThreadState* state = g_main_thread_state.exchange(nullptr, std::memory_order_acq_rel);
+        if (state) {
+            PyEval_RestoreThread(state);
         }
     }
 
     void release_gil_main_thread() {
-        std::lock_guard lock(g_main_thread_gil_mutex);
-        g_main_thread_state = PyEval_SaveThread();
+        PyThreadState* state = PyEval_SaveThread();
+        g_main_thread_state.store(state, std::memory_order_release);
     }
 #else
     // Stubs when Python bindings disabled
