@@ -40,6 +40,7 @@ namespace lfs::vis {
 
     SceneManager::SceneManager() {
         setupEventHandlers();
+        python::set_application_scene(&scene_);
         LOG_DEBUG("SceneManager initialized");
     }
 
