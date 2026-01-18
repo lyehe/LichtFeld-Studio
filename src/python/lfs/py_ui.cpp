@@ -501,6 +501,13 @@ namespace lfs::python {
     void PyPanelRegistry::register_panel(nb::object panel_class) {
         std::lock_guard lock(mutex_);
 
+        LOG_INFO("Registering Python panel");
+
+        if (!panel_class.is_valid()) {
+            LOG_ERROR("register_panel: panel_class is invalid");
+            return;
+        }
+
         // Helper to get attribute with panel_ prefix, falling back to bl_ for backward compat
         auto get_panel_attr = [&panel_class](const char* panel_name,
                                              const char* bl_name) -> std::optional<nb::object> {
@@ -519,41 +526,72 @@ namespace lfs::python {
         int order = 100;
         std::string category;
 
-        if (auto v = get_panel_attr("panel_label", "bl_label")) {
-            label = nb::cast<std::string>(*v);
-        }
-
-        if (auto v = get_panel_attr("panel_space", "bl_space")) {
-            std::string space_str = nb::cast<std::string>(*v);
-            if (space_str == "SIDE_PANEL") {
-                space = PanelSpace::SidePanel;
-            } else if (space_str == "FLOATING") {
-                space = PanelSpace::Floating;
-            } else if (space_str == "VIEWPORT_OVERLAY") {
-                space = PanelSpace::ViewportOverlay;
+        try {
+            if (auto v = get_panel_attr("panel_label", "bl_label")) {
+                label = nb::cast<std::string>(*v);
             }
+
+            if (auto v = get_panel_attr("panel_space", "bl_space")) {
+                std::string space_str = nb::cast<std::string>(*v);
+                if (space_str == "SIDE_PANEL") {
+                    space = PanelSpace::SidePanel;
+                } else if (space_str == "FLOATING") {
+                    space = PanelSpace::Floating;
+                } else if (space_str == "VIEWPORT_OVERLAY") {
+                    space = PanelSpace::ViewportOverlay;
+                }
+            }
+
+            if (auto v = get_panel_attr("panel_order", "bl_order")) {
+                order = nb::cast<int>(*v);
+            }
+
+            if (auto v = get_panel_attr("panel_category", "bl_category")) {
+                category = nb::cast<std::string>(*v);
+            }
+        } catch (const nb::python_error& e) {
+            LOG_ERROR("register_panel: failed to extract attributes: {}", e.what());
+            return;
+        } catch (const std::exception& e) {
+            LOG_ERROR("register_panel: failed to extract attributes: {}", e.what());
+            return;
         }
 
-        if (auto v = get_panel_attr("panel_order", "bl_order")) {
-            order = nb::cast<int>(*v);
-        }
-
-        if (auto v = get_panel_attr("panel_category", "bl_category")) {
-            category = nb::cast<std::string>(*v);
-        }
+        LOG_INFO("Registering panel '{}' (space={}, order={})", label, static_cast<int>(space), order);
 
         for (auto& p : panels_) {
             if (p.label == label) {
-                p.panel_class = panel_class;
-                p.panel_instance = panel_class();
-                p.space = space;
-                p.order = order;
+                LOG_INFO("Updating existing panel '{}'", label);
+                try {
+                    p.panel_class = panel_class;
+                    p.panel_instance = panel_class();
+                    p.space = space;
+                    p.order = order;
+                } catch (const nb::python_error& e) {
+                    LOG_ERROR("register_panel: failed to create instance for '{}': {}", label, e.what());
+                } catch (const std::exception& e) {
+                    LOG_ERROR("register_panel: failed to create instance for '{}': {}", label, e.what());
+                }
                 return;
             }
         }
 
         // Create panel instance
-        nb::object instance = panel_class();
+        nb::object instance;
+        try {
+            instance = panel_class();
+        } catch (const nb::python_error& e) {
+            LOG_ERROR("register_panel: failed to create instance for '{}': {}", label, e.what());
+            return;
+        } catch (const std::exception& e) {
+            LOG_ERROR("register_panel: failed to create instance for '{}': {}", label, e.what());
+            return;
+        }
+
+        if (!instance.is_valid()) {
+            LOG_ERROR("register_panel: instance creation returned invalid object for '{}'", label);
+            return;
+        }
 
         PyPanelInfo info;
         info.panel_class = panel_class;
@@ -566,6 +604,8 @@ namespace lfs::python {
         panels_.push_back(std::move(info));
         std::sort(panels_.begin(), panels_.end(),
                   [](const PyPanelInfo& a, const PyPanelInfo& b) { return a.order < b.order; });
+
+        LOG_INFO("Panel '{}' registered successfully", label);
     }
 
     void PyPanelRegistry::unregister_panel(nb::object panel_class) {
@@ -690,11 +730,21 @@ namespace lfs::python {
         }
 
         if (!found) {
-            LOG_DEBUG("Panel '{}' not found or disabled", label);
+            LOG_INFO("Panel '{}' not found or disabled", label);
             return;
         }
 
-        // GIL is already held by caller (py_panel_registry.cpp)
+        if (!panel_copy.panel_instance.is_valid()) {
+            LOG_ERROR("Panel '{}' has invalid instance", label);
+            return;
+        }
+
+        if (!nb::hasattr(panel_copy.panel_instance, "draw")) {
+            LOG_ERROR("Panel '{}' has no draw method", label);
+            return;
+        }
+
+        LOG_INFO("Drawing panel '{}'", label);
 
         try {
             PyUILayout layout;
@@ -703,6 +753,8 @@ namespace lfs::python {
             LOG_ERROR("Python panel '{}' Python error: {}", panel_copy.label, e.what());
         } catch (const std::exception& e) {
             LOG_ERROR("Python panel '{}' error: {}", panel_copy.label, e.what());
+        } catch (...) {
+            LOG_ERROR("Python panel '{}' unknown error", panel_copy.label);
         }
     }
 
