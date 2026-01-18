@@ -51,6 +51,9 @@ namespace lfs::python {
     LFS_PYTHON_RUNTIME_API void set_python_cleanup_callback(CleanupCallback cb);
     LFS_PYTHON_RUNTIME_API void clear_panel_callbacks();
 
+    // Debug: dumps callback addresses to stderr (detects duplicate DLL loading)
+    LFS_PYTHON_RUNTIME_API void debug_dump_callbacks(const char* caller);
+
     // C++ interface for the visualizer
     LFS_PYTHON_RUNTIME_API void draw_python_panels(PanelSpace space, lfs::vis::Scene* scene = nullptr);
     LFS_PYTHON_RUNTIME_API void draw_python_panel(const std::string& name, lfs::vis::Scene* scene = nullptr);

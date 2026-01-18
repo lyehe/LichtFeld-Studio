@@ -5,6 +5,7 @@
 #include "python_runtime.hpp"
 
 #include <atomic>
+#include <cstdio>
 #include <mutex>
 
 #ifdef LFS_BUILD_PYTHON_BINDINGS
@@ -14,12 +15,15 @@
 namespace lfs::python {
 
     namespace {
-        EnsureInitializedCallback g_ensure_initialized_callback;
-        DrawPanelsCallback g_draw_callback;
-        DrawSinglePanelCallback g_draw_single_callback;
-        HasPanelsCallback g_has_callback;
-        GetPanelNamesCallback g_panel_names_callback;
-        CleanupCallback g_cleanup_callback;
+        EnsureInitializedCallback g_ensure_initialized_callback = nullptr;
+        DrawPanelsCallback g_draw_callback = nullptr;
+        DrawSinglePanelCallback g_draw_single_callback = nullptr;
+        HasPanelsCallback g_has_callback = nullptr;
+        GetPanelNamesCallback g_panel_names_callback = nullptr;
+        CleanupCallback g_cleanup_callback = nullptr;
+
+        // Unique ID for this DLL instance (detects duplicate loading)
+        const void* const DLL_INSTANCE_ID = &g_draw_single_callback;
 
         // Operation context (short-lived, per-call)
         void* g_scene_for_python = nullptr;
@@ -103,26 +107,56 @@ namespace lfs::python {
     bool are_plugins_loaded() { return g_plugins_loaded.load(std::memory_order_acquire); }
 
     void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
+        std::fprintf(stderr, "[pyrt] set_ensure_initialized_callback: %p -> %p (globals at %p)\n",
+                     reinterpret_cast<void*>(g_ensure_initialized_callback),
+                     reinterpret_cast<void*>(cb),
+                     reinterpret_cast<void*>(&g_ensure_initialized_callback));
+        std::fflush(stderr);
         g_ensure_initialized_callback = cb;
     }
 
     void set_panel_draw_callback(DrawPanelsCallback cb) {
+        std::fprintf(stderr, "[pyrt] set_panel_draw_callback: %p -> %p (global at %p)\n",
+                     reinterpret_cast<void*>(g_draw_callback),
+                     reinterpret_cast<void*>(cb),
+                     reinterpret_cast<void*>(&g_draw_callback));
+        std::fflush(stderr);
         g_draw_callback = cb;
     }
 
     void set_panel_draw_single_callback(DrawSinglePanelCallback cb) {
+        std::fprintf(stderr, "[pyrt] set_panel_draw_single_callback: %p -> %p (global at %p)\n",
+                     reinterpret_cast<void*>(g_draw_single_callback),
+                     reinterpret_cast<void*>(cb),
+                     reinterpret_cast<void*>(&g_draw_single_callback));
+        std::fflush(stderr);
         g_draw_single_callback = cb;
     }
 
     void set_panel_has_callback(HasPanelsCallback cb) {
+        std::fprintf(stderr, "[pyrt] set_panel_has_callback: %p -> %p (global at %p)\n",
+                     reinterpret_cast<void*>(g_has_callback),
+                     reinterpret_cast<void*>(cb),
+                     reinterpret_cast<void*>(&g_has_callback));
+        std::fflush(stderr);
         g_has_callback = cb;
     }
 
     void set_panel_names_callback(GetPanelNamesCallback cb) {
+        std::fprintf(stderr, "[pyrt] set_panel_names_callback: %p -> %p (global at %p)\n",
+                     reinterpret_cast<void*>(g_panel_names_callback),
+                     reinterpret_cast<void*>(cb),
+                     reinterpret_cast<void*>(&g_panel_names_callback));
+        std::fflush(stderr);
         g_panel_names_callback = cb;
     }
 
     void set_python_cleanup_callback(CleanupCallback cb) {
+        std::fprintf(stderr, "[pyrt] set_python_cleanup_callback: %p -> %p (global at %p)\n",
+                     reinterpret_cast<void*>(g_cleanup_callback),
+                     reinterpret_cast<void*>(cb),
+                     reinterpret_cast<void*>(&g_cleanup_callback));
+        std::fflush(stderr);
         g_cleanup_callback = cb;
     }
 
@@ -133,6 +167,22 @@ namespace lfs::python {
         g_has_callback = nullptr;
         g_panel_names_callback = nullptr;
         g_cleanup_callback = nullptr;
+    }
+
+    void debug_dump_callbacks(const char* caller) {
+        std::fprintf(stderr, "\n[pyrt] ======== CALLBACK STATE DUMP ========\n");
+        std::fprintf(stderr, "[pyrt] Caller: %s\n", caller);
+        std::fprintf(stderr, "[pyrt] DLL_INSTANCE_ID: %p  <-- MUST MATCH between pyd and exe!\n", DLL_INSTANCE_ID);
+        std::fprintf(stderr, "[pyrt] g_draw_single_callback:\n");
+        std::fprintf(stderr, "[pyrt]   value = %p %s\n",
+                     reinterpret_cast<void*>(g_draw_single_callback),
+                     g_draw_single_callback ? "(SET)" : "(NULL - PROBLEM!)");
+        std::fprintf(stderr, "[pyrt]   &addr = %p\n", reinterpret_cast<void*>(&g_draw_single_callback));
+        std::fprintf(stderr, "[pyrt] g_draw_callback:        value=%p\n", reinterpret_cast<void*>(g_draw_callback));
+        std::fprintf(stderr, "[pyrt] g_has_callback:         value=%p\n", reinterpret_cast<void*>(g_has_callback));
+        std::fprintf(stderr, "[pyrt] g_panel_names_callback: value=%p\n", reinterpret_cast<void*>(g_panel_names_callback));
+        std::fprintf(stderr, "[pyrt] ======== END DUMP ========\n\n");
+        std::fflush(stderr);
     }
 
     void invoke_python_cleanup() {
@@ -204,14 +254,43 @@ namespace lfs::python {
     }
 
     void draw_python_panel(const std::string& name, lfs::vis::Scene* /* scene */) {
+        // First call: dump full state to detect DLL mismatch
+        static bool first_call = true;
+        if (first_call) {
+            debug_dump_callbacks("draw_python_panel (FIRST CALL from exe)");
+            first_call = false;
+        }
+
+        std::fprintf(stderr, "[pyrt] draw_python_panel('%s'): DLL_ID=%p, callback=%p\n",
+                     name.c_str(), DLL_INSTANCE_ID,
+                     reinterpret_cast<void*>(g_draw_single_callback));
+        std::fflush(stderr);
+
         if (!g_draw_single_callback) {
+            std::fprintf(stderr, "[pyrt] ERROR: g_draw_single_callback is NULL!\n");
+            std::fprintf(stderr, "[pyrt] This means exe and pyd loaded DIFFERENT copies of lfs_python_runtime.dll\n");
+            std::fprintf(stderr, "[pyrt] Check that both load from the same path.\n");
+            std::fflush(stderr);
             return;
         }
+
 #ifdef LFS_BUILD_PYTHON_BINDINGS
-        if (!Py_IsInitialized() || !is_gil_state_ready())
+        if (!Py_IsInitialized() || !is_gil_state_ready()) {
+            std::fprintf(stderr, "[pyrt] Python not ready: init=%d, gil=%d\n",
+                         Py_IsInitialized(), is_gil_state_ready());
+            std::fflush(stderr);
             return;
+        }
+
         const PyGILState_STATE gil = PyGILState_Ensure();
+        std::fprintf(stderr, "[pyrt] Calling callback %p('%s')...\n",
+                     reinterpret_cast<void*>(g_draw_single_callback), name.c_str());
+        std::fflush(stderr);
+
         g_draw_single_callback(name.c_str());
+
+        std::fprintf(stderr, "[pyrt] Callback returned OK\n");
+        std::fflush(stderr);
         PyGILState_Release(gil);
 #else
         g_draw_single_callback(name.c_str());

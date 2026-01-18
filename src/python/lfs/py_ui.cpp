@@ -15,6 +15,7 @@
 #include "visualizer/theme/theme.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <unordered_map>
 #include <imgui.h>
@@ -1243,8 +1244,26 @@ namespace lfs::python {
             nb::arg("tool"), "Switch to a toolbar tool (none, selection, translate, rotate, scale, mirror, brush, align, cropbox)");
 
         // Panel system callbacks
+        std::fprintf(stderr, "[py_ui] register_ui: registering panel callbacks from pyd module\n");
+        std::fflush(stderr);
+
         set_panel_draw_callback([](PanelSpace space) { PyPanelRegistry::instance().draw_panels(space); });
-        set_panel_draw_single_callback([](const char* label) { PyPanelRegistry::instance().draw_single_panel(label); });
+
+        set_panel_draw_single_callback([](const char* label) {
+            std::fprintf(stderr, "[py_ui] draw_single_callback ENTERED: label='%s'\n", label ? label : "(null)");
+            std::fflush(stderr);
+            if (!label) {
+                std::fprintf(stderr, "[py_ui] draw_single_callback: label is NULL!\n");
+                std::fflush(stderr);
+                return;
+            }
+            std::fprintf(stderr, "[py_ui] draw_single_callback: calling PyPanelRegistry::draw_single_panel\n");
+            std::fflush(stderr);
+            PyPanelRegistry::instance().draw_single_panel(label);
+            std::fprintf(stderr, "[py_ui] draw_single_callback: returned from PyPanelRegistry\n");
+            std::fflush(stderr);
+        });
+
         set_panel_has_callback([](PanelSpace space) { return PyPanelRegistry::instance().has_panels(space); });
         set_panel_names_callback([](PanelSpace space, PanelNameVisitor visitor, void* ctx) {
             for (const auto& name : PyPanelRegistry::instance().get_panel_names(space)) {
@@ -1261,6 +1280,12 @@ namespace lfs::python {
                 registry.invoke(panel, section, prepend ? PyHookPosition::Prepend : PyHookPosition::Append);
             }
         });
+
+        std::fprintf(stderr, "[py_ui] register_ui: all callbacks registered\n");
+        std::fflush(stderr);
+
+        // Dump state from pyd side to verify globals are shared with exe
+        debug_dump_callbacks("py_ui.cpp (pyd module)");
     }
 
 } // namespace lfs::python
