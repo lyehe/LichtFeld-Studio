@@ -4,6 +4,10 @@
 
 #include "py_panel_registry.hpp"
 
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+#include <Python.h>
+#endif
+
 namespace lfs::python {
 
     namespace {
@@ -83,8 +87,13 @@ namespace lfs::python {
     void draw_python_panels(PanelSpace space, lfs::vis::Scene* /* scene */) {
         if (!g_draw_callback)
             return;
-        // No guard needed - panels use persistent application scene context
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        const PyGILState_STATE gil = PyGILState_Ensure();
         g_draw_callback(space);
+        PyGILState_Release(gil);
+#else
+        g_draw_callback(space);
+#endif
     }
 
     bool has_python_panels(PanelSpace space) {
@@ -93,7 +102,14 @@ namespace lfs::python {
         }
 
         if (g_has_callback) {
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+            const PyGILState_STATE gil = PyGILState_Ensure();
+            const bool result = g_has_callback(space);
+            PyGILState_Release(gil);
+            return result;
+#else
             return g_has_callback(space);
+#endif
         }
         return false;
     }
@@ -104,7 +120,14 @@ namespace lfs::python {
         }
 
         if (g_panel_names_callback) {
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+            const PyGILState_STATE gil = PyGILState_Ensure();
+            auto result = g_panel_names_callback(space);
+            PyGILState_Release(gil);
+            return result;
+#else
             return g_panel_names_callback(space);
+#endif
         }
         return {};
     }
@@ -112,8 +135,13 @@ namespace lfs::python {
     void draw_python_panel(const std::string& name, lfs::vis::Scene* /* scene */) {
         if (!g_draw_single_callback)
             return;
-        // No guard needed - panels use persistent application scene context
+#ifdef LFS_BUILD_PYTHON_BINDINGS
+        const PyGILState_STATE gil = PyGILState_Ensure();
         g_draw_single_callback(name);
+        PyGILState_Release(gil);
+#else
+        g_draw_single_callback(name);
+#endif
     }
 
 } // namespace lfs::python
