@@ -4,6 +4,8 @@
 
 #include "py_panel_registry.hpp"
 
+#include <atomic>
+
 #ifdef LFS_BUILD_PYTHON_BINDINGS
 #include <Python.h>
 #endif
@@ -21,8 +23,8 @@ namespace lfs::python {
         // Operation context (short-lived, per-call)
         void* g_scene_for_python = nullptr;
 
-        // Application context (long-lived, persists while model is loaded)
         ApplicationSceneContext g_app_scene_context;
+        std::atomic<bool> g_gil_state_ready{false};
     } // namespace
 
     // Operation context (short-lived)
@@ -44,6 +46,9 @@ namespace lfs::python {
     vis::Scene* get_application_scene() { return g_app_scene_context.get(); }
 
     uint64_t get_scene_generation() { return g_app_scene_context.generation(); }
+
+    void set_gil_state_ready(const bool ready) { g_gil_state_ready.store(ready, std::memory_order_release); }
+    bool is_gil_state_ready() { return g_gil_state_ready.load(std::memory_order_acquire); }
 
     void set_ensure_initialized_callback(EnsureInitializedCallback cb) {
         g_ensure_initialized_callback = std::move(cb);
@@ -88,6 +93,8 @@ namespace lfs::python {
         if (!g_draw_callback)
             return;
 #ifdef LFS_BUILD_PYTHON_BINDINGS
+        if (!Py_IsInitialized() || !is_gil_state_ready())
+            return;
         const PyGILState_STATE gil = PyGILState_Ensure();
         g_draw_callback(space);
         PyGILState_Release(gil);
@@ -103,6 +110,8 @@ namespace lfs::python {
 
         if (g_has_callback) {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
+            if (!Py_IsInitialized() || !is_gil_state_ready())
+                return false;
             const PyGILState_STATE gil = PyGILState_Ensure();
             const bool result = g_has_callback(space);
             PyGILState_Release(gil);
@@ -121,8 +130,10 @@ namespace lfs::python {
 
         if (g_panel_names_callback) {
 #ifdef LFS_BUILD_PYTHON_BINDINGS
+            if (!Py_IsInitialized() || !is_gil_state_ready())
+                return {};
             const PyGILState_STATE gil = PyGILState_Ensure();
-            auto result = g_panel_names_callback(space);
+            const auto result = g_panel_names_callback(space);
             PyGILState_Release(gil);
             return result;
 #else
@@ -136,6 +147,8 @@ namespace lfs::python {
         if (!g_draw_single_callback)
             return;
 #ifdef LFS_BUILD_PYTHON_BINDINGS
+        if (!Py_IsInitialized() || !is_gil_state_ready())
+            return;
         const PyGILState_STATE gil = PyGILState_Ensure();
         g_draw_single_callback(name);
         PyGILState_Release(gil);

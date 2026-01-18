@@ -299,20 +299,11 @@ _add_dll_dirs()
                 }
             }
 
-            // Load plugins BEFORE releasing the GIL - the .pyd initialization code
-            // needs valid thread state to access Python internals (PyImport_GetModuleDict etc.)
-            LOG_INFO("Loading plugins while holding GIL...");
             ensure_plugins_loaded();
-            LOG_INFO("Plugin loading complete");
 
-            // Now release the GIL for other threads
-            if (g_we_initialized_python) {
-                g_main_thread_state = PyEval_SaveThread();
-                LOG_INFO("GIL released (main thread state saved)");
-            } else {
-                g_main_thread_state = nullptr;
-                LOG_INFO("External Python init - using PyGILState for GIL management");
-            }
+            g_main_thread_state = PyEval_SaveThread();
+            set_gil_state_ready(true);
+            LOG_DEBUG("GIL released, external_init={}", !g_we_initialized_python);
         });
 #endif
     }
@@ -323,17 +314,13 @@ _add_dll_dirs()
             return;
         }
 
-        // Acquire GIL appropriately based on how Python was initialized
+        set_gil_state_ready(false);
+
         if (g_main_thread_state) {
-            // We initialized Python - restore main thread state
             PyEval_RestoreThread(g_main_thread_state);
             g_main_thread_state = nullptr;
-        } else if (g_we_initialized_python) {
-            // We initialized but thread state is null (shouldn't happen)
-            LOG_WARN("finalize: unexpected null thread state");
-            return;
         } else {
-            // External initialization - use PyGILState
+            LOG_WARN("No saved thread state, using PyGILState_Ensure");
             PyGILState_Ensure();
         }
 
