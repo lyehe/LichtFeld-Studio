@@ -598,6 +598,8 @@
     "overwrite.btn_overwrite_start": "Sobrescribir e iniciar",
     "overwrite.btn_save_as_start": "Guardar como…",
     "losses.lambda_dssim": "Lambda DSSIM:",
+    "losses.use_color_variance": "Color Variance Training:",
+    "tooltip.use_color_variance": "Enable SteadySplats color variance training. The default weight is 1. Requires FastGS with mip filtering, appearance correction and masks off.",
     "losses.color_variance_weight": "Color Variance Weight:",
     "losses.color_variance_warmup_iters": "Color Variance Warm-up:",
     "tooltip.color_variance_weight": "Aligns visible splat colors to reduce noise in stochastic rendering. Requires FastGS with mip filtering, appearance correction and masks off. Higher values can remove detail. 0 disables.",

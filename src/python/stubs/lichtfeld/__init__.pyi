@@ -2186,6 +2186,13 @@ class OptimizationParams:
     def lambda_dssim(self, arg: float, /) -> None: ...
 
     @property
+    def use_color_variance(self) -> bool:
+        """Enable SteadySplats color variance training with a default weight of 1"""
+
+    @use_color_variance.setter
+    def use_color_variance(self, arg: bool, /) -> None: ...
+
+    @property
     def color_variance_weight(self) -> float:
         """
         Reduces noise in stochastic rendering by aligning visible splat colors; 0 disables

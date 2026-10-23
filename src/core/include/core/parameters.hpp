@@ -266,7 +266,8 @@ namespace lfs::core {
             bool crop_to_cropbox = false;
             float lambda_dssim = 0.2f;
             // SteadySplats Eq. 30: weighted RGB squared distance to the training target.
-            float color_variance_weight = 0.0f;
+            bool use_color_variance = false;
+            float color_variance_weight = 1.0f;
             size_t color_variance_warmup_iters = 0;
             float min_opacity = 0.005f;
             size_t refine_every = 100;

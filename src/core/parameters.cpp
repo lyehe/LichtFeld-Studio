@@ -442,6 +442,12 @@ namespace lfs::core {
                     LOG_WARN("Ignoring oversize_split_fraction: MRNF no longer reserves growth for oversized splats");
                 }
                 read_registered_optimization_properties(json, params, skip_missing);
+                // Before the enable flag, a positive weight enabled this loss.
+                if (!json.contains("use_color_variance") && json.contains("color_variance_weight")) {
+                    params.use_color_variance = params.color_variance_weight > 0.0f;
+                    if (params.color_variance_weight == 0.0f)
+                        params.color_variance_weight = OptimizationParameters{}.color_variance_weight;
+                }
                 if (const auto image_count_scaler = stored_image_count_scaler(json, params.steps_scaler))
                     params.image_count_scaler = *image_count_scaler;
 
@@ -582,7 +588,7 @@ namespace lfs::core {
         }
 
         float OptimizationParameters::color_variance_weight_at(const int iteration) const {
-            return iteration > 0 && static_cast<size_t>(iteration) > color_variance_warmup_iters
+            return use_color_variance && iteration > 0 && static_cast<size_t>(iteration) > color_variance_warmup_iters
                        ? color_variance_weight
                        : 0.0f;
         }
@@ -961,7 +967,7 @@ namespace lfs::core {
                 return "color_variance_weight must be finite and within [0, 8]";
             if (color_variance_warmup_iters > MAX_ITERATION_VALUE)
                 return "color_variance_warmup_iters must fit in a signed int";
-            if (color_variance_weight > 0.0f) {
+            if (use_color_variance && color_variance_weight > 0.0f) {
                 if (color_variance_warmup_iters >= iterations)
                     return "color_variance_warmup_iters must be less than iterations when color variance is enabled";
                 if (gut)

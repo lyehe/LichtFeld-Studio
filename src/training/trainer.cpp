@@ -6279,7 +6279,7 @@ namespace lfs::training {
                                                ? std::optional{popspa_step_parameters()}
                                                : std::nullopt;
                 const auto& step_params = popspa_params ? *popspa_params : params_.optimization;
-                if (step_params.color_variance_weight > 0.0f && cropbox_ && step_params.cropbox_loss_weight < 1.0f) {
+                if (step_params.use_color_variance && step_params.color_variance_weight > 0.0f && cropbox_ && step_params.cropbox_loss_weight < 1.0f) {
                     return lfs::make_error(lfs::ErrorInit{
                         .code = lfs::ErrorCode::InvalidArgument,
                         .domain = lfs::ErrorDomain::Training,

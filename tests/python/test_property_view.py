@@ -667,6 +667,7 @@ EXPECTED_ADVANCED_IDS = (
     "cropbox_loss_weight",
     "crop_to_cropbox",
     "cropbox_growth_inside",
+    "use_color_variance",
     "color_variance_weight",
     "color_variance_warmup_iters",
     "scale_reg_decay_power",
@@ -730,7 +731,7 @@ def test_full_migration_inventory_and_schema_are_exact(lf):
     group_info = lf.ui.property_group_info("optimization")
     resolved_runs = property_view.resolve_runs(group_info)
     rendered = tuple(prop for run in resolved_runs for prop in run.prop_ids)
-    assert len(EXPECTED_RENDERED_PROP_IDS) == 115
+    assert len(EXPECTED_RENDERED_PROP_IDS) == 116
     assert len(rendered) == len(set(rendered)) == len(EXPECTED_RENDERED_PROP_IDS)
     assert set(rendered) == EXPECTED_RENDERED_PROP_IDS
 
@@ -787,6 +788,42 @@ def test_registry_placement_groups_auto_rows_and_leaves_new_ones_in_more_paramet
     }
     resolved = {run.id: run.prop_ids for run in property_view.resolve_runs(future_group)}
     assert resolved[property_view.AUTO_ADVANCED_RUN_ID] == (*expected_more_parameters, "future_scalar")
+
+
+def test_color_variance_toggle_uses_loss_rows_and_preserves_weight(lf):
+    native_params = lf.optimization_params()
+    assert native_params.builtin_default("use_color_variance") is False
+    assert native_params.builtin_default("color_variance_weight") == 1.0
+    params = {
+        "strategy": "mcmc",
+        "use_color_variance": False,
+        "color_variance_weight": 1.0,
+        "color_variance_warmup_iters": 0,
+    }
+    prop_ids = tuple(key for key in params if key != "strategy")
+    group_info = lf.ui.property_group_info("optimization")
+    runs = {run.id: run.prop_ids for run in property_view.resolve_runs(group_info)}
+    assert all(prop in runs["losses_registry"] for prop in prop_ids)
+    rows = property_view.build_rows(group_info, prop_ids, params)
+    assert rows[0]["kind"] == "checkbox"
+    assert rows[1]["text"] == "1.000"
+    binding = property_view.SectionBinding(
+        "variance", rows, lambda: params, {}, lambda _binding: None
+    )
+    assert binding._records()[0]["checked"] is False
+    assert binding.set_value("use_color_variance", True) is True
+    assert params["use_color_variance"] is True
+    assert binding._records()[0]["checked"] is True
+    assert params["color_variance_weight"] == 1.0
+    binding.update_draft("color_variance_weight", "2.5")
+    assert binding.commit("color_variance_weight") is True
+    assert binding.set_value("use_color_variance", False) is True
+    assert params["use_color_variance"] is False
+    assert binding._records()[0]["checked"] is False
+    assert params["color_variance_weight"] == 2.5
+    assert binding.set_value("use_color_variance", True) is True
+    assert params["use_color_variance"] is True
+    assert params["color_variance_weight"] == 2.5
 
 
 def test_strategy_applicability_filters_auto_rows_and_search(lf):

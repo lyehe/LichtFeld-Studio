@@ -790,6 +790,7 @@ set(TEST_FILES
     test_tensor_lazy_stateful_ops.cpp
     test_fastgs_kernels.cpp
     test_color_variance.cpp
+    test_color_variance_parameters.cpp
     fastgs_visibility_readback_cuda.cu
     test_fastgs_fuzz.cpp
     test_fastgs_tile_culling_boundary.cpp
@@ -2045,6 +2046,13 @@ if(TARGET lfs_vulkan_rasterizer)
         lfs_visualizer lfs_vulkan_rasterizer lfs_core GTest::gtest_main)
     add_test(NAME lichtfeld.stochastic_viewport COMMAND stochastic_viewport_tests)
 endif()
+
+# Parameter contracts do not initialize CUDA.
+add_executable(color_variance_parameter_tests test_color_variance_parameters.cpp)
+target_compile_features(color_variance_parameter_tests PRIVATE cxx_std_23)
+target_link_libraries(color_variance_parameter_tests PRIVATE lfs_core GTest::gtest_main)
+add_test(NAME ColorVarianceParameters COMMAND color_variance_parameter_tests)
+set_tests_properties(ColorVarianceParameters PROPERTIES LABELS "fast;cpu" TIMEOUT 30)
 
 # Focused CUDA renderer contracts.
 add_executable(color_variance_tests test_main.cpp test_color_variance.cpp)

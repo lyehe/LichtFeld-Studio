@@ -317,6 +317,7 @@ namespace {
             p.max_cap = 1000;
             p.sh_degree = 1;
             p.use_exposure_correction = false;
+            p.use_color_variance = true;
             p.color_variance_weight = 1.0f;
             p.color_variance_warmup_iters = 3;
             (*source)->initialize(p);
@@ -330,11 +331,13 @@ namespace {
             ASSERT_TRUE(destination.has_value());
             (*destination)->initialize(p);
             auto restored = params;
+            restored.optimization.use_color_variance = false;
             restored.optimization.color_variance_weight = 0.0f;
             restored.optimization.color_variance_warmup_iters = 0;
             const auto loaded = load_checkpoint(buffer, bytes, **destination, restored, nullptr, nullptr, nullptr);
             ASSERT_TRUE(loaded.has_value()) << loaded.error();
             EXPECT_EQ(*loaded, 2);
+            EXPECT_TRUE(restored.optimization.use_color_variance);
             EXPECT_EQ(restored.optimization.color_variance_weight, 1.0f);
             EXPECT_EQ(restored.optimization.color_variance_warmup_iters, 3u);
             EXPECT_EQ(restored.optimization.color_variance_weight_at(3), 0.0f);
@@ -342,51 +345,4 @@ namespace {
         }
     }
 
-    TEST(ColorVarianceParameters, AllStrategiesRoundTripAndScaleWarmup) {
-        for (const auto* strategy : {"mcmc", "mrnf", "igs+"}) {
-            auto p = param::OptimizationParameters::defaults_for_strategy(strategy);
-            EXPECT_EQ(p.color_variance_weight, 0.0f);
-            p.use_exposure_correction = false;
-            p.color_variance_weight = 1.0f;
-            p.color_variance_warmup_iters = 15'000;
-            EXPECT_TRUE(p.validate().empty()) << p.validate();
-            EXPECT_EQ(p.color_variance_weight_at(15'000), 0.0f);
-            EXPECT_EQ(p.color_variance_weight_at(15'001), 1.0f);
-            auto restored = param::OptimizationParameters::from_json(p.to_json());
-            EXPECT_EQ(restored.color_variance_weight, 1.0f);
-            EXPECT_EQ(restored.color_variance_warmup_iters, 15'000u);
-            restored.scale_steps(2.0f);
-            EXPECT_EQ(restored.color_variance_warmup_iters, 30'000u);
-            EXPECT_EQ(restored.color_variance_weight_at(30'000), 0.0f);
-            EXPECT_EQ(restored.color_variance_weight_at(30'001), 1.0f);
-            auto legacy = p.to_json();
-            legacy.erase("color_variance_weight");
-            legacy.erase("color_variance_warmup_iters");
-            const auto old = param::OptimizationParameters::from_json(legacy);
-            EXPECT_EQ(old.color_variance_weight, 0.0f);
-            EXPECT_EQ(old.color_variance_warmup_iters, 0u);
-        }
-    }
-
-    TEST(ColorVarianceParameters, RejectsInvalidWeightsAndUnsupportedModes) {
-        auto p = param::OptimizationParameters::mcmc_defaults();
-        for (float value : {-1.0f, 9.0f, std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()}) {
-            p.color_variance_weight = value;
-            EXPECT_FALSE(p.validate().empty());
-        }
-        p.color_variance_weight = 1.0f;
-        EXPECT_TRUE(p.validate().empty());
-        for (bool* flag : {&p.gut, &p.mip_filter, &p.use_ppisp, &p.use_bilateral_grid, &p.use_exposure_correction, &p.enable_sparsity}) {
-            *flag = true;
-            EXPECT_FALSE(p.validate().empty());
-            *flag = false;
-        }
-        p.mask_mode = param::MaskMode::Ignore;
-        EXPECT_FALSE(p.validate().empty());
-        p.mask_mode = param::MaskMode::None;
-        p.color_variance_warmup_iters = p.iterations;
-        EXPECT_FALSE(p.validate().empty());
-        p.color_variance_weight = 0.0f;
-        EXPECT_TRUE(p.validate().empty());
-    }
 } // namespace

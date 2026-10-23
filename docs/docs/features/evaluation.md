@@ -88,13 +88,13 @@ With `--eval-mask-report`, every listed pixel set has its own object in the eval
 
 ### Color variance training
 
-MCMC, MRNF and IGS+ support the optional SteadySplats color variance loss through the FastGS training renderer. Set **Color Variance Weight** and **Color Variance Warm-up** in the training panel's loss controls, or use `color_variance_weight` and `color_variance_warmup_iters` in an optimization config. Weight `0` disables it by default. The warm-up is the number of completed training iterations before the loss starts, and follows training step scaling. Both settings are saved in checkpoints.
+MCMC, MRNF and IGS+ support the optional SteadySplats color variance loss through the FastGS training renderer. Enable **Color Variance Training** in the training panel's loss controls, or set `use_color_variance` to `true` in an optimization config. Training is disabled by default, and **Color Variance Weight** defaults to `1` when enabled. Disabling training preserves the weight for later use. **Color Variance Warm-up** is the number of completed training iterations before the loss starts, and follows training step scaling. All three settings are saved in checkpoints. Older configs with only `color_variance_weight` retain their behavior: positive weights enable the loss, and zero disables it.
 
 This implements the ground-truth color objective in [SteadySplats, Appendix 13](https://arxiv.org/html/2610.05576v2#A13): sum the RGB squared error of each visible splat, weighted by its alpha-compositing contribution, then average over image pixels. It uses evaluated fragment colors, including the renderer's color clamps. It does not normalize by accumulated opacity or add a background penalty; the paper's variance interpretation assumes full coverage.
 
 The first version requires unmasked FastGS training with appearance correction and mip filtering off, and no crop box loss weighting or POPSpa phase. MRNF enables exposure correction by default; turn it off to use this loss. A weight of `1` after `15000` warm-up iterations in a `30000`-iteration run is a starting experiment based on the paper, not a replacement for a strategy's own settings.
 
-Compare runs from the same warm-up checkpoint with the same image-exposure budget. Check sorted PSNR, SSIM and LPIPS as well as noise in a stochastic renderer: reducing color variance can reduce detail and peak reconstruction quality. LFS's existing 3DGS and 3DGUT viewport choices do not show the stochastic sampling noise this loss targets.
+Compare runs from the same warm-up checkpoint with the same image-exposure budget. Check sorted PSNR, SSIM and LPIPS as well as noise in a stochastic renderer: reducing color variance can reduce detail and peak reconstruction quality. The 3DGS viewport supports basic stochastic accumulation and SteadySplats resampling. Selecting a viewport mode does not change these training settings. See [Stochastic rendering](stochastic-rendering.md).
 
 ## Evaluation masks
 

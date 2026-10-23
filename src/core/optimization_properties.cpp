@@ -170,6 +170,13 @@ namespace lfs::core::param {
                         "Weight for structural similarity loss")
             .json_required()
             .all_strategies()
+            .bool_prop(&OptimizationParameters::use_color_variance,
+                       "use_color_variance", "Color Variance Training", d.use_color_variance,
+                       "Enable SteadySplats color variance training with a default weight of 1")
+            .locale("training.losses.use_color_variance")
+            .tooltip("training.tooltip.use_color_variance")
+            .flags(PROP_ADVANCED)
+            .all_strategies()
             .float_prop(&OptimizationParameters::color_variance_weight,
                         "color_variance_weight", "Color Variance Weight", d.color_variance_weight, 0.0f, 8.0f,
                         "Reduces noise in stochastic rendering by aligning visible splat colors; 0 disables")
